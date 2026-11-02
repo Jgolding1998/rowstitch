@@ -63,7 +63,7 @@ See [examples/basic.mjs](examples/basic.mjs) for transactions and trace export. 
 
 Use `hasMany` for a list, `hasOne` for a single owned record, and `belongsTo` to follow a reference. Relations load in batches. A missing singular relation returns `null`; more than one matching record raises `RELATION_CARDINALITY` instead of silently picking one.
 
-`select: ['name']` returns only the named columns, alongside any explicitly included relations. Internal join keys do not appear in the returned object. Select fields separately on each relation; omitting `select` returns every mapped column. This is a query feature, not an authorization system.
+`select: ['name']` returns only the named columns, alongside any explicitly included relations. SQL may also read keys needed to join the records; those internal keys do not appear in the returned object. Select fields separately on each relation; omitting `select` returns every mapped column. This is a query feature, not an authorization system.
 
 ## Inspect an existing schema
 
@@ -85,6 +85,8 @@ writeFileSync('trace.json', JSON.stringify(db.exportTrace({ title: 'A local sess
 ```
 
 Bound values are redacted at collection by default and result rows are not collected. Trace history defaults to 200 statements with a separate 1 MiB byte limit. Exports fit within 2 MiB by dropping old statements; an oversized schema raises a clear error. Omitted history is noted in the export. SQL, schema names and literal defaults can still reveal information. **Redaction is not anonymization.** Review a trace before sharing it. Compiled-query APIs deliberately return their parameters to your code; keep that output private too.
+
+Trace statuses describe individual SQL statements. An ORM call can still reject a stale edit or ambiguous relationship after its SQL succeeds. Those application-level failures do not yet appear as separate trace events, so zero failed statements does not mean every API call succeeded.
 
 ## Scope and checks
 
