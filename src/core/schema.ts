@@ -226,20 +226,3 @@ export function literal(value: Parameter): string {
   if (typeof value === 'string') return "'" + value.replaceAll("'", "''") + "'";
   return String(value);
 }
-export function createSql(table: AnyTable): string {
-  const primary = Object.entries(table.columns as Columns).filter(([, c]) => c.config.primary);
-  const parts = Object.entries(table.columns as Columns).map(([name, c]) => {
-    let sql = identifier(name) + ' ' + sqlType(c.config);
-    if (c.config.generated) sql += ' PRIMARY KEY AUTOINCREMENT';
-    else if (!c.config.nullable) sql += ' NOT NULL';
-    if (c.config.unique) sql += ' UNIQUE';
-    if (c.config.hasDefault) sql += ' DEFAULT ' + literal(c.config.defaultValue!);
-    if (c.config.kind === 'boolean') sql += ' CHECK (' + identifier(name) + ' IN (0, 1))';
-    if (c.config.kind === 'json') sql += ' CHECK (json_valid(' + identifier(name) + '))';
-    const fk = c.config.foreignKey;
-    if (fk) sql += ' REFERENCES ' + identifier(fk.table.name) + '(' + identifier(fk.column) + ') ON DELETE ' + fk.onDelete.toUpperCase();
-    return sql;
-  });
-  if (!primary.some(([, c]) => c.config.generated)) parts.push('PRIMARY KEY (' + primary.map(([name]) => identifier(name)).join(', ') + ')');
-  return 'CREATE TABLE ' + identifier(table.name) + ' (' + parts.join(', ') + ')';
-}

@@ -3,10 +3,13 @@ import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { DatabaseSync } from 'node:sqlite';
 import { ConflictError, RowstitchError, databaseError, fail } from './errors.js';
-import { ColumnRef, createSql, decode, encode, identifier, literal, plainRecord, sqlType,
+import { ColumnRef, decode, encode, identifier, literal, plainRecord, sqlType,
   type AnyTable, type Columns, type InsertRow, type KeyRow, type Parameter, type Row, type UpdateRow } from './schema.js';
-import { ManyRelation, SingularRelation, and, assertOptions, compilePredicate, eq, orderSql, selectionFields, validateRelation,
+import { ManyRelation, SingularRelation, and, assertOptions, eq, orderToModel, predicateToModel, selectionFields, validateRelation,
   type CompiledQuery, type FindOptions, type Includes, type Predicate, type Selection, type WithIncludes } from './predicates.js';
+import { mappedCreateTableModel, mappedTableModel } from './model-mapping.js';
+import { predicateTruth, queryModel, type CreateIndexModel, type CreateTableModel, type PredicateModel, type SelectModel, type TransactionAction, type TransactionModel } from './query-model.js';
+import { compileSqlite } from './sqlite-compiler.js';
 
 export interface SchemaColumn { name: string; type: string; nullable: boolean; primaryKey: boolean; primaryKeyOrder: number; default: string | null; generated: boolean; hidden: boolean }
 export interface SchemaForeignKey { column: string; table: string; target: string; onDelete: string; onUpdate: string }
@@ -133,13 +136,15 @@ export class Database {
       throw databaseError(error);
     }
   }
-  #control(sql: string, table = ''): void {
+  #control(query: TransactionModel | CreateTableModel | CreateIndexModel, table = ''): void {
+    const { sql } = compileSqlite(query);
+    const operation = query.kind === 'transaction' ? 'transaction' : 'schema';
     const start = performance.now();
     try {
       this.#state.handle.exec(sql);
-      this.#record(sql.startsWith('CREATE ') ? 'schema' : 'transaction', table, sql, [], start, 0, 'ok');
+      this.#record(operation, table, sql, [], start, 0, 'ok');
     } catch (error) {
-      this.#record(sql.startsWith('CREATE ') ? 'schema' : 'transaction', table, sql, [], start, 0, 'error');
+      this.#record(operation, table, sql, [], start, 0, 'error');
       throw databaseError(error);
     }
   }
@@ -154,9 +159,10 @@ export class Database {
     const parent = this.#state.transactionId;
     const nested = this.#state.depth > 0;
     const id = 'tx' + ++this.#state.transactionSequence;
-    const savepoint = identifier('rs_sp_' + this.#state.transactionSequence);
+    const savepoint = 'rs_sp_' + this.#state.transactionSequence;
+    const control = (action: TransactionAction, name?: string): void => this.#control(queryModel.transaction({ action, ...(name === undefined ? {} : { name }) }));
     this.#state.transactionId = id;
-    try { this.#control(nested ? 'SAVEPOINT ' + savepoint : this.#state.readOnly ? 'BEGIN' : 'BEGIN IMMEDIATE'); }
+    try { control(nested ? 'savepoint' : this.#state.readOnly ? 'begin' : 'begin-immediate', nested ? savepoint : undefined); }
     catch (error) { this.#state.transactionId = parent; throw error; }
     const lease: Lease = { active: true };
     const tx = new Database(this.#state, lease);
@@ -167,14 +173,14 @@ export class Database {
         if (result instanceof Promise) result.catch(() => {});
         fail('ASYNC_CALLBACK', 'Transaction callbacks must finish synchronously; all work was rolled back.');
       }
-      this.#control(nested ? 'RELEASE SAVEPOINT ' + savepoint : 'COMMIT');
+      control(nested ? 'release' : 'commit', nested ? savepoint : undefined);
       return result as R;
     } catch (error) {
       try {
         if (nested) {
-          this.#control('ROLLBACK TO SAVEPOINT ' + savepoint);
-          this.#control('RELEASE SAVEPOINT ' + savepoint);
-        } else if (this.#state.handle.isTransaction) this.#control('ROLLBACK');
+          control('rollback-to', savepoint);
+          control('release', savepoint);
+        } else if (this.#state.handle.isTransaction) control('rollback');
         if (!nested && this.#state.handle.isTransaction) throw new Error('Incomplete cleanup');
       } catch {
         this.#state.poisoned = true;
@@ -227,10 +233,11 @@ export class Database {
     });
   }
 
-  planSchema(): SchemaPlan[] {
+  #schemaPlans(): (SchemaPlan & { model: CreateTableModel | CreateIndexModel })[] {
     this.#check();
     const actual = this.inspectSchema();
-    const plans: SchemaPlan[] = [];
+    const plans: (SchemaPlan & { model: CreateTableModel | CreateIndexModel })[] = [];
+    const add = (table: string, action: SchemaPlan['action'], model: CreateTableModel | CreateIndexModel): void => { plans.push({ table, action, model, sql: compileSqlite(model).sql }); };
     for (const table of this.#state.tables.values()) {
       const found = actual.find(t => t.name.toLowerCase() === table.name.toLowerCase());
       const columns = Object.entries(table.columns as Columns);
@@ -238,7 +245,7 @@ export class Database {
         const fk = c.config.foreignKey;
         if (fk && this.#state.tables.get(fk.table.name) !== fk.table) fail('SCHEMA', 'Foreign-key targets must be registered on the same database.');
       }
-      if (!found) plans.push({ table: table.name, action: 'create-table', sql: createSql(table) });
+      if (!found) add(table.name, 'create-table', mappedCreateTableModel(table));
       else {
         const expectedPrimary = columns.filter(([, c]) => c.config.primary).map(([n]) => n);
         const actualPrimary = found.columns.filter(c => c.primaryKey).sort((a, b) => a.primaryKeyOrder - b.primaryKeyOrder).map(c => c.name);
@@ -269,17 +276,20 @@ export class Database {
         const indexName = foreignIndex(table, name);
         const index = found?.indexes.find(i => i.name === indexName);
         if (index && (index.unique || index.partial || index.columns.length !== 1 || index.columns[0] !== name)) fail('SCHEMA_DRIFT', 'An existing relation index is incompatible with its mapping.');
-        if (!index) plans.push({ table: table.name, action: 'create-index', sql: 'CREATE INDEX ' + identifier(indexName) + ' ON ' + identifier(table.name) + ' (' + identifier(name) + ')' });
+        if (!index) add(table.name, 'create-index', queryModel.createIndex({ table: mappedTableModel(table), name: indexName, columns: [name] }));
       }
     }
     return plans;
   }
+  planSchema(): SchemaPlan[] {
+    return this.#schemaPlans().map(({ table, action, sql }) => ({ table, action, sql }));
+  }
   ensureSchema(): SchemaPlan[] {
     this.#writeCheck();
     return this.transaction(tx => {
-      const plans = tx.planSchema();
-      for (const plan of plans) tx.#control(plan.sql, plan.table);
-      return plans;
+      const plans = tx.#schemaPlans();
+      for (const plan of plans) tx.#control(plan.model, plan.table);
+      return plans.map(({ table, action, sql }) => ({ table, action, sql }));
     });
   }
 
@@ -424,10 +434,8 @@ export class Repository<T extends AnyTable> {
   }
   #insertOne(data: InsertRow<T>): Row<T> {
     const [fields, values] = this.#data(data, true);
-    const sql = 'INSERT INTO ' + identifier(this.definition.name) + (fields.length
-      ? ' (' + fields.map(identifier).join(', ') + ') VALUES (' + fields.map(() => '?').join(', ') + ')'
-      : ' DEFAULT VALUES') + ' RETURNING *';
-    const rows = ops(this.#db).all(sql, values, 'insert', this.definition.name);
+    const query = compileSqlite(queryModel.insert({ table: mappedTableModel(this.definition), columns: fields, values }));
+    const rows = ops(this.#db).all(query.sql, query.parameters, 'insert', this.definition.name);
     if (rows.length !== 1) fail('DATA', 'An insert did not return one record.');
     return this.#decodeRow(rows[0]);
   }
@@ -440,19 +448,22 @@ export class Repository<T extends AnyTable> {
     if (!Array.isArray(rows) || rows.length > 1000) fail('VALIDATION', 'Insert at most 1,000 records in one batch.');
     return ops(this.#db).atomic(tx => rows.map(row => new Repository(tx, this.definition).#insertOne(row)));
   }
-  compileSelect(options: FindOptions<Includes, Selection<T> | undefined> = {}): CompiledQuery {
+  #selectModel(options: FindOptions<Includes, Selection<T> | undefined>): SelectModel {
     ops(this.#db).mapped(this.definition);
     assertOptions(options, ['where', 'orderBy', 'limit', 'offset', 'include', 'select']);
     const fields = this.#fetchFields(options.select, options.include);
     const limit = integer(options.limit, 1000, 0, 10_000);
     const offset = integer(options.offset, 0, 0, 1_000_000_000);
-    const where = compilePredicate(this.definition, options.where);
-    return { sql: 'SELECT ' + fields.map(identifier).join(', ') + ' FROM ' + identifier(this.definition.name) + (where.sql ? ' WHERE ' + where.sql : '')
-      + orderSql(this.definition, options.orderBy, true) + ' LIMIT ? OFFSET ?', parameters: [...where.parameters, limit, offset] };
+    const where = predicateToModel(this.definition, options.where);
+    return queryModel.select({ table: mappedTableModel(this.definition), columns: fields, ...(where === undefined ? {} : { where }),
+      orderBy: orderToModel(this.definition, options.orderBy, true), limit, offset });
+  }
+  compileSelect(options: FindOptions<Includes, Selection<T> | undefined> = {}): CompiledQuery {
+    return compileSqlite(this.#selectModel(options));
   }
   explain(options: FindOptions<Includes, Selection<T> | undefined> = {}): QueryPlan[] {
-    const query = this.compileSelect(options);
-    return ops(this.#db).all('EXPLAIN QUERY PLAN ' + query.sql, query.parameters, 'select', this.definition.name, true)
+    const query = compileSqlite(queryModel.explain({ query: this.#selectModel(options) }));
+    return ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name, true)
       .map(r => ({ id: Number(r.id), parent: Number(r.parent), detail: String(r.detail) }));
   }
   findMany<I extends Includes = {}, const S extends Selection<T> | undefined = undefined>(options: FindOptions<I, S> = {}): WithIncludes<T, I, NoInfer<S>>[] {
@@ -469,8 +480,11 @@ export class Repository<T extends AnyTable> {
   }
   count(where?: Predicate): number {
     ops(this.#db).mapped(this.definition);
-    const predicate = compilePredicate(this.definition, where);
-    const rows = ops(this.#db).all('SELECT count(*) AS n FROM ' + identifier(this.definition.name) + (predicate.sql ? ' WHERE ' + predicate.sql : ''), predicate.parameters, 'select', this.definition.name);
+    return this.#countModel(predicateToModel(this.definition, where));
+  }
+  #countModel(where: PredicateModel | undefined): number {
+    const query = compileSqlite(queryModel.count({ table: mappedTableModel(this.definition), ...(where === undefined ? {} : { where }) }));
+    const rows = ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name);
     return countValue(rows[0].n);
   }
 
@@ -495,18 +509,16 @@ export class Repository<T extends AnyTable> {
       const repository = new Repository(this.#db, relation.table);
       const fields = repository.#fetchFields(relation.options.select, relation.options.include, [foreignKey.name], depth + 1);
       const children: Row<AnyTable>[] = [];
-      const where = compilePredicate(relation.table, relation.options.where);
-      const ordering = orderSql(relation.table, relation.options.orderBy, true);
+      const where = predicateToModel(relation.table, relation.options.where);
+      const ordering = orderToModel(relation.table, relation.options.orderBy, true);
       for (let index = 0; index < values.length && limit > 0; index += 400) {
         const chunk = values.slice(index, index + 400);
         // Both integer codecs use SQLite INTEGER; bind the validated source value
         // losslessly instead of forcing number IDs through the bigint JS codec.
         const encoded = chunk.map(value => encode(this.definition.columns[localKey.name].config, value));
-        const sql = 'SELECT * FROM (SELECT ' + fields.map(identifier).join(', ') + ', ROW_NUMBER() OVER (PARTITION BY ' + identifier(foreignKey.name) + ordering
-          + ') AS "__rs_rank" FROM ' + identifier(relation.table.name) + ' WHERE ' + identifier(foreignKey.name)
-          + ' IN (' + chunk.map(() => '?').join(', ') + ')' + (where.sql ? ' AND (' + where.sql + ')' : '')
-          + ') WHERE "__rs_rank" > ? AND "__rs_rank" <= ? ORDER BY ' + identifier(foreignKey.name) + ', "__rs_rank" LIMIT ?';
-        const result = ops(this.#db).all(sql, [...encoded, ...where.parameters, offset, offset + limit, budget.remaining + 1], 'select', relation.table.name).map(row => repository.#decodeRow(row, fields));
+        const query = compileSqlite(queryModel.relation({ table: mappedTableModel(relation.table), columns: fields, partitionBy: foreignKey.name, keys: encoded,
+          ...(where === undefined ? {} : { where }), orderBy: ordering, offset, limit, readLimit: budget.remaining + 1 }));
+        const result = ops(this.#db).all(query.sql, query.parameters, 'select', relation.table.name).map(row => repository.#decodeRow(row, fields));
         if (result.length > budget.remaining) fail('RESULT_LIMIT', 'Eager relationships exceeded 10,000 related rows. Narrow the root query or per-parent limits.');
         budget.remaining -= result.length;
         children.push(...result);
@@ -528,24 +540,21 @@ export class Repository<T extends AnyTable> {
   #write(data: UpdateRow<T> | null, options: WriteOptions, conflict = false): Row<T>[] {
     ops(this.#db).mapped(this.definition); ops(this.#db).writeCheck();
     assertOptions(options, ['where', 'maxRows']);
-    const predicate = compilePredicate(this.definition, options.where);
-    if (options.where === undefined || predicate.truth === true) fail('UNSAFE_WRITE', 'Updates and deletes require a meaningful filter. Whole-table writes have no implicit opt-in.');
+    const predicate = predicateToModel(this.definition, options.where);
+    if (predicate === undefined || predicateTruth(predicate) === true) fail('UNSAFE_WRITE', 'Updates and deletes require a meaningful filter. Whole-table writes have no implicit opt-in.');
     const max = integer(options.maxRows, 100, 0, 10_000);
     const [fields, values] = data === null ? [[], []] : this.#data(data, false);
     return ops(this.#db).atomic(tx => {
       const repository = new Repository(tx, this.definition);
-      const matched = repository.count(options.where);
+      const matched = repository.#countModel(predicate);
       if (matched > max) fail('AFFECTED_ROWS', 'The filter matches more records than maxRows allows. No records were changed.');
       if (!matched && conflict) throw new ConflictError();
       if (!matched) return [];
-      let sql = data === null ? 'DELETE FROM ' : 'UPDATE ';
-      sql += identifier(this.definition.name);
-      if (data !== null) {
-        sql += ' SET ' + fields.map(name => identifier(name) + ' = ?').join(', ');
-        if (this.definition.version) sql += ', ' + identifier(this.definition.version) + ' = ' + identifier(this.definition.version) + ' + 1';
-      }
-      sql += ' WHERE ' + predicate.sql + ' RETURNING *';
-      const result = ops(tx).all(sql, [...values, ...predicate.parameters], data === null ? 'delete' : 'update', this.definition.name).map(row => repository.#decodeRow(row));
+      const table = mappedTableModel(this.definition);
+      const model = data === null ? queryModel.delete({ table, where: predicate })
+        : queryModel.update({ table, where: predicate, assignments: fields.map((column, i) => ({ column, value: values[i] })) });
+      const query = compileSqlite(model);
+      const result = ops(tx).all(query.sql, query.parameters, data === null ? 'delete' : 'update', this.definition.name).map(row => repository.#decodeRow(row));
       if (result.length !== matched || result.length > max) fail('AFFECTED_ROWS', 'Affected records did not match the guarded count. The transaction was rolled back.');
       return result;
     });

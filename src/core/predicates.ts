@@ -1,5 +1,8 @@
 import { fail } from './errors.js';
 import { ColumnRef, encode, identifier, plainRecord, type AnyTable, type Parameter, type Row } from './schema.js';
+import { mappedTableModel } from './model-mapping.js';
+import { orderingModel, predicateModel, type ComparisonOperator, type OrderModel, type PredicateModel } from './query-model.js';
+import { compileSqliteOrder, compileSqlitePredicate } from './sqlite-compiler.js';
 
 type Node = { kind: 'comparison'; ref: ColumnRef; operator: string; values: readonly Parameter[] }
   | { kind: 'logic'; operator: 'AND' | 'OR'; children: readonly Predicate[] }
@@ -33,57 +36,38 @@ export const not = (child: Predicate): Predicate => new Predicate({ kind: 'not',
 
 export interface CompiledQuery { sql: string; parameters: Parameter[] }
 export interface CompiledPredicate extends CompiledQuery { truth: true | false | null }
-export function compilePredicate(table: AnyTable, predicate?: Predicate): CompiledPredicate {
-  if (predicate === undefined) return { sql: '', parameters: [], truth: true };
-  let count = 0;
-  const parameters: Parameter[] = [];
-  function visit(p: Predicate, depth: number): { sql: string; truth: true | false | null } {
+/** Lower public helpers only after exact mapped-table identity validation. */
+export function predicateToModel(table: AnyTable, predicate?: Predicate): PredicateModel | undefined {
+  if (predicate === undefined) return undefined;
+  let count = 0, bound = 0;
+  function visit(p: Predicate, depth: number): PredicateModel {
     if (!(p instanceof Predicate) || ++count > 100 || depth > 16) fail('QUERY', 'Predicates must be bounded expressions built with Rowstitch helpers.');
     const n = p.node;
     if (n.kind === 'comparison') {
       if (!(n.ref instanceof ColumnRef) || n.ref.table !== table || !Object.hasOwn(table.columns, n.ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
-      const name = identifier(n.ref.name);
+      identifier(n.ref.name);
       if (!['=', '<>', '>', '>=', '<', '<=', 'IN'].includes(n.operator)) fail('QUERY', 'The predicate operator is not supported.');
-      if (n.operator === 'IN') {
-        if (!n.values.length) return { sql: '0', truth: false };
-        const nonNull = n.values.filter(v => v !== null);
-        const hasNull = nonNull.length !== n.values.length;
-        const parts: string[] = [];
-        if (nonNull.length) {
-          parameters.push(...nonNull);
-          parts.push(name + ' IN (' + nonNull.map(() => '?').join(', ') + ')');
-        }
-        if (hasNull) parts.push(name + ' IS NULL');
-        return { sql: '(' + parts.join(' OR ') + ')', truth: null };
-      }
-      if (n.values.length !== 1) fail('QUERY', 'A comparison requires one value.');
-      if (n.values[0] === null) {
-        if (n.operator !== '=' && n.operator !== '<>') fail('QUERY', 'NULL only supports equality or inequality comparisons.');
-        return { sql: name + (n.operator === '=' ? ' IS NULL' : ' IS NOT NULL'), truth: null };
-      }
-      parameters.push(n.values[0]);
-      return { sql: name + ' ' + n.operator + ' ?', truth: null };
+      if (n.operator !== 'IN' && n.values.length !== 1) fail('QUERY', 'A comparison requires one value.');
+      if (n.operator !== 'IN' && n.values[0] === null && n.operator !== '=' && n.operator !== '<>') fail('QUERY', 'NULL only supports equality or inequality comparisons.');
+      bound += n.values.filter(v => v !== null).length;
+      return { kind: 'compare', column: n.ref.name, operator: n.operator as ComparisonOperator, values: [...n.values] };
     }
-    if (n.kind === 'not') {
-      const child = visit(n.child, depth + 1);
-      return { sql: 'NOT (' + child.sql + ')', truth: child.truth === null ? null : !child.truth };
-    }
+    if (n.kind === 'not') return { kind: 'not', child: visit(n.child, depth + 1) };
     if (n.kind !== 'logic' || !['AND', 'OR'].includes(n.operator) || !Array.isArray(n.children)) fail('QUERY', 'The predicate expression is not supported.');
-    const parts = n.children.map(child => visit(child, depth + 1));
-    const truth = n.operator === 'AND'
-      ? parts.some(p => p.truth === false) ? false : parts.every(p => p.truth === true) ? true : null
-      : parts.some(p => p.truth === true) ? true : parts.every(p => p.truth === false) ? false : null;
-    return { sql: parts.length ? '(' + parts.map(p => p.sql).join(' ' + n.operator + ' ') + ')' : n.operator === 'AND' ? '1' : '0', truth };
+    return { kind: 'logic', operator: n.operator, children: n.children.map(child => visit(child, depth + 1)) };
   }
   const result = visit(predicate, 0);
-  if (parameters.length > 10_000) fail('QUERY', 'A query has too many bound parameters.');
-  return { ...result, parameters };
+  if (bound > 10_000) fail('QUERY', 'A query has too many bound parameters.');
+  return predicateModel(mappedTableModel(table), result);
+}
+export function compilePredicate(table: AnyTable, predicate?: Predicate): CompiledPredicate {
+  return compileSqlitePredicate(mappedTableModel(table), predicateToModel(table, predicate));
 }
 
 export interface Ordering { readonly ref: ColumnRef; readonly direction: 'ASC' | 'DESC' }
 export function asc(ref: ColumnRef): Ordering { return Object.freeze({ ref, direction: 'ASC' }); }
 export function desc(ref: ColumnRef): Ordering { return Object.freeze({ ref, direction: 'DESC' }); }
-export function orderSql(table: AnyTable, order: readonly Ordering[] = [], deterministic = false): string {
+export function orderToModel(table: AnyTable, order: readonly Ordering[] = [], deterministic = false): readonly OrderModel[] {
   if (!Array.isArray(order) || order.length > 100) fail('QUERY', 'Ordering must be a bounded list of mapped columns.');
   const items = [...order];
   for (const item of items) {
@@ -94,7 +78,10 @@ export function orderSql(table: AnyTable, order: readonly Ordering[] = [], deter
       if (c.config.primary && !items.some(i => i.ref.name === name)) items.push(asc(table.col(name)));
     }
   }
-  return items.length ? ' ORDER BY ' + items.map(i => identifier(i.ref.name) + ' ' + i.direction).join(', ') : '';
+  return orderingModel(mappedTableModel(table), items.map(i => ({ column: i.ref.name, direction: i.direction })));
+}
+export function orderSql(table: AnyTable, order: readonly Ordering[] = [], deterministic = false): string {
+  return compileSqliteOrder(mappedTableModel(table), orderToModel(table, order, deterministic));
 }
 
 export type Selection<T extends AnyTable> = readonly (keyof T['columns'] & string)[];

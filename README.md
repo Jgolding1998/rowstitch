@@ -11,7 +11,7 @@ Rowstitch has no runtime npm dependencies. It uses Node's built-in SQLite driver
 Use **Node 24.22.2 or a newer Node 24 LTS release**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.1.0/rowstitch-0.1.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.1.1/rowstitch-0.1.1.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -33,7 +33,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.1.0/rowstitch-0.1.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.1.1/rowstitch-0.1.1.tgz
 ```
 
 ```ts
