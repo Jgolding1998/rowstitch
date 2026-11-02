@@ -124,33 +124,34 @@ export function decode(config: Readonly<ColumnConfig>, value: unknown): unknown 
   }
 }
 
-export class Column<T, Optional extends boolean = false, Primary extends boolean = false> {
+export class Column<T, Optional extends boolean = false, Primary extends boolean = false, K extends Kind = Kind> {
   declare readonly _value: T;
   declare readonly _optional: Optional;
   declare readonly _primary: Primary;
+  declare readonly _kind: K;
   readonly config: Readonly<ColumnConfig>;
   constructor(config: ColumnConfig) {
     this.config = Object.freeze(config);
     Object.freeze(this);
   }
-  nullable(): Column<T | null, true, Primary> {
+  nullable(): Column<T | null, true, Primary, K> {
     if (this.config.primary) fail('SCHEMA', 'Primary keys cannot be nullable.');
     return new Column({ ...this.config, nullable: true });
   }
-  default(value: T): Column<T, true, Primary> {
+  default(value: T): Column<T, true, Primary, K> {
     return new Column({ ...this.config, hasDefault: true, defaultValue: encode(this.config, value) });
   }
-  primaryKey(): Column<T, Optional, true>;
-  primaryKey(options: { generated: true }): Column<T, true, true>;
-  primaryKey(options?: { generated: true }): Column<T, boolean, true> {
+  primaryKey(): Column<T, Optional, true, K>;
+  primaryKey(options: { generated: true }): Column<T, true, true, K>;
+  primaryKey(options?: { generated: true }): Column<T, boolean, true, K> {
     if (this.config.nullable || this.config.kind === 'json' || this.config.kind === 'real' || this.config.kind === 'boolean') fail('SCHEMA', 'Primary keys must be non-null integer, bigint or text columns.');
     if (options?.generated && !['integer', 'bigint'].includes(this.config.kind)) fail('SCHEMA', 'Generated keys require an integer column.');
     return new Column({ ...this.config, primary: true, generated: options?.generated === true });
   }
-  unique(): Column<T, Optional, Primary> {
+  unique(): Column<T, Optional, Primary, K> {
     return new Column({ ...this.config, unique: true });
   }
-  references<U extends AnyTable, K extends keyof U['columns'] & string>(table: U, key: K, options: { onDelete?: DeleteAction } = {}): Column<T, Optional, Primary> {
+  references<U extends AnyTable, RefKey extends keyof U['columns'] & string>(table: U, key: RefKey, options: { onDelete?: DeleteAction } = {}): Column<T, Optional, Primary, K> {
     const target = table.columns[key];
     if (!target || !['integer', 'bigint', 'text'].includes(this.config.kind)
       || sqlType(target.config) !== sqlType(this.config) || !(target.config.primary || target.config.unique)) fail('SCHEMA', 'Foreign keys must reference a compatible primary or unique column.');
@@ -161,13 +162,13 @@ export class Column<T, Optional extends boolean = false, Primary extends boolean
   }
 }
 
-function make<T>(kind: Kind): Column<T> {
+function make<T, K extends Kind>(kind: K): Column<T, false, false, K> {
   return new Column({ kind, nullable: false, primary: false, generated: false, unique: false, hasDefault: false });
 }
 export const column = Object.freeze({
-  integer: () => make<number>('integer'), bigint: () => make<bigint>('bigint'),
-  real: () => make<number>('real'), text: () => make<string>('text'),
-  boolean: () => make<boolean>('boolean'), json: <T = unknown>() => make<T>('json'),
+  integer: () => make<number, 'integer'>('integer'), bigint: () => make<bigint, 'bigint'>('bigint'),
+  real: () => make<number, 'real'>('real'), text: () => make<string, 'text'>('text'),
+  boolean: () => make<boolean, 'boolean'>('boolean'), json: <T = unknown>() => make<T, 'json'>('json'),
 });
 
 export type Columns = Record<string, Column<any, boolean, boolean>>;
@@ -180,9 +181,19 @@ export type KeyNames<T extends AnyTable> = { [K in keyof T['columns']]: T['colum
 export type KeyRow<T extends AnyTable> = Pick<Row<T>, KeyNames<T>>;
 export type UpdateRow<T extends AnyTable> = Partial<Omit<Row<T>, KeyNames<T> | NonNullable<T['version']>>>;
 
-export class ColumnRef<T = unknown> {
+export type ColumnKind<C> = C extends Column<any, boolean, boolean, infer K> ? K : Kind;
+const columnReferences = new WeakSet<object>();
+/** Internal authenticity check; prototype forgeries and Proxy wrappers are not references. */
+export function isColumnRef(value: unknown): value is ColumnRef {
+  return value !== null && typeof value === 'object' && columnReferences.has(value);
+}
+export class ColumnRef<T = unknown, K extends Kind = Kind> {
   declare readonly _value: T;
-  constructor(public readonly table: AnyTable, public readonly name: string) { Object.freeze(this); }
+  declare readonly _kind: K;
+  constructor(public readonly table: AnyTable, public readonly name: string) {
+    if (typeof name !== 'string' || !(table instanceof Table) || !Object.hasOwn(table.columns, name)) fail('QUERY', 'A column reference needs a mapped table and column name.');
+    columnReferences.add(this); Object.freeze(this);
+  }
 }
 export class Table<C extends Columns = Columns, V extends keyof C & string | undefined = undefined> {
   readonly columns: C;
@@ -209,8 +220,8 @@ export class Table<C extends Columns = Columns, V extends keyof C & string | und
     this.columns = Object.freeze({ ...columns });
     Object.freeze(this);
   }
-  col<K extends keyof C & string>(key: K): ColumnRef<Value<C[K]>> {
-    if (!Object.hasOwn(this.columns, key)) fail('SCHEMA', 'The mapped column does not exist.');
+  col<K extends keyof C & string>(key: K): ColumnRef<Value<C[K]>, ColumnKind<C[K]>> {
+    if (typeof key !== 'string' || !Object.hasOwn(this.columns, key)) fail('SCHEMA', 'The mapped column does not exist.');
     return new ColumnRef(this, key);
   }
 }

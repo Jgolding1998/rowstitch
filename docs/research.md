@@ -25,6 +25,8 @@ Orange's query events already expose emitted SQL. Rowstitch's distinction is a b
 
 The portable [comparison](../benchmarks/README.md) uses released Orange 5.5.1 and Kysely 0.29.8, with actual row checks and SELECT counts. SQLite driver versions differ, so it does not publish a universal speed ranking. Orange and Rowstitch both achieve two SELECTs on the shared 41-parent fixture.
 
+The [expression comparison](../benchmarks/expressions-results.json) separately checks literal text searches and ranges against independent expected rows, raw SQLite and Orange's SQLite helpers. It exercises actual UTF-8 and UTF-16 databases. Literal searches intentionally differ from LIKE patterns; those differences are recorded rather than described as Orange defects. SQLite's [function contracts](https://www.sqlite.org/lang_corefunc.html) and [expression rules](https://www.sqlite.org/lang_expr.html) informed the NULL, case, encoding and embedded-NUL probes. The implementation does not change the connection's LIKE settings or claim locale-aware Unicode matching.
+
 ## Runtime and design
 
 [SQLite's change history](https://www.sqlite.org/changes.html) and [CVE notes](https://www.sqlite.org/cves.html) informed the maintained Node baseline, explicit defensive mode and the decision not to enable WAL automatically. A clean npm audit is not an audit of the embedded native engine.

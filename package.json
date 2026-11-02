@@ -1,6 +1,6 @@
 {
   "name": "rowstitch",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A SQLite ORM with guarded writes, batched relations and a local SQL inspector.",
   "type": "module",
   "license": "MIT",

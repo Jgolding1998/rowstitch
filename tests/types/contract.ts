@@ -1,4 +1,4 @@
-import { column, defineTable, openDatabase, eq, hasMany, hasOne, belongsTo, type InsertRow, type Row } from '../../src/index.js';
+import { column, defineTable, openDatabase, eq, contains, startsWith, endsWith, between, hasMany, hasOne, belongsTo, type InsertRow, type Row, type Column, type ColumnRef, type TextMatchOptions } from '../../src/index.js';
 const authors = defineTable('authors', {
   id: column.integer().primaryKey({ generated: true }), name: column.text(),
   active: column.boolean().default(true), metadata: column.json<{ tag: string }>().nullable(),
@@ -83,3 +83,62 @@ const absent = nested[0].posts[0].missing;
 db.close();
 void [id, active, metadata, title, body, wrongBody, wrong, absent, selectedName, maybeTitle, maybeAuthor, firstName,
   hiddenRootId, hiddenChildId, hiddenSingularId, uncheckedTitle];
+
+// M3a: factory/fluent codec tags retain old generic annotations while new
+// predicates reject nontext JSON payloads and mismatched scalar bounds.
+const literalNames = defineTable('literal_names', { name: column.text().primaryKey() });
+const literalTable = defineTable('literal_types', {
+  id: column.integer().primaryKey(), text: column.text(), maybe: column.text().nullable().default(null).unique(),
+  textKey: column.text().primaryKey(), textRef: column.text().references(literalNames, 'name'),
+  real: column.real().nullable(), exact: column.bigint(), jsonText: column.json<string>(), jsonNumber: column.json<number>(),
+});
+const oldColumnAnnotation: Column<string> = column.text();
+const oldThreeGenerics: Column<number, true, true> = column.integer().primaryKey({ generated: true });
+const oldRefAnnotation: ColumnRef<string> = literalTable.col('text');
+eq(oldRefAnnotation, 'unchanged');
+const searchOptions: TextMatchOptions = { case: 'ascii-insensitive' };
+contains(literalTable.col('text'), 'hello');
+contains(literalTable.col('maybe'), 'HELLO', searchOptions);
+startsWith(literalTable.col('textKey'), 'key', { case: 'sensitive' });
+endsWith(literalTable.col('textRef'), 'key');
+between(literalTable.col('id'), 1, 2);
+between(literalTable.col('real'), 1.25, 9.5);
+between(literalTable.col('exact'), -9223372036854775808n, 9223372036854775807n);
+between(literalTable.col('text'), 'A', 'Z');
+// @ts-expect-error Numeric refs are not text even when their values could stringify.
+contains(literalTable.col('id'), '1');
+// @ts-expect-error Boolean refs are not text.
+startsWith(authors.col('active'), 't');
+// @ts-expect-error JSON<string> is not a text codec.
+contains(literalTable.col('jsonText'), 'payload');
+// @ts-expect-error JSON<number> is not an ordered numeric codec.
+between(literalTable.col('jsonNumber'), 1, 2);
+// @ts-expect-error JSON objects are not text.
+endsWith(authors.col('metadata'), 'payload');
+// @ts-expect-error A search literal is a primitive string.
+contains(literalTable.col('text'), 1);
+// @ts-expect-error NULL search literals have no implicit meaning.
+contains(literalTable.col('maybe'), null);
+// @ts-expect-error Undefined search literals are rejected.
+contains(literalTable.col('text'), undefined);
+// @ts-expect-error A literal helper does not accept another column as a needle.
+contains(literalTable.col('text'), literalTable.col('textRef'));
+// @ts-expect-error Unsupported case folding must not silently become ASCII folding.
+contains(literalTable.col('text'), 'x', { case: 'unicode-insensitive' });
+// @ts-expect-error Case is explicit, not an ambiguous boolean.
+startsWith(literalTable.col('text'), 'x', { case: true });
+// @ts-expect-error Misspelled option names are not accepted.
+endsWith(literalTable.col('text'), 'x', { caseInsensitive: true });
+// @ts-expect-error Numeric bounds cannot widen the mapped string type through inference.
+between(literalTable.col('text'), 1, 2);
+// @ts-expect-error String bounds cannot widen a mapped number type.
+between(literalTable.col('id'), '1', 2);
+// @ts-expect-error Range bounds are non-null even when the column is nullable.
+between(literalTable.col('real'), null, 2);
+// @ts-expect-error Bigint codecs require exact bigint bounds.
+between(literalTable.col('exact'), 1, 2n);
+// @ts-expect-error Boolean columns are not ordered range operands.
+between(authors.col('active'), false, true);
+// @ts-expect-error Column-valued range bounds are deferred.
+between(literalTable.col('id'), literalTable.col('id'), 2);
+void [oldColumnAnnotation, oldThreeGenerics, oldRefAnnotation];

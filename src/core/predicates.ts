@@ -1,17 +1,18 @@
 import { fail } from './errors.js';
-import { ColumnRef, encode, identifier, plainRecord, type AnyTable, type Parameter, type Row } from './schema.js';
+import { ColumnRef, Table, encode, identifier, isColumnRef, plainRecord, type AnyTable, type Kind, type Parameter, type Row } from './schema.js';
 import { mappedTableModel } from './model-mapping.js';
-import { orderingModel, predicateModel, type ComparisonOperator, type OrderModel, type PredicateModel } from './query-model.js';
+import { orderingModel, predicateModel, textMatchLiteral, textMatchOptions, type ComparisonOperator, type OrderModel, type PredicateModel, type TextMatchCase, type TextMatchMode } from './query-model.js';
 import { compileSqliteOrder, compileSqlitePredicate } from './sqlite-compiler.js';
 
-type Node = { kind: 'comparison'; ref: ColumnRef; operator: string; values: readonly Parameter[] }
+type Node = { kind: 'text-match'; ref: ColumnRef; mode: TextMatchMode; case: TextMatchCase; literal: string }
+  | { kind: 'comparison'; ref: ColumnRef; operator: string; values: readonly Parameter[] }
   | { kind: 'logic'; operator: 'AND' | 'OR'; children: readonly Predicate[] }
   | { kind: 'not'; child: Predicate };
 export class Predicate {
   constructor(public readonly node: Node) { Object.freeze(node); Object.freeze(this); }
 }
 function comparison<T>(ref: ColumnRef<T>, operator: string, values: readonly unknown[]): Predicate {
-  if (!(ref instanceof ColumnRef)) fail('QUERY', 'A predicate needs a mapped column reference.');
+  if (!isColumnRef(ref)) fail('QUERY', 'A predicate needs a mapped column reference.');
   if (values.length > 10_000) fail('QUERY', 'A predicate has too many parameters.');
   const config = ref.table.columns[ref.name].config;
   return new Predicate({ kind: 'comparison', ref, operator, values: Object.freeze(values.map(value => {
@@ -34,6 +35,26 @@ export const and = (...children: Predicate[]): Predicate => new Predicate({ kind
 export const or = (...children: Predicate[]): Predicate => new Predicate({ kind: 'logic', operator: 'OR', children: Object.freeze([...children]) });
 export const not = (child: Predicate): Predicate => new Predicate({ kind: 'not', child });
 
+export interface TextMatchOptions { case?: TextMatchCase }
+type TextRef = ColumnRef<string | null, 'text'>;
+type RangeKind = Extract<Kind, 'integer' | 'bigint' | 'real' | 'text'>;
+function checkRef(ref: ColumnRef, allowed: readonly Kind[]): void {
+  if (!isColumnRef(ref) || !(ref.table instanceof Table) || typeof ref.name !== 'string' || !Object.hasOwn(ref.table.columns, ref.name)
+      || !allowed.includes(ref.table.columns[ref.name].config.kind)) fail('QUERY', 'This predicate requires a mapped column of a supported scalar kind.');
+}
+function textMatch(ref: TextRef, literal: string, options: TextMatchOptions | undefined, mode: TextMatchMode): Predicate {
+  checkRef(ref, ['text']);
+  return new Predicate({ kind: 'text-match', ref, mode, case: textMatchOptions(options), literal: textMatchLiteral(literal) });
+}
+export const contains = (ref: TextRef, literal: string, options?: TextMatchOptions): Predicate => textMatch(ref, literal, options, 'contains');
+export const startsWith = (ref: TextRef, literal: string, options?: TextMatchOptions): Predicate => textMatch(ref, literal, options, 'starts-with');
+export const endsWith = (ref: TextRef, literal: string, options?: TextMatchOptions): Predicate => textMatch(ref, literal, options, 'ends-with');
+export function between<T extends string | number | bigint, K extends RangeKind>(ref: ColumnRef<T | null, K>, from: NoInfer<T>, to: NoInfer<T>): Predicate {
+  checkRef(ref, ['integer', 'bigint', 'real', 'text']);
+  if (from === null || from === undefined || to === null || to === undefined) fail('QUERY', 'A range needs two non-null scalar bounds.');
+  return and(comparison(ref, '>=', [from]), comparison(ref, '<=', [to]));
+}
+
 export interface CompiledQuery { sql: string; parameters: Parameter[] }
 export interface CompiledPredicate extends CompiledQuery { truth: true | false | null }
 /** Lower public helpers only after exact mapped-table identity validation. */
@@ -43,14 +64,22 @@ export function predicateToModel(table: AnyTable, predicate?: Predicate): Predic
   function visit(p: Predicate, depth: number): PredicateModel {
     if (!(p instanceof Predicate) || ++count > 100 || depth > 16) fail('QUERY', 'Predicates must be bounded expressions built with Rowstitch helpers.');
     const n = p.node;
+    if (n.kind === 'text-match') {
+      const ref = n.ref;
+      if (!isColumnRef(ref) || ref.table !== table || !Object.hasOwn(table.columns, ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
+      checkRef(ref, ['text']);
+      bound += n.mode === 'ends-with' ? 3 : 1;
+      return { kind: 'text-match', column: ref.name, mode: n.mode, case: n.case, literal: n.literal };
+    }
     if (n.kind === 'comparison') {
-      if (!(n.ref instanceof ColumnRef) || n.ref.table !== table || !Object.hasOwn(table.columns, n.ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
-      identifier(n.ref.name);
+      const ref = n.ref;
+      if (!isColumnRef(ref) || ref.table !== table || !Object.hasOwn(table.columns, ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
+      identifier(ref.name);
       if (!['=', '<>', '>', '>=', '<', '<=', 'IN'].includes(n.operator)) fail('QUERY', 'The predicate operator is not supported.');
       if (n.operator !== 'IN' && n.values.length !== 1) fail('QUERY', 'A comparison requires one value.');
       if (n.operator !== 'IN' && n.values[0] === null && n.operator !== '=' && n.operator !== '<>') fail('QUERY', 'NULL only supports equality or inequality comparisons.');
       bound += n.values.filter(v => v !== null).length;
-      return { kind: 'compare', column: n.ref.name, operator: n.operator as ComparisonOperator, values: [...n.values] };
+      return { kind: 'compare', column: ref.name, operator: n.operator as ComparisonOperator, values: [...n.values] };
     }
     if (n.kind === 'not') return { kind: 'not', child: visit(n.child, depth + 1) };
     if (n.kind !== 'logic' || !['AND', 'OR'].includes(n.operator) || !Array.isArray(n.children)) fail('QUERY', 'The predicate expression is not supported.');
@@ -69,10 +98,11 @@ export function asc(ref: ColumnRef): Ordering { return Object.freeze({ ref, dire
 export function desc(ref: ColumnRef): Ordering { return Object.freeze({ ref, direction: 'DESC' }); }
 export function orderToModel(table: AnyTable, order: readonly Ordering[] = [], deterministic = false): readonly OrderModel[] {
   if (!Array.isArray(order) || order.length > 100) fail('QUERY', 'Ordering must be a bounded list of mapped columns.');
-  const items = [...order];
-  for (const item of items) {
-    if (!item || !(item.ref instanceof ColumnRef) || item.ref.table !== table || !Object.hasOwn(table.columns, item.ref.name) || !['ASC', 'DESC'].includes(item.direction)) fail('QUERY', 'Ordering must reference the queried table.');
-  }
+  const items = [...order].map(item => {
+    const ref = item?.ref, direction = item?.direction;
+    if (!isColumnRef(ref) || ref.table !== table || !Object.hasOwn(table.columns, ref.name) || !['ASC', 'DESC'].includes(direction)) fail('QUERY', 'Ordering must reference the queried table.');
+    return { ref, direction };
+  });
   if (deterministic) {
     for (const [name, c] of Object.entries(table.columns) as [string, { config: { primary: boolean } }][]) {
       if (c.config.primary && !items.some(i => i.ref.name === name)) items.push(asc(table.col(name)));
@@ -119,9 +149,10 @@ export type Includes = Record<string, ManyRelation<AnyTable, any, any> | Singula
 
 export function validateRelation(table: AnyTable, options: RelationOptions<Includes, readonly string[] | undefined>, singular: boolean): void {
   assertOptions(options, ['localKey', 'foreignKey', 'where', 'orderBy', 'include', 'select', ...(singular ? [] : ['limit', 'offset'])]);
-  if (!options || !(options.localKey instanceof ColumnRef) || !(options.foreignKey instanceof ColumnRef)
-      || options.foreignKey.table !== table || !Object.hasOwn(options.localKey.table.columns, options.localKey.name)
-      || !Object.hasOwn(table.columns, options.foreignKey.name)) fail('QUERY', 'A relation needs mapped local and foreign keys.');
+  const localKey = options?.localKey, foreignKey = options?.foreignKey;
+  if (!isColumnRef(localKey) || !isColumnRef(foreignKey)
+      || foreignKey.table !== table || !Object.hasOwn(localKey.table.columns, localKey.name)
+      || !Object.hasOwn(table.columns, foreignKey.name)) fail('QUERY', 'A relation needs mapped local and foreign keys.');
   selectionFields(table, options.select);
   compilePredicate(table, options.where);
   orderSql(table, options.orderBy);

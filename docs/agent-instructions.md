@@ -14,4 +14,8 @@ Use Rowstitch for a trusted Node 24 LTS application's SQLite data layer. Start w
 
 Keep credentials, real schemas, databases, traces, temporary dependencies and test output out of Git. Do not add cloud services, telemetry, arbitrary SQL endpoints or paid APIs to make the demo work.
 
+Use `contains`, `startsWith` and `endsWith` for literal text searches. They require a text column and a nonempty, well-formed needle of at most 4,096 UTF-16 code units. Default matching is case-sensitive; `{ case: 'ascii-insensitive' }` folds A-Z only. Do not guess LIKE, regex or Unicode-folding behavior. NULL fields remain unknown under NOT; use an explicit `isNull` condition to include them. `between` uses inclusive, non-null bounds of the column's type and does not reorder them. Inspect the actual query plan before making an indexing or speed claim.
+
+Preserve inferred column/reference types when calling these new helpers. If an explicit annotation is needed, retain the codec, such as `ColumnRef<string | null, 'text'>`. A broad `Column<string>` or `ColumnRef<string>` loses that information. A nonempty search may still be broad; retain a deliberate affected-row limit for writes.
+
 Check [the compatibility plan](compatibility.md) before promising features. Rowstitch is independent of Orange and does not yet match its database, runtime, graph-save or browser-client coverage. Do not treat planned support as implemented support.

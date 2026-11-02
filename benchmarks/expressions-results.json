@@ -1,0 +1,3967 @@
+{
+  "format": "rowstitch-expression-comparison",
+  "version": 1,
+  "environment": {
+    "node": "v24.22.2",
+    "nodeSQLite": "3.53.4",
+    "rowstitch": "0.2.0",
+    "orange": "5.5.1",
+    "orangeEntry": "Published npm CommonJS source export, explicitly resolved and dynamically imported",
+    "orangeSQLite": "3.53.4"
+  },
+  "fixture": {
+    "rows": 14,
+    "expressionCasesPerEncoding": 18,
+    "encodings": [
+      "UTF-8",
+      "UTF-16le",
+      "UTF-16be"
+    ]
+  },
+  "cases": [
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.percent",
+      "status": "pass",
+      "expectedIds": [
+        4
+      ],
+      "actualIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.percent",
+      "status": "pass",
+      "expectedIds": [
+        4
+      ],
+      "actualIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "%",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.underscore",
+      "status": "pass",
+      "expectedIds": [
+        5
+      ],
+      "actualIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "_"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.underscore",
+      "status": "pass",
+      "expectedIds": [
+        5
+      ],
+      "actualIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "_",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.brackets.prefix",
+      "status": "pass",
+      "expectedIds": [
+        6
+      ],
+      "actualIds": [
+        6
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) = 1 ORDER BY id",
+          "parameters": [
+            "[a]"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.brackets.prefix",
+      "status": "pass",
+      "expectedIds": [
+        6
+      ],
+      "actualIds": [
+        6
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) = 1 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "[a]",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.backslash.suffix",
+      "status": "pass",
+      "expectedIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(\"label\" AS BLOB)), -length(hex(CAST(? AS BLOB)))) = hex(CAST(? AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "\\tail",
+            "\\tail"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.backslash.suffix",
+      "status": "pass",
+      "expectedIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(\"label\" AS BLOB)) >= length(CAST(? AS BLOB)) AND substr(CAST(\"label\" AS BLOB), -length(CAST(? AS BLOB))) = CAST(? AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\\tail",
+            "\\tail",
+            "\\tail",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.quote.injection",
+      "status": "pass",
+      "expectedIds": [
+        14
+      ],
+      "actualIds": [
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "' OR 1=1 --"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.quote.injection",
+      "status": "pass",
+      "expectedIds": [
+        14
+      ],
+      "actualIds": [
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "' OR 1=1 --",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.nul.contains.ascii",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY id",
+          "parameters": [
+            "\u0000B"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.nul.contains.ascii",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\u0000B",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.nul.suffix.ascii",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(lower(\"label\") AS BLOB)), -length(hex(CAST(lower(?) AS BLOB)))) = hex(CAST(lower(?) AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "\u0000TAIL",
+            "\u0000TAIL"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.nul.suffix.ascii",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(lower(\"label\") AS BLOB)) >= length(CAST(lower(?) AS BLOB)) AND substr(CAST(lower(\"label\") AS BLOB), -length(CAST(lower(?) AS BLOB))) = CAST(lower(?) AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\u0000TAIL",
+            "\u0000TAIL",
+            "\u0000TAIL",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.emoji.suffix",
+      "status": "pass",
+      "expectedIds": [
+        10,
+        13
+      ],
+      "actualIds": [
+        10,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(\"label\" AS BLOB)), -length(hex(CAST(? AS BLOB)))) = hex(CAST(? AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "😀",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.emoji.suffix",
+      "status": "pass",
+      "expectedIds": [
+        10,
+        13
+      ],
+      "actualIds": [
+        10,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(\"label\" AS BLOB)) >= length(CAST(? AS BLOB)) AND substr(CAST(\"label\" AS BLOB), -length(CAST(? AS BLOB))) = CAST(? AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "😀",
+            "😀",
+            "😀",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.unicode.not.folded",
+      "status": "pass",
+      "expectedIds": [
+        11
+      ],
+      "actualIds": [
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) = 1 ORDER BY id",
+          "parameters": [
+            "É"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.unicode.not.folded",
+      "status": "pass",
+      "expectedIds": [
+        11
+      ],
+      "actualIds": [
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) = 1 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "É",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.sensitive",
+      "status": "pass",
+      "expectedIds": [
+        2
+      ],
+      "actualIds": [
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "alpha"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.sensitive",
+      "status": "pass",
+      "expectedIds": [
+        2
+      ],
+      "actualIds": [
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "alpha",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.ascii.insensitive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY id",
+          "parameters": [
+            "alpha"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.ascii.insensitive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "alpha",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "literal.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE NOT (instr(\"label\", ?) > 0) ORDER BY id",
+          "parameters": [
+            "x"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "literal.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE NOT (instr(\"label\", ?) > 0) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "x",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "between.integer.inclusive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY id",
+          "parameters": [
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "between.integer.inclusive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "between.integer.reversed",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY id",
+          "parameters": [
+            1,
+            -1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "between.integer.reversed",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            -1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "between.bigint.precision",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"exact\" >= ? AND \"exact\" <= ?) ORDER BY id",
+          "parameters": [
+            {
+              "bigint": "9007199254740993"
+            },
+            {
+              "bigint": "9223372036854775807"
+            }
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "between.bigint.precision",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"exact\" >= ? AND \"exact\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            {
+              "bigint": "9007199254740993"
+            },
+            {
+              "bigint": "9223372036854775807"
+            },
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "between.text.encoding.order",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13
+      ],
+      "actualIds": [
+        12,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"label\" >= ? AND \"label\" <= ?) ORDER BY id",
+          "parameters": [
+            "Ā",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "between.text.encoding.order",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13
+      ],
+      "actualIds": [
+        12,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"label\" >= ? AND \"label\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "Ā",
+            "😀",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "between.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "actualIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE NOT ((\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY id",
+          "parameters": [
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "between.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "actualIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE NOT ((\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-8",
+      "name": "composed.literal.range",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (instr(lower(\"label\"), lower(?)) > 0 AND (\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY id",
+          "parameters": [
+            "a",
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-8",
+      "name": "composed.literal.range",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (instr(lower(\"label\"), lower(?)) > 0 AND (\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "a",
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-8",
+      "name": "contains.LIKE.\"alpha\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "literalAsciiIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%alpha%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-8",
+      "name": "contains.LIKE.\"%\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%%%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-8",
+      "name": "contains.LIKE.\"_\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%_%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-8",
+      "name": "endsWith.LIKE.\"\\\\tail\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "literalAsciiIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%\\tail"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-8",
+      "name": "contains.LIKE.\"B\"",
+      "status": "pass",
+      "expectedLikeIds": [],
+      "actualIds": [],
+      "literalAsciiIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%B%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-8",
+      "name": "between.amount.-1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"amount\">=-1 AND \"samples\".\"amount\"<=1 order by \"samples\".\"id\"",
+          "parameters": [],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-8",
+      "name": "between.amount.1",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"amount\">=1 AND \"samples\".\"amount\"<=-1 order by \"samples\".\"id\"",
+          "parameters": [],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-8",
+      "name": "between.label.Ā",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13
+      ],
+      "actualIds": [
+        12,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\">=? AND \"samples\".\"label\"<=? order by \"samples\".\"id\"",
+          "parameters": [
+            "Ā",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.percent",
+      "status": "pass",
+      "expectedIds": [
+        4
+      ],
+      "actualIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.percent",
+      "status": "pass",
+      "expectedIds": [
+        4
+      ],
+      "actualIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "%",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.underscore",
+      "status": "pass",
+      "expectedIds": [
+        5
+      ],
+      "actualIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "_"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.underscore",
+      "status": "pass",
+      "expectedIds": [
+        5
+      ],
+      "actualIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "_",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.brackets.prefix",
+      "status": "pass",
+      "expectedIds": [
+        6
+      ],
+      "actualIds": [
+        6
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) = 1 ORDER BY id",
+          "parameters": [
+            "[a]"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.brackets.prefix",
+      "status": "pass",
+      "expectedIds": [
+        6
+      ],
+      "actualIds": [
+        6
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) = 1 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "[a]",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.backslash.suffix",
+      "status": "pass",
+      "expectedIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(\"label\" AS BLOB)), -length(hex(CAST(? AS BLOB)))) = hex(CAST(? AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "\\tail",
+            "\\tail"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.backslash.suffix",
+      "status": "pass",
+      "expectedIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(\"label\" AS BLOB)) >= length(CAST(? AS BLOB)) AND substr(CAST(\"label\" AS BLOB), -length(CAST(? AS BLOB))) = CAST(? AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\\tail",
+            "\\tail",
+            "\\tail",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.quote.injection",
+      "status": "pass",
+      "expectedIds": [
+        14
+      ],
+      "actualIds": [
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "' OR 1=1 --"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.quote.injection",
+      "status": "pass",
+      "expectedIds": [
+        14
+      ],
+      "actualIds": [
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "' OR 1=1 --",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.nul.contains.ascii",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY id",
+          "parameters": [
+            "\u0000B"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.nul.contains.ascii",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\u0000B",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.nul.suffix.ascii",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(lower(\"label\") AS BLOB)), -length(hex(CAST(lower(?) AS BLOB)))) = hex(CAST(lower(?) AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "\u0000TAIL",
+            "\u0000TAIL"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.nul.suffix.ascii",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(lower(\"label\") AS BLOB)) >= length(CAST(lower(?) AS BLOB)) AND substr(CAST(lower(\"label\") AS BLOB), -length(CAST(lower(?) AS BLOB))) = CAST(lower(?) AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\u0000TAIL",
+            "\u0000TAIL",
+            "\u0000TAIL",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.emoji.suffix",
+      "status": "pass",
+      "expectedIds": [
+        10,
+        13
+      ],
+      "actualIds": [
+        10,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(\"label\" AS BLOB)), -length(hex(CAST(? AS BLOB)))) = hex(CAST(? AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "😀",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.emoji.suffix",
+      "status": "pass",
+      "expectedIds": [
+        10,
+        13
+      ],
+      "actualIds": [
+        10,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(\"label\" AS BLOB)) >= length(CAST(? AS BLOB)) AND substr(CAST(\"label\" AS BLOB), -length(CAST(? AS BLOB))) = CAST(? AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "😀",
+            "😀",
+            "😀",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.unicode.not.folded",
+      "status": "pass",
+      "expectedIds": [
+        11
+      ],
+      "actualIds": [
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) = 1 ORDER BY id",
+          "parameters": [
+            "É"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.unicode.not.folded",
+      "status": "pass",
+      "expectedIds": [
+        11
+      ],
+      "actualIds": [
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) = 1 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "É",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.sensitive",
+      "status": "pass",
+      "expectedIds": [
+        2
+      ],
+      "actualIds": [
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "alpha"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.sensitive",
+      "status": "pass",
+      "expectedIds": [
+        2
+      ],
+      "actualIds": [
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "alpha",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.ascii.insensitive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY id",
+          "parameters": [
+            "alpha"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.ascii.insensitive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "alpha",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "literal.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE NOT (instr(\"label\", ?) > 0) ORDER BY id",
+          "parameters": [
+            "x"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "literal.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE NOT (instr(\"label\", ?) > 0) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "x",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "between.integer.inclusive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY id",
+          "parameters": [
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "between.integer.inclusive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "between.integer.reversed",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY id",
+          "parameters": [
+            1,
+            -1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "between.integer.reversed",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            -1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "between.bigint.precision",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"exact\" >= ? AND \"exact\" <= ?) ORDER BY id",
+          "parameters": [
+            {
+              "bigint": "9007199254740993"
+            },
+            {
+              "bigint": "9223372036854775807"
+            }
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "between.bigint.precision",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"exact\" >= ? AND \"exact\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            {
+              "bigint": "9007199254740993"
+            },
+            {
+              "bigint": "9223372036854775807"
+            },
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "between.text.encoding.order",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"label\" >= ? AND \"label\" <= ?) ORDER BY id",
+          "parameters": [
+            "Ā",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "between.text.encoding.order",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"label\" >= ? AND \"label\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "Ā",
+            "😀",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "between.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "actualIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE NOT ((\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY id",
+          "parameters": [
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "between.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "actualIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE NOT ((\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16le",
+      "name": "composed.literal.range",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (instr(lower(\"label\"), lower(?)) > 0 AND (\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY id",
+          "parameters": [
+            "a",
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16le",
+      "name": "composed.literal.range",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (instr(lower(\"label\"), lower(?)) > 0 AND (\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "a",
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16le",
+      "name": "contains.LIKE.\"alpha\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "literalAsciiIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%alpha%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16le",
+      "name": "contains.LIKE.\"%\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%%%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16le",
+      "name": "contains.LIKE.\"_\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%_%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16le",
+      "name": "endsWith.LIKE.\"\\\\tail\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "literalAsciiIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%\\tail"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16le",
+      "name": "contains.LIKE.\"B\"",
+      "status": "pass",
+      "expectedLikeIds": [],
+      "actualIds": [],
+      "literalAsciiIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%B%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16le",
+      "name": "between.amount.-1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"amount\">=-1 AND \"samples\".\"amount\"<=1 order by \"samples\".\"id\"",
+          "parameters": [],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16le",
+      "name": "between.amount.1",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"amount\">=1 AND \"samples\".\"amount\"<=-1 order by \"samples\".\"id\"",
+          "parameters": [],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16le",
+      "name": "between.label.Ā",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\">=? AND \"samples\".\"label\"<=? order by \"samples\".\"id\"",
+          "parameters": [
+            "Ā",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.percent",
+      "status": "pass",
+      "expectedIds": [
+        4
+      ],
+      "actualIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.percent",
+      "status": "pass",
+      "expectedIds": [
+        4
+      ],
+      "actualIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "%",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.underscore",
+      "status": "pass",
+      "expectedIds": [
+        5
+      ],
+      "actualIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "_"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.underscore",
+      "status": "pass",
+      "expectedIds": [
+        5
+      ],
+      "actualIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "_",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.brackets.prefix",
+      "status": "pass",
+      "expectedIds": [
+        6
+      ],
+      "actualIds": [
+        6
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) = 1 ORDER BY id",
+          "parameters": [
+            "[a]"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.brackets.prefix",
+      "status": "pass",
+      "expectedIds": [
+        6
+      ],
+      "actualIds": [
+        6
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) = 1 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "[a]",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.backslash.suffix",
+      "status": "pass",
+      "expectedIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(\"label\" AS BLOB)), -length(hex(CAST(? AS BLOB)))) = hex(CAST(? AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "\\tail",
+            "\\tail"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.backslash.suffix",
+      "status": "pass",
+      "expectedIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(\"label\" AS BLOB)) >= length(CAST(? AS BLOB)) AND substr(CAST(\"label\" AS BLOB), -length(CAST(? AS BLOB))) = CAST(? AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\\tail",
+            "\\tail",
+            "\\tail",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.quote.injection",
+      "status": "pass",
+      "expectedIds": [
+        14
+      ],
+      "actualIds": [
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "' OR 1=1 --"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.quote.injection",
+      "status": "pass",
+      "expectedIds": [
+        14
+      ],
+      "actualIds": [
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "' OR 1=1 --",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.nul.contains.ascii",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY id",
+          "parameters": [
+            "\u0000B"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.nul.contains.ascii",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\u0000B",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.nul.suffix.ascii",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(lower(\"label\") AS BLOB)), -length(hex(CAST(lower(?) AS BLOB)))) = hex(CAST(lower(?) AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "\u0000TAIL",
+            "\u0000TAIL"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.nul.suffix.ascii",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(lower(\"label\") AS BLOB)) >= length(CAST(lower(?) AS BLOB)) AND substr(CAST(lower(\"label\") AS BLOB), -length(CAST(lower(?) AS BLOB))) = CAST(lower(?) AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "\u0000TAIL",
+            "\u0000TAIL",
+            "\u0000TAIL",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.emoji.suffix",
+      "status": "pass",
+      "expectedIds": [
+        10,
+        13
+      ],
+      "actualIds": [
+        10,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE CASE WHEN \"label\" IS NULL THEN NULL ELSE substr(hex(CAST(\"label\" AS BLOB)), -length(hex(CAST(? AS BLOB)))) = hex(CAST(? AS BLOB)) END ORDER BY id",
+          "parameters": [
+            "😀",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.emoji.suffix",
+      "status": "pass",
+      "expectedIds": [
+        10,
+        13
+      ],
+      "actualIds": [
+        10,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (length(CAST(\"label\" AS BLOB)) >= length(CAST(? AS BLOB)) AND substr(CAST(\"label\" AS BLOB), -length(CAST(? AS BLOB))) = CAST(? AS BLOB)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "😀",
+            "😀",
+            "😀",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.unicode.not.folded",
+      "status": "pass",
+      "expectedIds": [
+        11
+      ],
+      "actualIds": [
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) = 1 ORDER BY id",
+          "parameters": [
+            "É"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.unicode.not.folded",
+      "status": "pass",
+      "expectedIds": [
+        11
+      ],
+      "actualIds": [
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) = 1 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "É",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.sensitive",
+      "status": "pass",
+      "expectedIds": [
+        2
+      ],
+      "actualIds": [
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(\"label\", ?) > 0 ORDER BY id",
+          "parameters": [
+            "alpha"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.sensitive",
+      "status": "pass",
+      "expectedIds": [
+        2
+      ],
+      "actualIds": [
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(\"label\", ?) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "alpha",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.ascii.insensitive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY id",
+          "parameters": [
+            "alpha"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.ascii.insensitive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE instr(lower(\"label\"), lower(?)) > 0 ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "alpha",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "literal.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE NOT (instr(\"label\", ?) > 0) ORDER BY id",
+          "parameters": [
+            "x"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "literal.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE NOT (instr(\"label\", ?) > 0) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "x",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "between.integer.inclusive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY id",
+          "parameters": [
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "between.integer.inclusive",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "between.integer.reversed",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY id",
+          "parameters": [
+            1,
+            -1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "between.integer.reversed",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"amount\" >= ? AND \"amount\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            -1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "between.bigint.precision",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"exact\" >= ? AND \"exact\" <= ?) ORDER BY id",
+          "parameters": [
+            {
+              "bigint": "9007199254740993"
+            },
+            {
+              "bigint": "9223372036854775807"
+            }
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "between.bigint.precision",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"exact\" >= ? AND \"exact\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            {
+              "bigint": "9007199254740993"
+            },
+            {
+              "bigint": "9223372036854775807"
+            },
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "between.text.encoding.order",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13
+      ],
+      "actualIds": [
+        12,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (\"label\" >= ? AND \"label\" <= ?) ORDER BY id",
+          "parameters": [
+            "Ā",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "between.text.encoding.order",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13
+      ],
+      "actualIds": [
+        12,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (\"label\" >= ? AND \"label\" <= ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "Ā",
+            "😀",
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "between.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "actualIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE NOT ((\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY id",
+          "parameters": [
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "between.not.preserves.null",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "actualIds": [
+        5,
+        6,
+        10,
+        11
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE NOT ((\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "encoding": "UTF-16be",
+      "name": "composed.literal.range",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM samples WHERE (instr(lower(\"label\"), lower(?)) > 0 AND (\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY id",
+          "parameters": [
+            "a",
+            -1,
+            1
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "encoding": "UTF-16be",
+      "name": "composed.literal.range",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"samples\" WHERE (instr(lower(\"label\"), lower(?)) > 0 AND (\"amount\" >= ? AND \"amount\" <= ?)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "a",
+            -1,
+            1,
+            1000,
+            0
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16be",
+      "name": "contains.LIKE.\"alpha\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3
+      ],
+      "actualIds": [
+        2,
+        3
+      ],
+      "literalAsciiIds": [
+        2,
+        3
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%alpha%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16be",
+      "name": "contains.LIKE.\"%\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%%%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16be",
+      "name": "contains.LIKE.\"_\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        5
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%_%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16be",
+      "name": "endsWith.LIKE.\"\\\\tail\"",
+      "status": "pass",
+      "expectedLikeIds": [
+        7
+      ],
+      "actualIds": [
+        7
+      ],
+      "literalAsciiIds": [
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%\\tail"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16be",
+      "name": "contains.LIKE.\"B\"",
+      "status": "pass",
+      "expectedLikeIds": [],
+      "actualIds": [],
+      "literalAsciiIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\" LIKE ? order by \"samples\".\"id\"",
+          "parameters": [
+            "%B%"
+          ],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16be",
+      "name": "between.amount.-1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        7,
+        9,
+        12,
+        13,
+        14
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"amount\">=-1 AND \"samples\".\"amount\"<=1 order by \"samples\".\"id\"",
+          "parameters": [],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16be",
+      "name": "between.amount.1",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"amount\">=1 AND \"samples\".\"amount\"<=-1 order by \"samples\".\"id\"",
+          "parameters": [],
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "encoding": "UTF-16be",
+      "name": "between.label.Ā",
+      "status": "pass",
+      "expectedIds": [
+        12,
+        13
+      ],
+      "actualIds": [
+        12,
+        13
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",\"samples\".\"label\" as \"ssamples1\",\"samples\".\"amount\" as \"ssamples2\" from \"samples\" \"samples\" where \"samples\".\"label\">=? AND \"samples\".\"label\"<=? order by \"samples\".\"id\"",
+          "parameters": [
+            "Ā",
+            "😀"
+          ],
+          "status": "ok"
+        }
+      ]
+    }
+  ],
+  "contractDifferences": [
+    {
+      "encoding": "UTF-8",
+      "method": "contains",
+      "needle": "%",
+      "orangeLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        4
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    },
+    {
+      "encoding": "UTF-8",
+      "method": "contains",
+      "needle": "_",
+      "orangeLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        5
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    },
+    {
+      "encoding": "UTF-8",
+      "method": "contains",
+      "needle": "B",
+      "orangeLikeIds": [],
+      "literalAsciiIds": [
+        8
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    },
+    {
+      "encoding": "UTF-16le",
+      "method": "contains",
+      "needle": "%",
+      "orangeLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        4
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    },
+    {
+      "encoding": "UTF-16le",
+      "method": "contains",
+      "needle": "_",
+      "orangeLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        5
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    },
+    {
+      "encoding": "UTF-16le",
+      "method": "contains",
+      "needle": "B",
+      "orangeLikeIds": [],
+      "literalAsciiIds": [
+        8
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    },
+    {
+      "encoding": "UTF-16be",
+      "method": "contains",
+      "needle": "%",
+      "orangeLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        4
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    },
+    {
+      "encoding": "UTF-16be",
+      "method": "contains",
+      "needle": "_",
+      "orangeLikeIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "literalAsciiIds": [
+        5
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    },
+    {
+      "encoding": "UTF-16be",
+      "method": "contains",
+      "needle": "B",
+      "orangeLikeIds": [],
+      "literalAsciiIds": [
+        8
+      ],
+      "note": "Measured LIKE/literal contract difference, not an upstream defect"
+    }
+  ],
+  "limitations": [
+    "Fixed correctness and actual SELECT counts only; no latency or universal-superiority claim.",
+    "Native statement calls are observed through forwarding wrappers, restored when the runner finishes.",
+    "Literal Rowstitch matching and Orange LIKE pattern matching differ; these differences are not upstream defects.",
+    "Text range order uses SQLite BINARY bytes in the actual database encoding.",
+    "Orange case-insensitive variants were not exercised; this runner uses its SQLite LIKE helpers."
+  ],
+  "summary": {
+    "passed": 132,
+    "failed": 0,
+    "contractDifferences": 9
+  }
+}

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { DatabaseSync } from 'node:sqlite';
 import { ConflictError, RowstitchError, databaseError, fail } from './errors.js';
-import { ColumnRef, decode, encode, identifier, literal, plainRecord, sqlType,
+import { decode, encode, identifier, isColumnRef, literal, plainRecord, sqlType,
   type AnyTable, type Columns, type InsertRow, type KeyRow, type Parameter, type Row, type UpdateRow } from './schema.js';
 import { ManyRelation, SingularRelation, and, assertOptions, eq, orderToModel, predicateToModel, selectionFields, validateRelation,
   type CompiledQuery, type FindOptions, type Includes, type Predicate, type Selection, type WithIncludes } from './predicates.js';
@@ -386,7 +386,7 @@ export class Repository<T extends AnyTable> {
       ops(this.#db).mapped(relation.table);
       validateRelation(relation.table, relation.options, relation instanceof SingularRelation);
       const { localKey, foreignKey } = relation.options;
-      if (localKey.table !== this.definition || foreignKey.table !== relation.table) fail('QUERY', 'Relationship keys must reference their respective mapped tables.');
+      if (!isColumnRef(localKey) || !isColumnRef(foreignKey) || localKey.table !== this.definition || foreignKey.table !== relation.table) fail('QUERY', 'Relationship keys must reference their respective mapped tables.');
       const source = this.definition.columns[localKey.name].config;
       const target = relation.table.columns[foreignKey.name].config;
       if (!['integer', 'bigint', 'text'].includes(source.kind) || sqlType(source) !== sqlType(target)) fail('QUERY', 'Relationship keys must be compatible scalar columns.');
@@ -498,7 +498,7 @@ export class Repository<T extends AnyTable> {
       if (Object.hasOwn(this.definition.columns, name) || !(relation instanceof ManyRelation || relation instanceof SingularRelation)) fail('QUERY', 'An include must have a unique name and be built with a Rowstitch relationship helper.');
       ops(this.#db).mapped(relation.table);
       const { localKey, foreignKey } = relation.options;
-      if (localKey.table !== this.definition || foreignKey.table !== relation.table) fail('QUERY', 'Relationship keys must reference their respective mapped tables.');
+      if (!isColumnRef(localKey) || !isColumnRef(foreignKey) || localKey.table !== this.definition || foreignKey.table !== relation.table) fail('QUERY', 'Relationship keys must reference their respective mapped tables.');
       const localKind = this.definition.columns[localKey.name].config.kind;
       if (!['integer', 'bigint', 'text'].includes(localKind) || sqlType(this.definition.columns[localKey.name].config) !== sqlType(relation.table.columns[foreignKey.name].config)) fail('QUERY', 'Relationship keys must be compatible scalar columns.');
       const key = (value: unknown): string => localKind === 'text' ? 's:' + String(value) : 'i:' + String(value);

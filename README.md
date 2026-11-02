@@ -11,7 +11,7 @@ Rowstitch has no runtime npm dependencies. It uses Node's built-in SQLite driver
 Use **Node 24.22.2 or a newer Node 24 LTS release**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.1.1/rowstitch-0.1.1.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.2.0/rowstitch-0.2.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -33,7 +33,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.1.1/rowstitch-0.1.1.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.2.0/rowstitch-0.2.0.tgz
 ```
 
 ```ts
@@ -65,6 +65,29 @@ Use `hasMany` for a list, `hasOne` for a single owned record, and `belongsTo` to
 
 `select: ['name']` returns only the named columns, alongside any explicitly included relations. SQL may also read keys needed to join the records; those internal keys do not appear in the returned object. Select fields separately on each relation; omitting `select` returns every mapped column. This is a query feature, not an authorization system.
 
+## Search text and ranges
+
+Use `contains`, `startsWith` and `endsWith` for literal text. A percent sign means a percent sign; it does not become a wildcard. For a mapped `posts` table with a title and numeric ID:
+
+```ts
+import { and, startsWith, between } from 'rowstitch';
+
+const drafts = db.table(posts).findMany({
+  where: and(
+    startsWith(posts.col('title'), 'draft:', { case: 'ascii-insensitive' }),
+    between(posts.col('id'), 10, 20),
+  ),
+});
+```
+
+Matching is case-sensitive by default. The explicit ASCII option folds A-Z only, without Unicode normalization or locale rules. Needles must be nonempty, well-formed strings of at most 4,096 UTF-16 code units. Empty searches are rejected to avoid accidental broad filters. Embedded null characters are supported. A null field matches neither a search nor its negation; combine with `isNull` when null rows should be included.
+
+`between` includes both endpoints and accepts text, integer, real and bigint columns with matching non-null bounds. Text ranges follow the database column's ordering, which can depend on its collation and encoding. Reversed bounds are not rearranged. Literal matching may scan rows; use `explain()` to inspect the actual plan. See [the runnable filter example](examples/literal-filters.mjs).
+
+Keep column and reference types inferred from their factories. An explicit reference annotation needs its codec, for example `ColumnRef<string | null, 'text'>`; a broad `ColumnRef<string>` or `Column<string>` annotation loses the information these new helpers require. Ordinary value predicates keep their existing typing.
+
+Even a nonempty search can match many rows. Updates and deletes still use the atomic `maxRows` limit, and application authorization remains the caller's responsibility.
+
 ## Inspect an existing schema
 
 ```sh
@@ -90,7 +113,7 @@ Trace statuses describe individual SQL statements. An ORM call can still reject 
 
 ## Scope and checks
 
-This first release supports SQLite and synchronous callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, other database drivers, a migration history runner, nested graph writes, a remote database API or an authorization system. Identifiers use simple names of at most 63 characters. Use the dedicated bigint column for integers beyond JavaScript's safe range.
+This release supports SQLite and synchronous callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, other database drivers, a migration history runner, nested graph writes, a remote database API or an authorization system. Identifiers use simple names of at most 63 characters. Use the dedicated bigint column for integers beyond JavaScript's safe range.
 
 ```sh
 npm test

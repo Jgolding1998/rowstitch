@@ -9,7 +9,10 @@ export interface TableModel {
   readonly version?: string;
 }
 export type ComparisonOperator = '=' | '<>' | '>' | '>=' | '<' | '<=' | 'IN';
+export type TextMatchMode = 'contains' | 'starts-with' | 'ends-with';
+export type TextMatchCase = 'sensitive' | 'ascii-insensitive';
 export type PredicateModel =
+  | { readonly kind: 'text-match'; readonly column: string; readonly mode: TextMatchMode; readonly case: TextMatchCase; readonly literal: string }
   | { readonly kind: 'compare'; readonly column: string; readonly operator: ComparisonOperator; readonly values: readonly Parameter[] }
   | { readonly kind: 'logic'; readonly operator: 'AND' | 'OR'; readonly children: readonly PredicateModel[] }
   | { readonly kind: 'not'; readonly child: PredicateModel };
@@ -95,6 +98,18 @@ function number(value: unknown, minimum: number, maximum: number): number {
   return value;
 }
 
+/** Literal-search policy only; existing text storage and value comparisons are unchanged. */
+export function textMatchLiteral(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 4096 || /[\uD800-\uDFFF]/u.test(value)) fail('QUERY', 'A literal text search needs a nonempty, well-formed string of at most 4,096 UTF-16 code units.');
+  return value;
+}
+export function textMatchOptions(input: unknown = {}): TextMatchCase {
+  const options = record(input, ['case']);
+  if (options.case === undefined) return 'sensitive';
+  if (options.case !== 'sensitive' && options.case !== 'ascii-insensitive') fail('QUERY', 'A text search case must be sensitive or ascii-insensitive.');
+  return options.case;
+}
+
 export function tableModel(input: TableModel): TableModel {
   const value = record(input, ['name', 'columns', 'primaryKey', 'version'], 'SCHEMA');
   const columns = names(value.columns, 100, 1);
@@ -114,7 +129,17 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
   let nodes = 0, parameters = 0;
   function visit(source: unknown, depth: number): PredicateModel {
     if (++nodes > 100 || depth > 16) fail('QUERY', 'Predicates exceed their node or depth limit.');
-    const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child']);
+    const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child', 'mode', 'case', 'literal']);
+    if (node.kind === 'text-match') {
+      record(node, ['kind', 'column', 'mode', 'case', 'literal']);
+      if (node.mode !== 'contains' && node.mode !== 'starts-with' && node.mode !== 'ends-with') fail('QUERY', 'The literal text search mode is not supported.');
+      if (node.case !== 'sensitive' && node.case !== 'ascii-insensitive') fail('QUERY', 'A text search case must be sensitive or ascii-insensitive.');
+      const matchCase = node.case;
+      const literal = textMatchLiteral(node.literal);
+      parameters += node.mode === 'ends-with' ? 3 : 1;
+      if (parameters > 10_000) fail('QUERY', 'Predicate parameters exceed their supported length.');
+      return Object.freeze({ kind: 'text-match', column: field(table, node.column), mode: node.mode, case: matchCase, literal });
+    }
     if (node.kind === 'compare') {
       record(node, ['kind', 'column', 'operator', 'values']);
       if (typeof node.operator !== 'string' || !['=', '<>', '>', '>=', '<', '<=', 'IN'].includes(node.operator)) fail('QUERY', 'The comparison operator is not supported.');
@@ -140,6 +165,7 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
 }
 export function predicateTruth(predicate?: PredicateModel): true | false | null {
   if (predicate === undefined) return true;
+  if (predicate.kind === 'text-match') return null;
   if (predicate.kind === 'compare') return predicate.operator === 'IN' && predicate.values.length === 0 ? false : null;
   if (predicate.kind === 'not') {
     const truth = predicateTruth(predicate.child);

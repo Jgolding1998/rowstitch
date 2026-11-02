@@ -12,6 +12,18 @@ const deleteActions = { cascade: 'CASCADE', restrict: 'RESTRICT', 'set null': 'S
 
 function renderPredicate(predicate?: PredicateModel): CompiledQuery {
   if (predicate === undefined) return { sql: '', parameters: [] };
+  if (predicate.kind === 'text-match') {
+    const column = identifier(predicate.column);
+    const fold = (sql: string): string => predicate.case === 'ascii-insensitive' ? 'lower(' + sql + ')' : sql;
+    const expression = fold(column), value = fold('?');
+    if (predicate.mode !== 'ends-with') return {
+      sql: 'instr(' + expression + ', ' + value + ')' + (predicate.mode === 'contains' ? ' > 0' : ' = 1'),
+      parameters: [predicate.literal],
+    };
+    const bytes = (sql: string): string => 'CAST(' + sql + ' AS BLOB)';
+    return { sql: '(length(' + bytes(expression) + ') >= length(' + bytes(value) + ') AND substr(' + bytes(expression) + ', -length(' + bytes(value) + '))'
+      + ' = ' + bytes(value) + ')', parameters: [predicate.literal, predicate.literal, predicate.literal] };
+  }
   if (predicate.kind === 'compare') {
     const column = identifier(predicate.column);
     if (predicate.operator === 'IN') {

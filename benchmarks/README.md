@@ -36,3 +36,15 @@ Orange already batches these relations and supports optimistic concurrency. Kyse
 Each tool gets a separate database with the same schema, rows, DELETE journal mode and FULL synchronous setting. The fixture schema is created by Rowstitch, then populated with bound raw inserts. In the recorded Windows run, Rowstitch and Orange use Node's SQLite 3.53.4; Kysely uses better-sqlite3's SQLite 3.51.2. The runner queries Orange's actual engine instead of inferring it from installed dependencies. Orange's published CommonJS source export is resolved explicitly; its SQLite backend depends on the runtime. A cross-engine timing claim would be misleading, and no timings are collected.
 
 References: [Orange ORM](https://github.com/alfateam/orange-orm), [Kysely](https://github.com/kysely-org/kysely), [better-sqlite3](https://github.com/WiseLibs/better-sqlite3).
+
+## Literal text and ranges
+
+The [expression comparison](expressions-results.json) uses 14 fictional rows in UTF-8, UTF-16LE and UTF-16BE SQLite databases. An independent JavaScript oracle checks literal punctuation, quotes, embedded NUL, Unicode, ASCII case handling, NULL under NOT, inclusive/reversed ranges and int64 precision.
+
+```sh
+node benchmarks/expressions.mjs --reference-dir /path/to/reference-directory --output /path/to/expressions-results.json
+```
+
+Use the same reference directory described above, containing `orange-orm@5.5.1`. Without `--reference-dir`, the Rowstitch and raw-SQL checks still run. `--entry /path/to/installed/rowstitch/dist/index.js` can select a built installed package.
+
+The recorded comparison passes 132 cases and identifies nine LIKE/literal contract differences. Orange's SQLite helpers use LIKE patterns; percent signs, underscores, case handling and NUL behavior differ from literal matching. These are different contracts, not upstream defects. The report records generated SQL, binding order and actual SELECT counts; it makes no latency or full-parity claim. The upstream [string predicate](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/column/string/containsCore.js) and [range implementation](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/column/newColumn.js) define the pinned reference behavior. No Orange implementation is embedded in the runner.
