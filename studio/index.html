@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>Rowstitch Studio</title>
+  <link rel="icon" href="/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to the inspector</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-mark" src="/mark.svg" width="28" height="28" alt="">
+      <span class="brand-name">Rowstitch <span class="brand-sub">Studio</span></span>
+    </div>
+    <div class="loaded" id="loaded" aria-live="polite">
+      <span class="loaded-kind" id="loaded-kind">Nothing loaded</span>
+      <span class="loaded-title" id="loaded-title"></span>
+    </div>
+    <div class="actions">
+      <input class="visually-hidden" type="file" id="file-input" accept=".json,application/json" tabindex="-1" aria-hidden="true">
+      <button type="button" class="btn btn-primary" id="open-trace">Open trace</button>
+      <button type="button" class="btn" id="load-demo">Load demo</button>
+      <button type="button" class="btn" id="export-trace" disabled>Export</button>
+      <button type="button" class="btn btn-quiet" id="clear-trace" disabled>Clear</button>
+    </div>
+  </header>
+
+  <div class="notices">
+    <div class="status" id="status" role="status"></div>
+    <div class="error" id="error" role="alert" hidden>
+      <p class="error-text" id="error-text"></p>
+      <button type="button" class="btn btn-small" id="error-dismiss">Dismiss</button>
+    </div>
+  </div>
+
+  <main id="main" tabindex="-1">
+    <section class="empty" id="empty" hidden aria-labelledby="empty-title">
+      <h1 id="empty-title" tabindex="-1">Nothing loaded</h1>
+      <p>Open a Rowstitch trace to see the SQL your app emitted, its bound-value slots, transactions, query plans and schema. The file is read in this tab only. Nothing is uploaded, saved or executed.</p>
+      <div class="empty-actions">
+        <button type="button" class="btn btn-primary" id="empty-open">Open a trace file</button>
+        <button type="button" class="btn" id="empty-demo">Load the fictional demo</button>
+      </div>
+      <p class="fine">Rowstitch trace JSON, version 1, up to 2 MiB. You can also drop the file onto this window.</p>
+    </section>
+
+    <div class="workspace" id="workspace" hidden>
+      <div class="tabs" role="tablist" aria-label="Inspector views">
+        <button type="button" role="tab" class="tab" id="tab-queries" aria-controls="view-queries" aria-selected="true">Queries <span class="tab-count" id="tab-count-queries"></span></button>
+        <button type="button" role="tab" class="tab" id="tab-schema" aria-controls="view-schema" aria-selected="false" tabindex="-1">Schema <span class="tab-count" id="tab-count-schema"></span></button>
+        <button type="button" role="tab" class="tab" id="tab-results" aria-controls="view-results" aria-selected="false" tabindex="-1">Results <span class="tab-count" id="tab-count-results"></span></button>
+        <button type="button" role="tab" class="tab" id="tab-about" aria-controls="view-about" aria-selected="false" tabindex="-1">About this trace</button>
+      </div>
+
+      <section class="view" id="view-queries" role="tabpanel" aria-labelledby="tab-queries">
+        <h1 class="visually-hidden">Queries</h1>
+        <dl class="counts" id="counts"></dl>
+
+        <figure class="thread" id="thread-figure">
+          <div class="thread-scroll" id="thread-scroll"></div>
+          <figcaption class="thread-legend">
+            <span class="legend-item"><span class="swatch swatch-stitch" aria-hidden="true"></span>Statement, in recorded order</span>
+            <span class="legend-item"><span class="swatch swatch-thread" aria-hidden="true"></span>Same transaction</span>
+            <span class="legend-item"><span class="swatch swatch-error" aria-hidden="true"></span>Failed</span>
+            <span class="legend-item legend-scale" id="thread-scale"></span>
+          </figcaption>
+        </figure>
+
+        <div class="split">
+          <section class="list-pane" aria-labelledby="list-title">
+            <h2 class="pane-title" id="list-title">Statements</h2>
+            <div class="filters">
+              <div class="search">
+                <label class="visually-hidden" for="query-search">Search statements</label>
+                <input type="search" id="query-search" placeholder="Search SQL, table or id" autocomplete="off" spellcheck="false">
+                <kbd class="kbd" aria-hidden="true">/</kbd>
+              </div>
+              <div class="filter-row">
+                <div class="select">
+                  <label class="visually-hidden" for="op-filter">Operation</label>
+                  <select id="op-filter">
+                    <option value="all">All operations</option>
+                    <option value="select">Select</option>
+                    <option value="insert">Insert</option>
+                    <option value="update">Update</option>
+                    <option value="delete">Delete</option>
+                    <option value="schema">Schema</option>
+                    <option value="transaction">Transaction</option>
+                  </select>
+                </div>
+                <button type="button" class="btn btn-small toggle" id="errors-only" aria-pressed="false">Failed only <span class="toggle-count" id="errors-count"></span></button>
+              </div>
+              <div class="table-filter" id="table-filter" hidden>
+                <span>Table <code class="mono" id="table-filter-name"></code></span>
+                <button type="button" class="btn btn-small btn-quiet" id="table-filter-clear">Show all tables</button>
+              </div>
+              <p class="showing" id="showing" aria-live="polite"></p>
+            </div>
+            <ol class="query-list" id="query-list" aria-label="Statements in recorded order"></ol>
+          </section>
+
+          <section class="detail-pane" id="detail" aria-labelledby="detail-title">
+            <button type="button" class="btn btn-small btn-quiet back" id="back-to-list">Back to the list</button>
+            <div id="detail-body"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-schema" role="tabpanel" aria-labelledby="tab-schema" hidden>
+        <h1 class="view-title">Schema</h1>
+        <p class="view-lede">Tables and foreign keys as recorded in the trace. The studio does not read a database.</p>
+        <section class="block" aria-labelledby="rel-title">
+          <h2 class="block-title" id="rel-title">Relationships</h2>
+          <ul class="relationships" id="relationships"></ul>
+        </section>
+        <div class="tables" id="tables"></div>
+      </section>
+
+      <section class="view" id="view-results" role="tabpanel" aria-labelledby="tab-results" hidden>
+        <h1 class="view-title">Result previews</h1>
+        <p class="view-lede" id="results-lede">Rows included in the trace file. The studio never runs a query to get them.</p>
+        <div id="results"></div>
+      </section>
+
+      <section class="view" id="view-about" role="tabpanel" aria-labelledby="tab-about" hidden>
+        <h1 class="view-title">About this trace</h1>
+        <dl class="facts" id="facts"></dl>
+        <section class="block" aria-labelledby="notes-title">
+          <h2 class="block-title" id="notes-title">Notes in the trace</h2>
+          <ul class="notes" id="notes"></ul>
+        </section>
+        <section class="block privacy" aria-labelledby="privacy-title">
+          <h2 class="block-title" id="privacy-title">Before you share a trace</h2>
+          <p>Redaction is not anonymization. Bound values may be replaced with <code class="mono">[redacted]</code>, but the title, table and column names, SQL text, statement counts and timings stay readable, and they can reveal what an application does and how its data is shaped.</p>
+          <p>This page shows what is in the file and nothing else. It keeps the trace in this tab's memory only, makes no requests besides loading the fictional demo from this local server, and never executes SQL. Export downloads the trace exactly as loaded. Clear removes it from the page.</p>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <div class="drop-hint" id="drop-hint" aria-hidden="true"><p>Drop one trace file to open it</p></div>
+</body>
+</html>

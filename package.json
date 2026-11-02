@@ -1,0 +1,26 @@
+{
+  "name": "rowstitch",
+  "version": "0.1.0",
+  "description": "A SQLite ORM with guarded writes, batched relations and a local SQL inspector.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Jgolding1998",
+  "repository": { "type": "git", "url": "git+https://github.com/Jgolding1998/rowstitch.git" },
+  "homepage": "https://github.com/Jgolding1998/rowstitch#readme",
+  "bugs": { "url": "https://github.com/Jgolding1998/rowstitch/issues" },
+  "keywords": ["sqlite", "typescript", "orm", "query-inspector", "optimistic-concurrency"],
+  "engines": { "node": "^24.22.2" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "types": "./dist/index.d.ts",
+  "bin": { "rowstitch": "./dist/cli.js" },
+  "files": ["dist", "studio", "README.md", "LICENSE", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "docs/agent-instructions.md", "docs/research.md", "docs/compatibility.md", "docs/images/studio.png", "examples"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:types": "tsc -p tests/types/tsconfig.json",
+    "test:browser": "playwright test",
+    "demo": "node dist/cli.js demo",
+    "prepack": "npm run build"
+  },
+  "devDependencies": { "@playwright/test": "1.64.1", "@types/node": "24.19.2", "typescript": "7.0.2" }
+}

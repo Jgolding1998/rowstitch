@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Rowstitch">
+  <rect width="32" height="32" rx="8" fill="#23201b"/>
+  <path d="M7 10h18M7 16h18M7 22h18" stroke="#efe9de" stroke-width="2" stroke-linecap="round"/>
+  <path d="M12 6.5c8 2.2 8 4.8 0 7s-8 4.8 0 7 8 4.8 0 7" fill="none" stroke="#5fbfa6" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="4.2 2.6"/>
+</svg>

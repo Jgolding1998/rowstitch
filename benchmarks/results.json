@@ -1,0 +1,246 @@
+{
+  "format": "rowstitch-comparison",
+  "version": 1,
+  "environment": {
+    "node": "v24.22.2",
+    "platform": "win32",
+    "architecture": "x64",
+    "rowstitch": "0.1.0",
+    "nodeSQLite": "3.53.4",
+    "kyselySQLite": "3.51.2",
+    "orange": "5.5.1",
+    "kysely": "0.29.8",
+    "betterSqlite3": "12.6.2",
+    "orangeSQLite": "3.53.4",
+    "orangeEntry": "Published npm CommonJS source export, dynamically imported after explicit resolution"
+  },
+  "fixture": {
+    "parentsWithChildren": 40,
+    "emptyParents": 1,
+    "childrenPerParent": 3,
+    "journalMode": "DELETE",
+    "synchronous": "FULL"
+  },
+  "cases": [
+    {
+      "tool": "rowstitch",
+      "name": "Bound injection text returns no rows",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch",
+      "name": "Batched graph with empty parent",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 120,
+      "selectQueries": 2
+    },
+    {
+      "tool": "rowstitch",
+      "name": "Per-parent child limit",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 80,
+      "selectQueries": 2
+    },
+    {
+      "tool": "rowstitch",
+      "name": "Posts include their referenced author",
+      "status": "pass",
+      "postRows": 120,
+      "selectQueries": 2,
+      "note": "Current implementation batches singular relations separately from the root read."
+    },
+    {
+      "tool": "rowstitch",
+      "name": "Selected names exclude unrelated application fields",
+      "status": "pass",
+      "returnedFields": [
+        "name"
+      ],
+      "note": "Rowstitch returns only requested fields; join keys stay internal when needed."
+    },
+    {
+      "tool": "rowstitch",
+      "name": "Real insert rolls back after transaction failure",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch",
+      "name": "Independent stale update preserves winning write",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch",
+      "name": "Real JSON update tolerates reordered equivalent stored keys",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch",
+      "name": "Schema introspection includes both tables",
+      "status": "pass"
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "Bound injection text returns no rows",
+      "status": "pass"
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "Batched graph with empty parent",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 120,
+      "selectQueries": 2,
+      "note": "Explicit application SQL and grouping recipe."
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "Per-parent child limit",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 80,
+      "selectQueries": 2,
+      "note": "Explicit application SQL and grouping recipe."
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "Posts include their referenced author",
+      "status": "pass",
+      "postRows": 120,
+      "selectQueries": 1,
+      "note": "Explicit application LEFT JOIN recipe."
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "Selected names exclude unrelated application fields",
+      "status": "pass",
+      "returnedFields": [
+        "name"
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "Real insert rolls back after transaction failure",
+      "status": "pass"
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "Bound injection text returns no rows",
+      "status": "pass"
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "Batched graph with empty parent",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 120,
+      "selectQueries": 2
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "Per-parent child limit",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 80,
+      "selectQueries": 2
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "Posts include their referenced author",
+      "status": "pass",
+      "postRows": 120,
+      "selectQueries": 1
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "Selected names exclude unrelated application fields",
+      "status": "pass",
+      "returnedFields": [
+        "id",
+        "name"
+      ],
+      "note": "Orange retains primary keys for Active Record identity. This is its contract, not a projection defect."
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "Real insert rolls back after transaction failure",
+      "status": "pass"
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "Independent stale update preserves winning write",
+      "status": "pass"
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "Real JSON update tolerates reordered equivalent stored keys",
+      "status": "pass"
+    },
+    {
+      "tool": "kysely@0.29.8",
+      "name": "Bound injection text returns no rows",
+      "status": "pass"
+    },
+    {
+      "tool": "kysely@0.29.8",
+      "name": "Batched graph with empty parent",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 120,
+      "selectQueries": 2,
+      "note": "Explicit application batching/window recipe."
+    },
+    {
+      "tool": "kysely@0.29.8",
+      "name": "Per-parent child limit",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 80,
+      "selectQueries": 2,
+      "note": "Explicit application batching/window recipe."
+    },
+    {
+      "tool": "kysely@0.29.8",
+      "name": "Posts include their referenced author",
+      "status": "pass",
+      "postRows": 120,
+      "selectQueries": 1,
+      "note": "Explicit application LEFT JOIN recipe."
+    },
+    {
+      "tool": "kysely@0.29.8",
+      "name": "Selected names exclude unrelated application fields",
+      "status": "pass",
+      "returnedFields": [
+        "name"
+      ]
+    },
+    {
+      "tool": "kysely@0.29.8",
+      "name": "Real insert rolls back after transaction failure",
+      "status": "pass"
+    },
+    {
+      "tool": "kysely@0.29.8",
+      "name": "Independent stale update preserves winning write",
+      "status": "pass",
+      "note": "Explicit application version predicate and affected-row check."
+    },
+    {
+      "tool": "kysely@0.29.8",
+      "name": "Schema introspection includes both tables",
+      "status": "pass"
+    }
+  ],
+  "limitations": [
+    "Fixed SQLite correctness and query-count cases only; no latency, throughput or universal-superiority claim.",
+    "SQLite versions are queried from each backend. Orange selects its SQLite backend by runtime; Kysely uses the pinned native driver here.",
+    "Kysely and raw SQLite use explicit application batching and version predicates; they are not Active Record relation mappers.",
+    "Orange supports many more databases/runtimes than Rowstitch. Passing this fixture is not feature parity or a complete security audit."
+  ],
+  "summary": {
+    "passed": 31,
+    "failed": 0
+  }
+}
