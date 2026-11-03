@@ -10,10 +10,12 @@ Use the library inside a Node app, such as a small inventory tool or a backend t
 
 ## Try the inspector
 
-Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
+Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. The latest published release is **0.4.0**. The `main` branch also contains the upcoming related-count feature; build from source below to try it while release checks are pending.
+
+Run the published GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.5.0/rowstitch-0.5.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.4.0/rowstitch-0.4.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -35,7 +37,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.5.0/rowstitch-0.5.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.4.0/rowstitch-0.4.0.tgz
 ```
 
 ```ts
