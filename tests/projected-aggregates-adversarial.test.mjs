@@ -159,13 +159,16 @@ test('relation-depth accounting includes nested predicates inside a projected pa
   assert.throws(()=>db.table(node).compileSelect({aggregates:{n:over}}),code('QUERY'));
 });
 
-test('related selectors are genuine, correctly registered and rejected outside their supported scope', t => {
+test('related selectors retain genuine brands and registration across per-row and grouped scopes', t => {
   const {parent,child,relation}=models();const db=memory(t,[parent,child]);
   const selector=agg.related(relation,agg.count());
   const clone=Object.assign({},selector);
   for(const value of [clone,agg.count(),{},null])assert.throws(()=>db.table(parent).findMany({aggregates:{n:value}}),invalid);
-  assert.throws(()=>db.table(parent).aggregate({select:{n:selector}}),invalid);
-  assert.throws(()=>db.table(parent).groupBy({by:['label'],select:{n:selector}}),invalid);
+  // M8 intentionally broadens related selectors to root/group summaries, while forged selectors remain refused.
+  assert.deepEqual(db.table(parent).aggregate({select:{n:selector}}),{n:0});
+  assert.deepEqual(db.table(parent).groupBy({by:['label'],select:{n:selector}}),[]);
+  assert.throws(()=>db.table(parent).aggregate({select:{n:clone}}),invalid);
+  assert.throws(()=>db.table(parent).groupBy({by:['label'],select:{n:clone}}),invalid);
   const hidden=defineTable('pa_hidden',{id:column.integer().primaryKey(),parentId:column.integer()});
   const unregistered=hasMany(hidden,{localKey:parent.col('id'),foreignKey:hidden.col('parentId')});
   assert.throws(()=>db.table(parent).compileSelect({aggregates:{n:agg.related(unregistered,agg.count())}}),code('SCHEMA'));

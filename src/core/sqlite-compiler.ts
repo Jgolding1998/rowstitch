@@ -175,7 +175,13 @@ export function compileSqlite(input: QueryModel): CompiledQuery {
     sql: 'INSERT INTO ' + table + (query.columns.length ? ' (' + query.columns.map(identifier).join(', ') + ') VALUES (' + query.columns.map(() => '?').join(', ') + ')' : ' DEFAULT VALUES') + ' RETURNING *',
     parameters: [...query.values],
   };
-  if (query.kind === 'aggregate' || query.kind === 'group') return compileSqliteAggregate(query, renderPredicate(query.where, table));
+  if (query.kind === 'aggregate' || query.kind === 'group') {
+    // The main WHERE is rendered first with a fresh counter, so statements without related selectors are unchanged.
+    // Related subqueries continue the same counter, keeping every generated alias distinct.
+    const aliases = { next: 0 };
+    const where = renderPredicate(query.where, table, aliases);
+    return compileSqliteAggregate(query, where, (predicate, scope) => renderPredicate(predicate, scope, aliases), () => '"__rs_filter_' + aliases.next++ + '"');
+  }
   if (query.kind === 'select' && query.aggregates?.length) {
     // Select-list subqueries precede WHERE in the statement text, so their values are bound first.
     const aliases = { next: 0 };

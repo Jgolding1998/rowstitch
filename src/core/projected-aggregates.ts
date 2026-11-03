@@ -2,7 +2,7 @@
 import { RowstitchError, fail } from './errors.js';
 import { decode, isColumnRef, isTable, type AnyTable, type Column, type Kind } from './schema.js';
 import { mappedTableModel } from './model-mapping.js';
-import { isAggregateSelector, isRelatedAggregate, MAX_SELECTORS } from './aggregates.js';
+import { isAggregateSelector, isRelatedAggregate, lowerRelatedPath, MAX_SELECTORS } from './aggregates.js';
 import { filterRelationSnapshot, type LoweringBudget, type Predicate } from './predicates.js';
 import { MAX_RELATION_PATH, type PredicateModel, type ProjectedAggregateModel, type RelationStepModel } from './query-model.js';
 import { projectedLayout } from './projected-layout.js';
@@ -54,27 +54,10 @@ export function projectedAggregatesToModel(root: AnyTable, input: unknown, conte
     seen.add(alias.toLowerCase());
     if (isAggregateSelector(value)) fail('QUERY', 'Per-row aggregates need agg.related; plain agg selectors belong in aggregate or groupBy.');
     if (!isRelatedAggregate(value)) fail('QUERY', 'Per-row aggregates must be created with agg.related.');
-    const path: RelationStepModel[] = [];
-    let scope = root, item: unknown = value;
-    while (isRelatedAggregate(item)) {
-      if (path.length >= MAX_RELATION_PATH) fail('QUERY', 'Related aggregates support at most four relationships in a path.');
-      const { table, options } = filterRelationSnapshot(item.relation);
-      const { localKey, foreignKey, where } = options;
-      if (!isColumnRef(localKey) || localKey.table !== scope) fail('QUERY', 'Each related aggregate relation must start from the previous table in its path.');
-      if (!isColumnRef(foreignKey) || foreignKey.table !== table) fail('QUERY', 'A relation foreign key must belong to its related table.');
-      context.mapped(table);
-      const domain = where === undefined ? undefined : context.where(table, where, budget, path.length + 1);
-      path.push(Object.freeze({ table: mappedTableModel(table), localKey: localKey.name, foreignKey: foreignKey.name, ...(domain === undefined ? {} : { where: domain }) }));
-      scope = table;
-      item = item.selector;
-    }
-    if (!isAggregateSelector(item)) fail('QUERY', 'agg.related needs an agg selector at the end of its path.');
+    const { path, leaf: scope, selector: item } = lowerRelatedPath(root, value, { mapped: context.mapped, domain: context.where }, budget);
     const ref = item.ref;
-    if (ref !== undefined && (ref.table !== scope || !Object.hasOwn(scope.columns, ref.name))) fail('QUERY', 'A related aggregate column must belong to the last table in its path.');
-    if (ref === undefined && item.operation !== 'count') fail('QUERY', 'This aggregate needs a column.');
-    if (ref !== undefined && item.operation === 'avg' && kindOf(scope, ref.name) === 'bigint' && !item.approximate) fail('QUERY', 'A bigint average is approximate; pass { approximate: true }.');
     models.push(Object.freeze({ alias, operation: item.operation, ...(ref === undefined ? {} : { column: ref.name }),
-      ...(item.approximate ? { approximate: true as const } : {}), path: Object.freeze(path) }));
+      ...(item.approximate ? { approximate: true as const } : {}), path }));
     leaves.push(scope);
   }
   return Object.freeze({ models: Object.freeze(models), leaves: Object.freeze(leaves) });

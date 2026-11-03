@@ -1,0 +1,673 @@
+{
+  "format": "rowstitch-grouped-related-comparison",
+  "version": 1,
+  "environment": {
+    "node": "v24.22.2",
+    "rowstitch": "0.8.0"
+  },
+  "reference": "orange-orm@5.5.1",
+  "scope": "Root and grouped related aggregates on two fixed SQLite fixtures. Checks count complete output rows, not independent use cases. No speed ranking.",
+  "limitations": [
+    "Shared integers stay in the safe number range; exact large sums, storage guards and collations are tested independently.",
+    "The two-collection observation compares independent path totals with the explicitly computed cross-product of the two LEFT JOIN domains. It is scoped to the pinned SQLite release and these fixtures.",
+    "Related domain filters are tested against the independent oracle only. They are not claimed to reproduce the Orange API.",
+    "Unexpected outcomes throw and write no success report. NULL/NaN/zero representation differences are recorded separately."
+  ],
+  "fixtures": [
+    {
+      "name": "small",
+      "parents": 11,
+      "children": 27,
+      "payments": 15,
+      "sqlite": {
+        "rowstitch": "3.53.4",
+        "orange": "3.53.4"
+      },
+      "cases": [
+        {
+          "name": "root / count leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select count(\"zchildren\".\"id\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / count nonnull",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select count(\"zchildren\".\"amount\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / sum leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select COALESCE(sum(\"zchildren\".\"amount\"), 0) as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / average leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select COALESCE(avg(\"zchildren\".\"score\"), 0) as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / min leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select min(\"zchildren\".\"score\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / max leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select max(\"zchildren\".\"score\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / two child collections with root count",
+          "rows": 1,
+          "passed": true,
+          "joinMultiplicityObservations": [
+            {
+              "group": "all",
+              "fields": [
+                "roots",
+                "a",
+                "b"
+              ],
+              "independentPathResult": {
+                "roots": 11,
+                "a": "249",
+                "b": "39"
+              },
+              "orangeObserved": {
+                "roots": 42,
+                "a": 408,
+                "b": 89
+              },
+              "joinedOracle": {
+                "roots": 42,
+                "a": "408",
+                "b": "89"
+              },
+              "representationDifferences": []
+            }
+          ],
+          "orangeSql": "select count(\"gp\".\"id\") as \"roots\",COALESCE(sum(\"zchildren\".\"amount\"), 0) as \"a\",COALESCE(sum(\"zpayments\".\"amount\"), 0) as \"b\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") LEFT JOIN \"gm\" \"zpayments\" ON (\"gp\".\"id\"=\"zpayments\".\"parentId\")"
+        },
+        {
+          "name": "group / count leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select \"gp\".\"category\" \"category\",count(\"zchildren\".\"id\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / count nonnull",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select \"gp\".\"category\" \"category\",count(\"zchildren\".\"amount\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / sum leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [
+            {
+              "group": "Empty",
+              "differences": [
+                {
+                  "field": "value",
+                  "expected": null,
+                  "actual": 0
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",COALESCE(sum(\"zchildren\".\"amount\"), 0) as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / average leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [
+            {
+              "group": "Empty",
+              "differences": [
+                {
+                  "field": "value",
+                  "expected": null,
+                  "actual": 0
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",COALESCE(avg(\"zchildren\".\"score\"), 0) as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / min leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [
+            {
+              "group": "Empty",
+              "differences": [
+                {
+                  "field": "value",
+                  "expected": null,
+                  "actual": "NaN"
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",min(\"zchildren\".\"score\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / max leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [
+            {
+              "group": "Empty",
+              "differences": [
+                {
+                  "field": "value",
+                  "expected": null,
+                  "actual": "NaN"
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",max(\"zchildren\".\"score\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / two child collections with root count",
+          "rows": 6,
+          "passed": true,
+          "joinMultiplicityObservations": [
+            {
+              "group": null,
+              "fields": [
+                "roots"
+              ],
+              "independentPathResult": {
+                "category": null,
+                "roots": 2,
+                "a": "20",
+                "b": "2"
+              },
+              "orangeObserved": {
+                "category": null,
+                "roots": 3,
+                "a": 20,
+                "b": 2
+              },
+              "joinedOracle": {
+                "category": null,
+                "roots": 3,
+                "a": "20",
+                "b": "2"
+              },
+              "representationDifferences": []
+            },
+            {
+              "group": "Group 0",
+              "fields": [
+                "roots",
+                "b"
+              ],
+              "independentPathResult": {
+                "category": "Group 0",
+                "roots": 2,
+                "a": "44",
+                "b": "4"
+              },
+              "orangeObserved": {
+                "category": "Group 0",
+                "roots": 8,
+                "a": 44,
+                "b": 16
+              },
+              "joinedOracle": {
+                "category": "Group 0",
+                "roots": 8,
+                "a": "44",
+                "b": "16"
+              },
+              "representationDifferences": []
+            },
+            {
+              "group": "Group 1",
+              "fields": [
+                "roots",
+                "a",
+                "b"
+              ],
+              "independentPathResult": {
+                "category": "Group 1",
+                "roots": 3,
+                "a": "41",
+                "b": "15"
+              },
+              "orangeObserved": {
+                "category": "Group 1",
+                "roots": 14,
+                "a": 82,
+                "b": 35
+              },
+              "joinedOracle": {
+                "category": "Group 1",
+                "roots": 14,
+                "a": "82",
+                "b": "35"
+              },
+              "representationDifferences": []
+            },
+            {
+              "group": "Group 2",
+              "fields": [
+                "roots",
+                "a",
+                "b"
+              ],
+              "independentPathResult": {
+                "category": "Group 2",
+                "roots": 2,
+                "a": "59",
+                "b": "18"
+              },
+              "orangeObserved": {
+                "category": "Group 2",
+                "roots": 12,
+                "a": 177,
+                "b": 36
+              },
+              "joinedOracle": {
+                "category": "Group 2",
+                "roots": 12,
+                "a": "177",
+                "b": "36"
+              },
+              "representationDifferences": []
+            },
+            {
+              "group": "Group 3",
+              "fields": [
+                "roots"
+              ],
+              "independentPathResult": {
+                "category": "Group 3",
+                "roots": 1,
+                "a": "85",
+                "b": null
+              },
+              "orangeObserved": {
+                "category": "Group 3",
+                "roots": 4,
+                "a": 85,
+                "b": 0
+              },
+              "joinedOracle": {
+                "category": "Group 3",
+                "roots": 4,
+                "a": "85",
+                "b": null
+              },
+              "representationDifferences": [
+                {
+                  "field": "b",
+                  "expected": null,
+                  "actual": 0
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",count(\"gp\".\"id\") as \"roots\",COALESCE(sum(\"zchildren\".\"amount\"), 0) as \"a\",COALESCE(sum(\"zpayments\".\"amount\"), 0) as \"b\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") LEFT JOIN \"gm\" \"zpayments\" ON (\"gp\".\"id\"=\"zpayments\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "root filter plus related domain",
+          "rows": 5,
+          "passed": true,
+          "reference": "Not compared: a related descriptor domain is a Rowstitch API contract."
+        }
+      ]
+    },
+    {
+      "name": "uneven",
+      "parents": 29,
+      "children": 76,
+      "payments": 42,
+      "sqlite": {
+        "rowstitch": "3.53.4",
+        "orange": "3.53.4"
+      },
+      "cases": [
+        {
+          "name": "root / count leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select count(\"zchildren\".\"id\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / count nonnull",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select count(\"zchildren\".\"amount\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / sum leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select COALESCE(sum(\"zchildren\".\"amount\"), 0) as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / average leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select COALESCE(avg(\"zchildren\".\"score\"), 0) as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / min leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select min(\"zchildren\".\"score\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / max leaves",
+          "rows": 1,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select max(\"zchildren\".\"score\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\")"
+        },
+        {
+          "name": "root / two child collections with root count",
+          "rows": 1,
+          "passed": true,
+          "joinMultiplicityObservations": [
+            {
+              "group": "all",
+              "fields": [
+                "roots",
+                "a",
+                "b"
+              ],
+              "independentPathResult": {
+                "roots": 29,
+                "a": "929",
+                "b": "112"
+              },
+              "orangeObserved": {
+                "roots": 139,
+                "a": 1665,
+                "b": 325
+              },
+              "joinedOracle": {
+                "roots": 139,
+                "a": "1665",
+                "b": "325"
+              },
+              "representationDifferences": []
+            }
+          ],
+          "orangeSql": "select count(\"gp\".\"id\") as \"roots\",COALESCE(sum(\"zchildren\".\"amount\"), 0) as \"a\",COALESCE(sum(\"zpayments\".\"amount\"), 0) as \"b\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") LEFT JOIN \"gm\" \"zpayments\" ON (\"gp\".\"id\"=\"zpayments\".\"parentId\")"
+        },
+        {
+          "name": "group / count leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select \"gp\".\"category\" \"category\",count(\"zchildren\".\"id\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / count nonnull",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [],
+          "orangeSql": "select \"gp\".\"category\" \"category\",count(\"zchildren\".\"amount\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / sum leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [
+            {
+              "group": "Empty",
+              "differences": [
+                {
+                  "field": "value",
+                  "expected": null,
+                  "actual": 0
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",COALESCE(sum(\"zchildren\".\"amount\"), 0) as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / average leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [
+            {
+              "group": "Empty",
+              "differences": [
+                {
+                  "field": "value",
+                  "expected": null,
+                  "actual": 0
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",COALESCE(avg(\"zchildren\".\"score\"), 0) as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / min leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [
+            {
+              "group": "Empty",
+              "differences": [
+                {
+                  "field": "value",
+                  "expected": null,
+                  "actual": "NaN"
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",min(\"zchildren\".\"score\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / max leaves",
+          "rows": 6,
+          "passed": true,
+          "referenceDifferences": [
+            {
+              "group": "Empty",
+              "differences": [
+                {
+                  "field": "value",
+                  "expected": null,
+                  "actual": "NaN"
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",max(\"zchildren\".\"score\") as \"value\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "group / two child collections with root count",
+          "rows": 6,
+          "passed": true,
+          "joinMultiplicityObservations": [
+            {
+              "group": null,
+              "fields": [
+                "roots",
+                "a",
+                "b"
+              ],
+              "independentPathResult": {
+                "category": null,
+                "roots": 4,
+                "a": "151",
+                "b": "16"
+              },
+              "orangeObserved": {
+                "category": null,
+                "roots": 22,
+                "a": 314,
+                "b": 47
+              },
+              "joinedOracle": {
+                "category": null,
+                "roots": 22,
+                "a": "314",
+                "b": "47"
+              },
+              "representationDifferences": []
+            },
+            {
+              "group": "Group 0",
+              "fields": [
+                "roots",
+                "b"
+              ],
+              "independentPathResult": {
+                "category": "Group 0",
+                "roots": 6,
+                "a": "285",
+                "b": "12"
+              },
+              "orangeObserved": {
+                "category": "Group 0",
+                "roots": 18,
+                "a": 285,
+                "b": 36
+              },
+              "joinedOracle": {
+                "category": "Group 0",
+                "roots": 18,
+                "a": "285",
+                "b": "36"
+              },
+              "representationDifferences": []
+            },
+            {
+              "group": "Group 1",
+              "fields": [
+                "roots",
+                "a",
+                "b"
+              ],
+              "independentPathResult": {
+                "category": "Group 1",
+                "roots": 6,
+                "a": "229",
+                "b": "30"
+              },
+              "orangeObserved": {
+                "category": "Group 1",
+                "roots": 32,
+                "a": 458,
+                "b": 80
+              },
+              "joinedOracle": {
+                "category": "Group 1",
+                "roots": 32,
+                "a": "458",
+                "b": "80"
+              },
+              "representationDifferences": []
+            },
+            {
+              "group": "Group 2",
+              "fields": [
+                "roots",
+                "a",
+                "b"
+              ],
+              "independentPathResult": {
+                "category": "Group 2",
+                "roots": 6,
+                "a": "172",
+                "b": "54"
+              },
+              "orangeObserved": {
+                "category": "Group 2",
+                "roots": 54,
+                "a": 516,
+                "b": 162
+              },
+              "joinedOracle": {
+                "category": "Group 2",
+                "roots": 54,
+                "a": "516",
+                "b": "162"
+              },
+              "representationDifferences": []
+            },
+            {
+              "group": "Group 3",
+              "fields": [
+                "roots"
+              ],
+              "independentPathResult": {
+                "category": "Group 3",
+                "roots": 6,
+                "a": "92",
+                "b": null
+              },
+              "orangeObserved": {
+                "category": "Group 3",
+                "roots": 12,
+                "a": 92,
+                "b": 0
+              },
+              "joinedOracle": {
+                "category": "Group 3",
+                "roots": 12,
+                "a": "92",
+                "b": null
+              },
+              "representationDifferences": [
+                {
+                  "field": "b",
+                  "expected": null,
+                  "actual": 0
+                }
+              ]
+            }
+          ],
+          "orangeSql": "select \"gp\".\"category\" \"category\",count(\"gp\".\"id\") as \"roots\",COALESCE(sum(\"zchildren\".\"amount\"), 0) as \"a\",COALESCE(sum(\"zpayments\".\"amount\"), 0) as \"b\" from \"gp\" \"gp\" LEFT JOIN \"gc\" \"zchildren\" ON (\"gp\".\"id\"=\"zchildren\".\"parentId\") LEFT JOIN \"gm\" \"zpayments\" ON (\"gp\".\"id\"=\"zpayments\".\"parentId\") GROUP BY \"gp\".\"category\" order by \"category\""
+        },
+        {
+          "name": "root filter plus related domain",
+          "rows": 6,
+          "passed": true,
+          "reference": "Not compared: a related descriptor domain is a Rowstitch API contract."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "rowstitchOracleRows": 109,
+    "referenceEqualRows": 76,
+    "referenceNormalizedRows": 10,
+    "observedJoinMultiplicityRows": 12,
+    "queryScenarios": 30,
+    "passed": 109,
+    "failed": 0
+  }
+}

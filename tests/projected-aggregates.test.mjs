@@ -177,13 +177,15 @@ test('aliases: unique ignoring case, not reserved, and not repeating selected co
   } finally { db.close(); }
 });
 
-test('branding: plain selectors are refused per row, agg.related is refused by root aggregate/groupBy, forgeries and scope errors', () => {
+test('branding: plain selectors are refused per row; root aggregate/groupBy accept genuine agg.related (M8); forgeries and scope errors', () => {
   const db = seeded();
   try {
     const n = agg.related(customerOrders, agg.count());
     assert.throws(() => db.table(customers).findMany({ aggregates: { n: agg.count() } }), coded('QUERY'));
-    assert.throws(() => db.table(customers).aggregate({ select: { n } }), e => coded('QUERY')(e) && /findMany\/findFirst/.test(e.message));
-    assert.throws(() => db.table(customers).groupBy({ by: ['region'], select: { n } }), e => coded('QUERY')(e) && /findMany\/findFirst/.test(e.message));
+    // M8 intentional change: these two calls were refusals in M7; they now return grouped related counts.
+    assert.deepEqual(db.table(customers).aggregate({ select: { n } }), { n: 3 });
+    assert.deepEqual(db.table(customers).groupBy({ by: ['region'], select: { n } }), [{ region: null, n: 1 }, { region: 'north', n: 2 }, { region: 'south', n: 0 }]);
+    assert.throws(() => db.table(customers).aggregate({ select: { n: Object.freeze({ relation: customerOrders, selector: agg.count() }) } }), coded('QUERY'));
     assert.throws(() => db.table(customers).findMany({ aggregates: { n: Object.freeze({ relation: customerOrders, selector: agg.count() }) } }), coded('QUERY'));
     for (const call of [() => agg.related(customerOrders), () => agg.related(customerOrders, agg.count(), {}), () => agg.related(customerOrders, { operation: 'count' }),
       () => agg.related({ ...customerOrders }, agg.count()), () => agg.related(hasMany(orders, { localKey: customers.col('id'), foreignKey: orders.col('customerId'), limit: 1 }), agg.count()),
@@ -232,5 +234,17 @@ test('integration: projection, includes and hidden keys, bound order, explain, r
     let escaped;
     db.transaction(tx => { escaped = tx.table(customers); assert.equal(escaped.findMany({ aggregates: { n: agg.related(customerOrders, agg.count()) } }).length, 3); });
     assert.throws(() => escaped.findMany({ aggregates: { n: agg.related(customerOrders, agg.count()) } }), coded('TRANSACTION_CLOSED'));
+  } finally { db.close(); }
+});
+
+test('several related selectors with different domain values bind in SQL order (values first, then the trailing guard)', () => {
+  const db = seeded();
+  try {
+    const byStatus = status => hasMany(orders, { localKey: customers.col('id'), foreignKey: orders.col('customerId'), where: eq(orders.col('status'), status) });
+    const linesOf = status => agg.related(byStatus(status), agg.related(orderLines, agg.sum(lines.col('cents'))));
+    const options = { where: eq(customers.col('id'), 1), select: ['id'], aggregates: { open: agg.related(byStatus('open'), agg.count()), paidCents: linesOf('paid'), openCents: linesOf('open') } };
+    // Released 0.7.0 bound each selector's guard values right after its own values; SQL places all guards last.
+    assert.deepEqual(db.table(customers).findMany(options), [{ id: 1, open: 1, paidCents: 10n, openCents: 6n }]);
+    assert.deepEqual(db.table(customers).compileSelect(options).parameters, ['open', 'paid', 'paid', 'open', 'open', 'open', 'paid', 'open', 1, 1000, 0]);
   } finally { db.close(); }
 });

@@ -42,9 +42,10 @@ export interface SelectModel extends HasTable {
   readonly aggregates?: readonly ProjectedAggregateModel[];
 }
 export interface CountModel extends HasTable { readonly kind: 'count'; readonly where?: PredicateModel }
+/** With `path`, the selection aggregates the leaf rows of that relation path and `column` names a leaf-table column. */
 export interface AggregateSelectModel {
   readonly alias: string; readonly operation: 'count' | 'sum' | 'avg' | 'min' | 'max';
-  readonly column?: string; readonly approximate?: true;
+  readonly column?: string; readonly approximate?: true; readonly path?: readonly RelationStepModel[];
 }
 export interface AggregateModel extends HasTable {
   readonly kind: 'aggregate'; readonly select: readonly AggregateSelectModel[]; readonly where?: PredicateModel;
@@ -354,26 +355,29 @@ function definition(input: unknown, table: TableModel): ColumnDefinitionModel {
   return Object.freeze({ ...base, ...defaultValue, ...foreignKey });
 }
 
-function aggregateSelections(table: TableModel, source: unknown, groupKeys: readonly string[] = []): readonly AggregateSelectModel[] {
+function aggregateSelections(table: TableModel, source: unknown, budget: PredicateBudget, groupKeys: readonly string[] = []): readonly AggregateSelectModel[] {
   if (!table.kinds || !table.nullable) fail('QUERY', 'Aggregates require complete column kind and nullability metadata.');
   const occupied = new Set(groupKeys.map(key => key.toLowerCase()));
   const selections = list(source, 32, 1).map(item => {
-    const value = record(item, ['alias', 'operation', 'column', 'approximate']);
+    const value = record(item, ['alias', 'operation', 'column', 'approximate', 'path']);
     const alias = name(value.alias), operation = value.operation;
     if (occupied.has(alias.toLowerCase())) fail('QUERY', 'Aggregate aliases must be unique and distinct from grouping keys ignoring case.');
     occupied.add(alias.toLowerCase());
     if (typeof operation !== 'string' || !['count', 'sum', 'avg', 'min', 'max'].includes(operation)) fail('QUERY', 'The aggregate operation is not supported.');
-    const column = value.column === undefined ? undefined : field(table, value.column);
+    // A related selection is validated against its leaf table; the root table only supplies the first local key.
+    const related = value.path === undefined ? undefined : relationPath(table, value.path, budget);
+    const scope = related?.leaf ?? table;
+    const column = value.column === undefined ? undefined : field(scope, value.column);
     if (column === undefined && operation !== 'count') fail('QUERY', 'This aggregate requires a mapped column.');
-    const kind = column === undefined ? undefined : table.kinds![column];
+    const kind = column === undefined ? undefined : scope.kinds![column];
     if (kind === 'json' || (operation === 'sum' || operation === 'avg') && !['integer', 'bigint', 'real'].includes(kind!)
         || (operation === 'min' || operation === 'max') && !['integer', 'bigint', 'real', 'text'].includes(kind!)) fail('QUERY', 'The aggregate does not support this column kind.');
     if (Object.hasOwn(value, 'approximate') && (value.approximate !== true || operation !== 'avg')
         || operation === 'avg' && kind === 'bigint' && value.approximate !== true) fail('QUERY', 'Bigint averages require approximate: true; only averages accept that option.');
     return Object.freeze({ alias, operation: operation as AggregateSelectModel['operation'], ...(column === undefined ? {} : { column }),
-      ...(value.approximate === true ? { approximate: true as const } : {}) });
+      ...(value.approximate === true ? { approximate: true as const } : {}), ...(related === undefined ? {} : { path: related.path }) });
   });
-  const outputs = groupKeys.length + 1 + selections.reduce((total, selection) => total + (selection.operation === 'sum' && ['integer', 'bigint'].includes(table.kinds![selection.column!]) ? 2 : 1), 0);
+  const outputs = groupKeys.length + 1 + selections.reduce((total, selection) => total + (selectionIntegerSum(table, selection) ? 2 : 1), 0);
   if (outputs > 128) fail('QUERY', 'An aggregate query has too many generated outputs.');
   return Object.freeze(selections);
 }
@@ -400,6 +404,39 @@ export function projectedIntegerSum(aggregate: ProjectedAggregateModel): boolean
 export function projectedCopies(aggregate: ProjectedAggregateModel): number {
   return (projectedIntegerSum(aggregate) ? 2 : 1) + 1;
 }
+/** Validates a relation path from `root` with the query-wide budget; a domain at step i starts at relation depth i. */
+function relationPath(root: TableModel, source: unknown, budget: PredicateBudget): { path: readonly RelationStepModel[]; leaf: TableModel } {
+  let scope = root;
+  const path = list(source, MAX_RELATION_PATH, 1).map((item, index) => {
+    const step = record(item, ['table', 'localKey', 'foreignKey', 'where']);
+    const target = tableModel(step.table as TableModel);
+    if (!scope.kinds || !target.kinds || !target.nullable) fail('QUERY', 'Related aggregates require complete column kind and nullability metadata.');
+    const localKey = field(scope, step.localKey), foreignKey = field(target, step.foreignKey);
+    if (!relationKindsCompatible(scope.kinds[localKey], target.kinds[foreignKey])) fail('QUERY', 'Relation paths require compatible integer, bigint or text keys.');
+    const where = step.where === undefined ? undefined : predicateModel(target, step.where as PredicateModel, budget, index + 1);
+    scope = target;
+    return Object.freeze({ table: target, localKey, foreignKey, ...(where === undefined ? {} : { where }) });
+  });
+  return { path: Object.freeze(path), leaf: scope };
+}
+/** The table whose column a root aggregate selection reads: the root, or the leaf of its relation path. */
+export function selectionTable(root: TableModel, selection: AggregateSelectModel): TableModel {
+  return selection.path === undefined ? root : selection.path[selection.path.length - 1].table;
+}
+/** True when a root aggregate selection is rendered as an exact split integer sum (two outputs). */
+export function selectionIntegerSum(root: TableModel, selection: AggregateSelectModel): boolean {
+  return selection.operation === 'sum' && selection.column !== undefined && ['integer', 'bigint'].includes(selectionTable(root, selection).kinds![selection.column]);
+}
+/**
+ * Bound values (excluding LIMIT/OFFSET) of an aggregate/group statement. Every related selection repeats the root WHERE
+ * and its own domains once per physical copy: its value subquery (two for a split integer sum) and its storage guard.
+ */
+export function aggregatePhysicalParameters(query: AggregateModel | GroupModel): number {
+  const where = predicateParameterCount(query.where);
+  return where + query.select.reduce((total, selection) => selection.path === undefined ? total
+    : total + ((selectionIntegerSum(query.table, selection) ? 2 : 1) + 1)
+      * (where + selection.path.reduce((sum, step) => sum + predicateParameterCount(step.where), 0)), 0);
+}
 function projectedAggregates(root: TableModel, source: unknown, budget: PredicateBudget): readonly ProjectedAggregateModel[] {
   const occupied = new Set<string>();
   return Object.freeze(list(source, MAX_PROJECTED_AGGREGATES, 1).map(item => {
@@ -408,17 +445,7 @@ function projectedAggregates(root: TableModel, source: unknown, budget: Predicat
     if (occupied.has(alias.toLowerCase())) fail('QUERY', 'Projected aggregate aliases must be unique ignoring case.');
     occupied.add(alias.toLowerCase());
     if (typeof operation !== 'string' || !['count', 'sum', 'avg', 'min', 'max'].includes(operation)) fail('QUERY', 'The aggregate operation is not supported.');
-    let scope = root;
-    const path = list(value.path, MAX_RELATION_PATH, 1).map((source, index) => {
-      const step = record(source, ['table', 'localKey', 'foreignKey', 'where']);
-      const target = tableModel(step.table as TableModel);
-      if (!scope.kinds || !target.kinds || !target.nullable) fail('QUERY', 'Projected aggregates require complete column kind and nullability metadata.');
-      const localKey = field(scope, step.localKey), foreignKey = field(target, step.foreignKey);
-      if (!relationKindsCompatible(scope.kinds[localKey], target.kinds[foreignKey])) fail('QUERY', 'Relation paths require compatible integer, bigint or text keys.');
-      const where = step.where === undefined ? undefined : predicateModel(target, step.where as PredicateModel, budget, index + 1);
-      scope = target;
-      return Object.freeze({ table: target, localKey, foreignKey, ...(where === undefined ? {} : { where }) });
-    });
+    const { path, leaf: scope } = relationPath(root, value.path, budget);
     const column = value.column === undefined ? undefined : field(scope, value.column);
     if (column === undefined && operation !== 'count') fail('QUERY', 'This aggregate requires a mapped column.');
     const kind = column === undefined ? undefined : scope.kinds![column];
@@ -427,7 +454,7 @@ function projectedAggregates(root: TableModel, source: unknown, budget: Predicat
     if (Object.hasOwn(value, 'approximate') && (value.approximate !== true || operation !== 'avg')
         || operation === 'avg' && kind === 'bigint' && value.approximate !== true) fail('QUERY', 'Bigint averages require approximate: true; only averages accept that option.');
     return Object.freeze({ alias, operation: operation as ProjectedAggregateModel['operation'], ...(column === undefined ? {} : { column }),
-      ...(value.approximate === true ? { approximate: true as const } : {}), path: Object.freeze(path) });
+      ...(value.approximate === true ? { approximate: true as const } : {}), path });
   }));
 }
 /** Bound values (excluding LIMIT/OFFSET) of a select statement, counting every physical copy of a repeated domain. */
@@ -460,17 +487,26 @@ export function normalizeQueryModel(input: QueryModel): QueryModel {
   const table = tableModel(value.table as TableModel);
   if (kind === 'aggregate') {
     record(value, ['kind', 'table', 'select', 'where']);
-    return Object.freeze({ kind, table, select: aggregateSelections(table, value.select), ...optionalWhere(table, value.where) });
+    // One logical budget covers the root where and every related domain; the physical count includes repeated copies.
+    const budget: PredicateBudget = { nodes: 0, parameters: 0 };
+    const where = value.where === undefined ? {} : { where: predicateModel(table, value.where as PredicateModel, budget) };
+    const query = Object.freeze({ kind, table, select: aggregateSelections(table, value.select, budget), ...where }) as AggregateModel;
+    if (aggregatePhysicalParameters(query) > MAX_BOUND_PARAMETERS) fail('QUERY', 'A query has too many bound parameters once the root filter and related domains are repeated for related selectors.');
+    return query;
   }
   if (kind === 'group') {
     record(value, ['kind', 'table', 'select', 'by', 'where', 'orderBy', 'limit', 'offset', 'overflow']);
     const by = names(value.by, 16, 1, table);
     if (!table.kinds || !table.nullable || by.some(key => table.kinds![key] === 'json')) fail('QUERY', 'Grouping requires complete metadata and scalar keys other than JSON.');
-    const select = aggregateSelections(table, value.select, by);
+    const budget: PredicateBudget = { nodes: 0, parameters: 0 };
+    const where = value.where === undefined ? {} : { where: predicateModel(table, value.where as PredicateModel, budget) };
+    const select = aggregateSelections(table, value.select, budget, by);
     if (typeof value.overflow !== 'boolean') fail('QUERY', 'The group overflow option must be a boolean.');
     const limit = value.overflow ? number(value.limit, 10_001, 10_001) : number(value.limit, 0, 10_000);
-    return Object.freeze({ kind, table, select, by, ...optionalWhere(table, value.where),
-      orderBy: aggregateOrdering(value.orderBy, by, select), limit, offset: number(value.offset, 0, 1_000_000_000), overflow: value.overflow });
+    const query = Object.freeze({ kind, table, select, by, ...where,
+      orderBy: aggregateOrdering(value.orderBy, by, select), limit, offset: number(value.offset, 0, 1_000_000_000), overflow: value.overflow }) as GroupModel;
+    if (aggregatePhysicalParameters(query) > MAX_BOUND_PARAMETERS) fail('QUERY', 'A query has too many bound parameters once the root filter and related domains are repeated for related selectors.');
+    return query;
   }
   if (kind === 'select') {
     record(value, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'aggregates']);

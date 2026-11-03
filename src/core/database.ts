@@ -11,7 +11,7 @@ import { ManyRelation, SingularRelation, and, assertOptions, eq, isRelation, ord
 import { mappedCreateTableModel, mappedTableModel } from './model-mapping.js';
 import { hasRelationFilter, predicateTruth, queryModel, relationKindsCompatible, type CreateIndexModel, type CreateTableModel, type PredicateModel, type SelectModel, type TransactionAction, type TransactionModel } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
-import { aggregateToModel, groupToModel, type AggregateSelection, type AggregateOptions, type AggregateResult,
+import { aggregateToPlan, groupToPlan, type AggregateLowering, type AggregatePlan, type AggregateSelection, type AggregateOptions, type AggregateResult,
   type GroupKey, type GroupOptions, type GroupResult } from './aggregates.js';
 import { decodeAggregateRow } from './aggregate-decode.js';
 import { assertProjectedGuard, decodeProjectedRow, projectedAggregatesToModel, type ProjectedPlan } from './projected-aggregates.js';
@@ -525,14 +525,24 @@ export class Repository<T extends AnyTable> {
     return countValue(rows[0].n);
   }
 
-  #aggregateModel(options: unknown): AggregateModel {
-    ops(this.#db).mapped(this.definition);
-    return aggregateToModel(this.definition, options, where => this.#predicate(where));
+  /** Registration and one shared lowering budget for the root where and every related domain. */
+  #aggregateLowering(): AggregateLowering {
+    return {
+      where: (where, budget) => this.#predicate(where, budget),
+      mapped: table => ops(this.#db).mapped(table),
+      domain: (table, domain, budget, depth) => new Repository(this.#db, table).#predicate(domain, budget, depth),
+    };
   }
-  #groupModel(options: unknown): GroupModel {
+  #aggregatePlan(options: unknown): AggregatePlan<AggregateModel> {
     ops(this.#db).mapped(this.definition);
-    return groupToModel(this.definition, options, where => this.#predicate(where));
+    return aggregateToPlan(this.definition, options, this.#aggregateLowering());
   }
+  #groupPlan(options: unknown): AggregatePlan<GroupModel> {
+    ops(this.#db).mapped(this.definition);
+    return groupToPlan(this.definition, options, this.#aggregateLowering());
+  }
+  #aggregateModel(options: unknown): AggregateModel { return this.#aggregatePlan(options).model; }
+  #groupModel(options: unknown): GroupModel { return this.#groupPlan(options).model; }
   compileAggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): CompiledQuery {
     return compileSqlite(this.#aggregateModel(options));
   }
@@ -551,16 +561,16 @@ export class Repository<T extends AnyTable> {
     return this.#explainAggregate(this.#groupModel(options));
   }
   aggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): AggregateResult<S> {
-    const model = this.#aggregateModel(options), query = compileSqlite(model);
+    const { model, leaves } = this.#aggregatePlan(options), query = compileSqlite(model);
     const rows = ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name);
     if (rows.length !== 1) fail('DATA', 'An aggregate query must return one result.');
-    return decodeAggregateRow(this.definition, model, rows[0]) as AggregateResult<S>;
+    return decodeAggregateRow(this.definition, model, rows[0], leaves) as AggregateResult<S>;
   }
   groupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): GroupResult<T, B, S>[] {
-    const model = this.#groupModel(options), query = compileSqlite(model);
+    const { model, leaves } = this.#groupPlan(options), query = compileSqlite(model);
     const rows = ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name);
     if (model.overflow && rows.length > 10_000) fail('RESULT_LIMIT', 'Grouped results exceed 10,000 rows. Add an explicit limit and offset to page the groups.');
-    return rows.map(row => decodeAggregateRow(this.definition, model, row)) as GroupResult<T, B, S>[];
+    return rows.map(row => decodeAggregateRow(this.definition, model, row, leaves)) as GroupResult<T, B, S>[];
   }
 
   #loadIncludes(rows: Row<T>[], includes: Includes | undefined, budget: { remaining: number }, depth: number): void {

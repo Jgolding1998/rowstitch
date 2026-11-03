@@ -59,7 +59,7 @@ node benchmarks/columns.mjs --reference-dir /path/to/reference-directory --outpu
 
 Without references, 216 Rowstitch/raw-SQL checks run. Native NOCASE, BINARY and RTRIM behavior remains observable, including the effect of reversing operands. Schema inspection currently does not report or certify these collations. Orange and Kysely already support column operands with broader SQL and relationship contracts; Rowstitch's narrower helpers are not evidence of a defect in either tool.
 
-To check all seven local fixture sets without installing reference libraries:
+To check all eight local fixture sets without installing reference libraries:
 
 ```sh
 node benchmarks/check.mjs
@@ -138,3 +138,21 @@ node benchmarks/projected.mjs --reference-dir /path/to/reference-directory --out
 The [recorded run](projected-results.json) has 288 Rowstitch result checks and 230 Orange comparisons with the documented return-type and empty-value normalization. Those numbers count individual parent results, not hundreds of distinct use cases. Another 58 empty-value outcomes are classified separately: the tested Orange 5.5.1 path returns NaN for missing counts or extrema and zero for empty sums/averages, whereas Rowstitch returns zero for counts and NULL for the other aggregates. The two-collection scenario explicitly normalizes NULL and zero before comparing totals. Neither tool multiplies the independent collection totals on these per-row fixtures.
 
 Shared fixture integers stay within JavaScript's safe range. Exact large totals, malformed storage, text collation, domain filtering, shared query limits and transaction lifetimes are covered separately by Rowstitch's runtime tests. The comparison covers per-row SQLite queries only. It does not test related aggregates inside root/group summaries, other databases, timing or full Orange compatibility. Orange observations are tied to the pinned release and recorded engine versions, not every driver or release.
+
+## Related summaries across roots and groups
+
+The [grouped related runner](grouped-related.mjs) checks 30 query scenarios across two fictional datasets. Its independent JavaScript oracle covers root and grouped counts, totals, averages and extrema, two independent child collections alongside a root count, empty/NULL values, orphan children, and a root filter combined with a related domain. Each Rowstitch query must use one statement.
+
+```sh
+node benchmarks/grouped-related.mjs
+node benchmarks/grouped-related.mjs --reference-dir /path/to/reference-directory --output /path/to/grouped-related-results.json
+```
+
+The [recorded run](grouped-related-results.json) separates these counts:
+
+- 109 complete Rowstitch result rows match the independent oracle.
+- 76 Orange result rows match the same values, after representing safe integer totals consistently.
+- 10 Orange result rows need the documented NULL/zero/NaN normalization for empty numeric aggregates.
+- 12 rows from the two-collection expression show joined multiplicity. On these fixtures, Orange 5.5.1 joins both collections before aggregating; its result matches a separately calculated LEFT JOIN cross-product. Rowstitch calculates each path independently. This observation describes the tested expression and fixtures, not every Orange query or driver.
+
+These are result-row counts, not hundreds of independent use cases. `summary.passed` counts only the 109 Rowstitch oracle rows; reference matches, normalized results and observations remain separate. Unexpected values or extra statements fail the run without producing a success report. Related domain filters use the Rowstitch oracle only, since they do not reproduce the Orange API. Shared numeric inputs stay in the safe integer range; separate runtime tests cover large exact totals, text collations and malformed storage. No timing or universal superiority claim is made.

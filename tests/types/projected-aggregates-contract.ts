@@ -103,10 +103,10 @@ const firstShops: number = db.table(sales).findFirst({ aggregates: { shops: agg.
 // ---- Negative: separate branding and API shape ----
 // @ts-expect-error Plain root selectors are not per-row aggregates.
 db.table(shops).findMany({ aggregates: { n: agg.count() } });
-// @ts-expect-error agg.related is not accepted by root aggregate in this release.
-db.table(shops).aggregate({ select: { n: agg.related(shopSales, agg.count()) } });
-// @ts-expect-error agg.related is not accepted by groupBy in this release.
-db.table(shops).groupBy({ by: ['region'], select: { n: agg.related(shopSales, agg.count()) } });
+// M8 (intentional contract change): root aggregate/groupBy accept agg.related; results keep the selector's type.
+const rootRelated: number = db.table(shops).aggregate({ select: { n: agg.related(shopSales, agg.count()) } }).n;
+const groupRelated: number = db.table(shops).groupBy({ by: ['region'], select: { n: agg.related(shopSales, agg.count()) } })[0].n;
+void [rootRelated, groupRelated];
 // @ts-expect-error A table is not a relation descriptor.
 agg.related(sales, agg.count());
 // @ts-expect-error The selector must be an agg selector or a nested agg.related value.

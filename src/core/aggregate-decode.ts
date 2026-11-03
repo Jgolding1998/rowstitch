@@ -2,7 +2,7 @@
 import { fail } from './errors.js';
 import { decode, isTable, type AnyTable, type Column } from './schema.js';
 import { aggregateLayout } from './aggregate-layout.js';
-import type { AggregateModel, GroupModel } from './query-model.js';
+import type { AggregateModel, GroupModel, TableModel } from './query-model.js';
 
 const LOW_WORD = 4_294_967_296n;
 const SAFE_MAX = BigInt(Number.MAX_SAFE_INTEGER);
@@ -21,12 +21,21 @@ function finite(value: unknown): number | null {
 }
 
 /** Throws DATA when the same-query storage guard flagged any filtered input, before any public value is produced. */
-export function decodeAggregateRow(table: AnyTable, model: AggregateModel | GroupModel, row: Record<string, unknown>): Record<string, unknown> {
+/** `leaves[i]` is the leaf table of related selection i (undefined for root selections); min/max use its codec. */
+export function decodeAggregateRow(table: AnyTable, model: AggregateModel | GroupModel, row: Record<string, unknown>, leaves: readonly (AnyTable | undefined)[] = []): Record<string, unknown> {
   if (!isTable(table) || model.table.name !== table.name) fail('QUERY', 'An aggregate result must be decoded with its own mapped table.');
   if (row === null || typeof row !== 'object') fail('DATA', 'An aggregate result row is malformed.');
-  for (const column of [...(model.kind === 'group' ? model.by : []), ...model.select.flatMap(item => item.column === undefined ? [] : [item.column])]) {
-    if (!Object.hasOwn(table.columns, column) || model.table.kinds?.[column] !== (table.columns[column] as Column<unknown, boolean, boolean>).config.kind) fail('QUERY', 'An aggregate model does not match its mapped table.');
-  }
+  const matches = (owner: AnyTable | undefined, kinds: TableModel['kinds'], column: string): boolean => isTable(owner)
+    && Object.hasOwn(owner.columns, column) && kinds?.[column] === (owner.columns[column] as Column<unknown, boolean, boolean>).config.kind;
+  for (const column of model.kind === 'group' ? model.by : []) if (!matches(table, model.table.kinds, column)) fail('QUERY', 'An aggregate model does not match its mapped table.');
+  model.select.forEach((item, index) => {
+    if (item.path === undefined) {
+      if (item.column !== undefined && !matches(table, model.table.kinds, item.column)) fail('QUERY', 'An aggregate model does not match its mapped table.');
+      return;
+    }
+    const leaf = leaves[index], last = item.path[item.path.length - 1].table;
+    if (!isTable(leaf) || leaf.name !== last.name || item.column !== undefined && !matches(leaf, last.kinds, item.column)) fail('QUERY', 'A related aggregate plan does not match its mapped tables.');
+  });
   // The compiler's shared layout defines every generated name, so SQL and decoding cannot drift.
   const layout = aggregateLayout(model);
   const guard = read(row, layout.guard.name);
@@ -39,8 +48,8 @@ export function decodeAggregateRow(table: AnyTable, model: AggregateModel | Grou
     const config = (table.columns[key.column] as Column<unknown, boolean, boolean>).config;
     result[key.column] = decode(config, read(row, key.output.name));
   }
-  layout.aggregates.forEach(entry => {
-    const item = entry.selection;
+  layout.aggregates.forEach((entry, index) => {
+    const item = entry.selection, owner = item.path === undefined ? table : leaves[index]!;
     if (entry.kind === 'integer-sum') {
       const high = read(row, entry.high.name), low = read(row, entry.low.name);
       if (high === null && low === null) { result[item.alias] = null; return; }
@@ -59,7 +68,7 @@ export function decodeAggregateRow(table: AnyTable, model: AggregateModel | Grou
         return;
       default: {
         // MIN/MAX of empty or all-NULL input is NULL even for non-null columns: decode with a nullable output codec.
-        const config = (table.columns[item.column!] as Column<unknown, boolean, boolean>).config;
+        const config = (owner.columns[item.column!] as Column<unknown, boolean, boolean>).config;
         result[item.alias] = decode({ ...config, nullable: true }, value);
       }
     }

@@ -3,7 +3,8 @@ import { RowstitchError, fail } from './errors.js';
 import { Column, isColumnRef, isTable, type AnyTable, type ColumnRef, type Kind, type Row } from './schema.js';
 import { mappedTableModel } from './model-mapping.js';
 import { filterRelationSnapshot, type FilterRelation, type Predicate, type SelectedRow } from './predicates.js';
-import { queryModel, type AggregateModel, type AggregateSelectModel, type GroupModel, type PredicateModel } from './query-model.js';
+import { MAX_RELATION_PATH, queryModel, type AggregateModel, type AggregateSelectModel, type GroupModel, type PredicateModel, type RelationStepModel } from './query-model.js';
+import type { LoweringBudget } from './predicates.js';
 export type { AggregateModel, AggregateSelectModel, GroupModel } from './query-model.js';
 
 export type AggregateOperation = 'count' | 'sum' | 'avg' | 'min' | 'max';
@@ -23,8 +24,8 @@ export type AnyAggregateSelector = AggregateSelector<unknown>;
 
 declare const relatedResultType: unique symbol;
 /**
- * A per-row aggregate over a relation path, created only by agg.related. Separately branded: it is not an
- * AggregateSelector, so root aggregate/groupBy reject it statically and at runtime in this release.
+ * An aggregate over a relation path, created only by agg.related. Separately branded from a root column selector.
+ * Supported in per-row projections and in root/group summaries; plain root selectors remain invalid per row.
  */
 export interface RelatedAggregate<R> {
   readonly relation: FilterRelation;
@@ -109,7 +110,7 @@ interface Agg {
   min<T, K extends ExtremeKind>(ref: ColumnRef<T, K>): AggregateSelector<Exclude<T, null> | null>;
   max<T, K extends ExtremeKind>(ref: ColumnRef<T, K>): AggregateSelector<Exclude<T, null> | null>;
   /**
-   * Per-row aggregate over a relation (and, nested, a path of up to four relations) for findMany/findFirst aggregates.
+   * Aggregate over a relation (and, nested, a path of up to four relations) for per-row projections or root/group summaries.
    * The leaf selector's column must belong to the last relation's table (checked at runtime).
    */
   // The result is computed from the argument type, so a contextual type (for example `satisfies RelatedAggregates`)
@@ -151,8 +152,9 @@ export const agg: Readonly<Agg> = Object.freeze({
   },
 }) as Readonly<Agg>;
 
-export type AggregateSelection = Readonly<Record<string, AnyAggregateSelector>>;
-type ResultOf<D> = D extends AggregateSelector<infer R> ? R : never;
+/** Root aggregate/groupBy selections: plain agg selectors and agg.related values (related rows of each group). */
+export type AggregateSelection = Readonly<Record<string, AnyAggregateSelector | AnyRelatedAggregate>>;
+type ResultOf<D> = D extends AggregateSelector<infer R> ? R : D extends RelatedAggregate<infer R> ? R : never;
 /**
  * Literal selection keys are certain; a broad string-indexed selection does not promise any field.
  * Distributes over a union of selections so each branch keeps its own aliases.
@@ -197,6 +199,46 @@ export type GroupResult<T extends AnyTable, B extends readonly string[], S exten
   : never;
 
 export type PredicateLowering = (where: Predicate) => PredicateModel | undefined;
+/** Registration and query-wide budget context needed to lower relation paths. */
+export interface RelatedLowering {
+  mapped(table: AnyTable): void;
+  /** Lowers a relation domain with the shared budget, starting at the given relation depth. */
+  domain(table: AnyTable, where: Predicate, budget: LoweringBudget, relationDepth: number): PredicateModel | undefined;
+}
+export interface AggregateLowering extends RelatedLowering {
+  /** Lowers the root where with the shared budget. */
+  where(where: Predicate, budget: LoweringBudget): PredicateModel | undefined;
+}
+export interface AggregatePlan<M> { readonly model: M; readonly leaves: readonly (AnyTable | undefined)[] }
+
+/**
+ * Lowers one agg.related value (a path of up to four relations ending in an agg selector). Shared by findMany per-row
+ * aggregates and root aggregate/groupBy selections. Every relation must be genuine and registered, start from the previous
+ * table, and use its related table's foreign key; loading-only options are refused by the relation snapshot.
+ */
+export function lowerRelatedPath(root: AnyTable, value: AnyRelatedAggregate, context: RelatedLowering, budget: LoweringBudget):
+    { path: readonly RelationStepModel[]; leaf: AnyTable; selector: AnyAggregateSelector } {
+  const path: RelationStepModel[] = [];
+  let scope = root, item: unknown = value;
+  while (isRelatedAggregate(item)) {
+    if (path.length >= MAX_RELATION_PATH) fail('QUERY', 'Related aggregates support at most four relationships in a path.');
+    const { table, options } = filterRelationSnapshot(item.relation);
+    const { localKey, foreignKey, where } = options;
+    if (!isColumnRef(localKey) || localKey.table !== scope) fail('QUERY', 'Each related aggregate relation must start from the previous table in its path.');
+    if (!isColumnRef(foreignKey) || foreignKey.table !== table) fail('QUERY', 'A relation foreign key must belong to its related table.');
+    context.mapped(table);
+    const domain = where === undefined ? undefined : context.domain(table, where, budget, path.length + 1);
+    path.push(Object.freeze({ table: mappedTableModel(table), localKey: localKey.name, foreignKey: foreignKey.name, ...(domain === undefined ? {} : { where: domain }) }));
+    scope = table;
+    item = item.selector;
+  }
+  if (!isSelector(item)) fail('QUERY', 'agg.related needs an agg selector at the end of its path.');
+  const ref = item.ref;
+  if (ref !== undefined && (ref.table !== scope || !Object.hasOwn(scope.columns, ref.name))) fail('QUERY', 'A related aggregate column must belong to the last table in its path.');
+  if (ref === undefined && item.operation !== 'count') fail('QUERY', 'This aggregate needs a column.');
+  if (ref !== undefined && item.operation === 'avg' && kindOf(ref) === 'bigint' && !item.approximate) fail('QUERY', 'A bigint average is approximate; pass { approximate: true }.');
+  return { path: Object.freeze(path), leaf: scope, selector: item };
+}
 
 export const MAX_SELECTORS = 32, MAX_GROUP_KEYS = 16, MAX_GROUP_ROWS = 10_000, MAX_OFFSET = 1_000_000_000;
 const unsupported = ['having', 'distinct', 'filter', 'include', 'aggregates', 'groupBy'];
@@ -249,7 +291,7 @@ function integerOption(value: unknown, minimum: number, maximum: number): number
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum || value > maximum) fail('QUERY', 'An aggregate limit or offset is outside its supported integer range.');
   return value;
 }
-function selection(table: AnyTable, input: unknown): AggregateSelectModel[] {
+function selection(table: AnyTable, input: unknown, context: RelatedLowering | undefined, budget: LoweringBudget, leaves: (AnyTable | undefined)[]): AggregateSelectModel[] {
   let entries: [string, unknown][];
   try {
     if (input === null || typeof input !== 'object' || Array.isArray(input) || ![null, Object.prototype].includes(Object.getPrototypeOf(input))) fail('QUERY', 'select must be a plain record of agg selectors.');
@@ -268,8 +310,15 @@ function selection(table: AnyTable, input: unknown): AggregateSelectModel[] {
     aliasName(alias);
     if (seen.has(alias.toLowerCase())) fail('QUERY', 'Aggregate aliases must be unique ignoring case.');
     seen.add(alias.toLowerCase());
-    if (isRelatedAggregate(value)) fail('QUERY', 'agg.related is supported only in findMany/findFirst aggregates in this release.');
+    if (isRelatedAggregate(value)) {
+      if (!context) fail('QUERY', 'agg.related selections need a repository lowering context with table registration.');
+      const related = lowerRelatedPath(table, value, context, budget), leaf = related.selector;
+      leaves.push(related.leaf);
+      return Object.freeze({ alias, operation: leaf.operation, ...(leaf.ref === undefined ? {} : { column: leaf.ref.name }),
+        ...(leaf.approximate ? { approximate: true as const } : {}), path: related.path });
+    }
     if (!isSelector(value)) fail('QUERY', 'Aggregate values must be created with agg.');
+    leaves.push(undefined);
     const ref = value.ref;
     if (ref !== undefined && (ref.table !== table || !Object.hasOwn(table.columns, ref.name))) fail('QUERY', 'Aggregate columns must belong to the queried table.');
     if (ref === undefined && value.operation !== 'count') fail('QUERY', 'This aggregate needs a column.');
@@ -277,26 +326,36 @@ function selection(table: AnyTable, input: unknown): AggregateSelectModel[] {
     return Object.freeze({ alias, operation: value.operation, ...(ref === undefined ? {} : { column: ref.name }), ...(value.approximate ? { approximate: true as const } : {}) });
   });
 }
-function lowerWhere(where: unknown, predicate: PredicateLowering): { where?: PredicateModel } {
-  if (where === undefined) return {};
-  const model = predicate(where as Predicate);
-  return model === undefined ? {} : { where: model };
-}
 function genuine(table: AnyTable): void {
   if (!isTable(table)) fail('SCHEMA', 'Aggregates require a genuine mapped table.');
 }
 
-/** Lowers public `aggregate` options. The result is revalidated again by the compiler's model normalizer. */
-export function aggregateToModel(table: AnyTable, input: unknown, predicate: PredicateLowering): AggregateModel {
+/** A legacy predicate callback (no registration context) lowers root selections only; agg.related needs a full context. */
+function lowering(context: PredicateLowering | AggregateLowering): { where: (where: Predicate, budget: LoweringBudget) => PredicateModel | undefined; related?: RelatedLowering } {
+  return typeof context === 'function' ? { where: where => context(where) } : { where: (where, budget) => context.where(where, budget), related: context };
+}
+/** Lowers public `aggregate` options; related selections share one lowering budget with the root where. */
+export function aggregateToPlan(table: AnyTable, input: unknown, context: PredicateLowering | AggregateLowering): AggregatePlan<AggregateModel> {
   genuine(table);
   const options = capture(input, ['select', 'where'], 'aggregate accepts only select and where.');
   if (!Object.hasOwn(options, 'select')) fail('QUERY', 'aggregate requires a select record.');
-  const select = Object.freeze(selection(table, options.select));
-  return queryModel.aggregate({ table: mappedTableModel(table), select, ...lowerWhere(options.where, predicate) });
+  const { where, related } = lowering(context), budget: LoweringBudget = { nodes: 0, bound: 0 }, leaves: (AnyTable | undefined)[] = [];
+  const lowered = options.where === undefined ? undefined : where(options.where as Predicate, budget);
+  const select = Object.freeze(selection(table, options.select, related, budget, leaves));
+  const model = queryModel.aggregate({ table: mappedTableModel(table), select, ...(lowered === undefined ? {} : { where: lowered }) });
+  return Object.freeze({ model, leaves: Object.freeze(leaves) });
+}
+/** Lowers public `aggregate` options. The result is revalidated again by the compiler's model normalizer. */
+export function aggregateToModel(table: AnyTable, input: unknown, context: PredicateLowering | AggregateLowering): AggregateModel {
+  return aggregateToPlan(table, input, context).model;
 }
 
+/** Lowers public `groupBy` options. The result is revalidated again by the compiler's model normalizer. */
+export function groupToModel(table: AnyTable, input: unknown, context: PredicateLowering | AggregateLowering): GroupModel {
+  return groupToPlan(table, input, context).model;
+}
 /** Lowers public `groupBy` options, appending missing group keys as ascending tie-breakers. */
-export function groupToModel(table: AnyTable, input: unknown, predicate: PredicateLowering): GroupModel {
+export function groupToPlan(table: AnyTable, input: unknown, context: PredicateLowering | AggregateLowering): AggregatePlan<GroupModel> {
   genuine(table);
   const options = capture(input, ['by', 'select', 'where', 'orderBy', 'limit', 'offset'], 'groupBy accepts only by, select, where, orderBy, limit and offset.');
   if (!Object.hasOwn(options, 'select') || !Object.hasOwn(options, 'by')) fail('QUERY', 'groupBy requires by and select.');
@@ -305,7 +364,9 @@ export function groupToModel(table: AnyTable, input: unknown, predicate: Predica
     return key;
   });
   if (new Set(by).size !== by.length) fail('QUERY', 'by must list 1 to 16 distinct mapped columns.');
-  const select = selection(table, options.select);
+  const { where, related } = lowering(context), budget: LoweringBudget = { nodes: 0, bound: 0 }, leaves: (AnyTable | undefined)[] = [];
+  const lowered = options.where === undefined ? undefined : where(options.where as Predicate, budget);
+  const select = selection(table, options.select, related, budget, leaves);
   const keys = new Set(by.map(key => key.toLowerCase()));
   if (select.some(item => keys.has(item.alias.toLowerCase()))) fail('QUERY', 'Aggregate aliases cannot repeat a group key name.');
   const fields = new Set<string>([...by, ...select.map(item => item.alias)]);
@@ -321,5 +382,6 @@ export function groupToModel(table: AnyTable, input: unknown, predicate: Predica
   const explicit = options.limit !== undefined;
   const limit = explicit ? integerOption(options.limit, 0, MAX_GROUP_ROWS) : MAX_GROUP_ROWS + 1;
   const offset = options.offset === undefined ? 0 : integerOption(options.offset, 0, MAX_OFFSET);
-  return queryModel.group({ table: mappedTableModel(table), select, by, ...lowerWhere(options.where, predicate), orderBy, limit, offset, overflow: !explicit });
+  const model = queryModel.group({ table: mappedTableModel(table), select, by, ...(lowered === undefined ? {} : { where: lowered }), orderBy, limit, offset, overflow: !explicit });
+  return Object.freeze({ model, leaves: Object.freeze(leaves) });
 }
