@@ -97,7 +97,9 @@ export async function openWorkerSqliteExecutor(filename = ':memory:', options: {
   const busy = options.busyTimeoutMs === undefined ? 1000 : options.busyTimeoutMs;
   if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 120_000 || !Number.isSafeInteger(busy) || busy < 0 || busy > 10_000) fail('VALIDATION', 'A worker timeout is outside its supported integer range.');
   let worker: Worker;
-  try { worker = new Worker(new URL('./sqlite-worker.js', import.meta.url), { workerData: { filename, readOnly: options.readOnly === true, busyTimeoutMs: busy } }); }
+  // This thread loads a compiled file. Do not forward eval/stdin flags, or explicitly re-pass process-only/V8 flags
+  // that Worker rejects (for example --title or --max-old-space-size). Normal Node runtime inheritance still applies.
+  try { worker = new Worker(new URL('./sqlite-worker.js', import.meta.url), { execArgv: [], workerData: { filename, readOnly: options.readOnly === true, busyTimeoutMs: busy } }); }
   catch { return fail('OPEN', 'The local SQLite worker could not be started.'); }
   return connectSqliteWorker(worker, timeout);
 }

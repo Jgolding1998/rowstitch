@@ -4,6 +4,7 @@ import { Worker } from 'node:worker_threads';
 import { mkdtempSync, unlinkSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { openWorkerSqliteExecutor, connectSqliteWorker } from '../dist/core/worker-executor.js';
 import { openSqliteExecutor } from '../dist/core/sqlite-executor.js';
 import { createAsyncSession } from '../dist/core/async-session.js';
@@ -11,6 +12,18 @@ import { inlineAsyncExecutor, isAcknowledgedRejection } from '../dist/core/execu
 
 const code = expected => error => error?.code === expected;
 const plain = rows => rows.map(r => ({ ...r }));
+
+test('public async open works from ESM eval and stdin without passing input-type to its file worker', () => {
+  const entry = new URL('../dist/index.js', import.meta.url).href;
+  const script = `import {openAsyncDatabase} from ${JSON.stringify(entry)};const db=await openAsyncDatabase();try{await db.inspectSchema();console.log('worker-opened');}finally{await db.close();}`;
+  for (const args of [['--input-type=module', '--eval', script], ['--input-type', 'module', '--eval', script], ['--input-type=module'],
+    ['--max-old-space-size=128','--input-type=module','--eval',script], ['--title=rowstitch-fixture','--input-type=module','--eval',script]]) {
+    const child = spawnSync(process.execPath, args, { encoding:'utf8', input:args.length===1?script:undefined, timeout:15_000, windowsHide:true });
+    assert.equal(child.error, undefined);
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(child.stdout, 'worker-opened\n');
+  }
+});
 function file(t) {
   const directory = mkdtempSync(join(tmpdir(), 'rowstitch-worker-')), filename = join(directory, 'fixture.sqlite');
   t.after(() => {

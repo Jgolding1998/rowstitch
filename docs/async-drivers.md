@@ -2,6 +2,8 @@
 
 Rowstitch provides `openDatabase` for synchronous SQLite operations and `await openAsyncDatabase` for operations executed in one background worker. Both use the same repository planning, validation, codecs, SQL compiler and decoders. The worker moves SQLite execution off the calling thread; planning, decoding and trace export still run there. No runtime npm dependency is added.
 
+The worker loads compiled JavaScript from a file and does not explicitly forward the parent process's command-line arguments. Module eval and stdin entry points work without passing their `--input-type` flag to the file worker. Parent CLI loader, preload and debugger arguments are not forwarded through this API. Node's normal worker runtime and environment behaviour still applies; this is not an isolated process or sandbox.
+
 Await schema operations, CRUD, relation reads, counts, aggregates, explain and close on the async API. `table()`, compile methods, `clearTrace()` and `exportTrace()` are synchronous. See [the async example](../examples/async.mjs). The internal transaction session, worker transport and inline conformance adapter are not SDK extension points or raw-SQL capabilities.
 
 Input records, encoded JSON, row lists, selected fields, include trees and open options are captured before the first await. Table and relationship identities retain their genuine brands. Changing caller-owned inputs after a call cannot change its saved values or expose a hidden fetched field.
@@ -12,11 +14,22 @@ The session serializes driver calls and pins a transaction to its connection. Un
 
 Await each write inside the callback, or use `insertMany`. Each write has its own atomic scope, so two writes started concurrently inside the same transaction would overlap savepoints and are refused. Concurrent reads are allowed; writes started outside the transaction queue separately. A handle or root context inherited from a finished callback is revoked, including for pure compilation.
 
-When a callback settles with statements or a child transaction still pending, the session invalidates its handle, drains issued work and rolls back. It never commits after silently draining unfinished work. It can detect promises still pending at settlement; it cannot prove whether already-settled promises were awaited.
+When a callback settles with an operation or a child transaction still pending, the session invalidates its handle, drains issued work, rolls back and rejects the transaction with `TRANSACTION_PENDING`. It never commits after silently draining unfinished work. A forgotten operation that was still pending is reported through that rejection, so it does not also become an unhandled rejection. Promises that have already settled cannot be classified: an un-awaited operation that succeeded before the callback settled stays in the transaction, and one that already failed is reported by Node like any other unhandled rejection, which ends the process under its default policy. Operations started on a handle after its transaction has finished are also reported normally.
 
-Pass `{signal}` to `transaction(callback, options)` to cancel a transaction. Repository methods do not currently take an operation signal. Internally, queued cancellation sends no SQL, and statements are checked again before send. Cancelling admitted transaction work stops admission, drains issued work and rolls back. An autocommit statement already sent to the driver is allowed to finish and its actual result stands. An acknowledged COMMIT wins over a late abort. No forced statement interruption is promised.
+### Public cancellation
 
-A request whose signal is already aborted is rejected before admission. This applies equally to a statement and to a new child transaction; the parent can catch that rejection and continue. Once admitted, a statement's signal controls its owning transaction, and a child's signal controls that child. Statement results inside a transaction remain provisional until the transaction promise resolves. An issued statement may return rows that are later rolled back. A cancelled statement waiting on serialization rejects when its turn arrives; earlier issued work may delay that rejection.
+Pass `{signal}` to `transaction(callback, options)`, on the database or on a transaction handle. It is the only public signal: repository methods do not take one.
+
+- Aborted before the call: rejected with `ABORTED` and no SQL is sent. A parent can catch this for a nested call and continue.
+- Aborted while queued: removed from the queue, and no SQL is sent.
+- Aborted while running: the transaction stops admitting work, drains issued work, rolls back and rejects with `ABORTED`. A nested transaction's signal controls that child only.
+- Aborted after COMMIT was sent: an acknowledged COMMIT wins over a late abort.
+
+No forced statement interruption is promised. Results read inside a transaction remain provisional until the transaction promise resolves; an operation may return rows that are later rolled back.
+
+### Internal session signals
+
+These describe the private session and are not part of the public API. Session statements accept their own signal, checked at admission and again before send. A statement's signal that is already aborted is rejected before admission without affecting its parent; once admitted, it controls the owning transaction. An autocommit statement already sent to the driver is allowed to finish and its actual result stands. A cancelled statement waiting on serialization rejects when its turn arrives, so earlier issued work may delay that rejection.
 
 Defaults are 64 queued root operations, 256 pending statements, a 10-second queue timeout, a 30-second worker-request deadline and at most 32 nested transaction levels. `maxQueue` and `maxPending` accept 1–1024; `queueTimeoutMs` accepts 1–60,000 and `requestTimeoutMs` accepts 1–120,000. A worker deadline or exit after send leaves the outcome unconfirmed. These limits do not guarantee a query's cost; index related keys and inspect plans on realistic data.
 

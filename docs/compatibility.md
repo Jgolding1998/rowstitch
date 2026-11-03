@@ -1,6 +1,6 @@
 # Orange ORM coverage and independent roadmap
 
-Rowstitch is being implemented independently toward broader Orange ORM functionality. **It is not currently a drop-in replacement for Orange ORM, and full compatibility has not been achieved.** The current candidate covers a tested part of SQLite data access. Other databases, Active Record graph persistence, asynchronous transactions and a remote ORM client remain substantial work.
+Rowstitch is being implemented independently toward broader Orange ORM functionality. **It is not currently a drop-in replacement for Orange ORM, and full compatibility has not been achieved.** The current candidate covers a tested part of SQLite data access. Other databases, asynchronous drivers beyond SQLite, Active Record graph persistence and a remote ORM client remain substantial work.
 
 This document keeps that larger goal explicit. A missing feature below is work to evaluate and implement, rather than a permanent exclusion from the project. The read-only Studio remains separate from any future opt-in database server.
 
