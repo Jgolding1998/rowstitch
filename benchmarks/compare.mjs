@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { column, defineTable, openDatabase, eq, asc, hasMany, belongsTo } from '../dist/index.js';
+import { column, defineTable, openDatabase, openAsyncDatabase, eq, asc, hasMany, belongsTo } from '../dist/index.js';
 
 const args = process.argv.slice(2);
 let referenceDir, output;
@@ -177,6 +177,52 @@ async function runRaw() {
   } finally { db.close(); }
 }
 
+async function runAsyncRowstitch() {
+  const file = path.join(temporary, 'rowstitch-async.db'), raw = seed(file);
+  let db, second;
+  try {
+    db = await openAsyncDatabase(file, { tables: [authors, posts], maxTraceEntries: 1000 });
+    second = await openAsyncDatabase(file, { tables: [authors, posts] });
+    const repo = db.table(authors), tool = 'rowstitch async worker';
+    await check(tool, 'Bound injection text returns no rows', async () => assert.equal((await repo.findMany({ where: eq(authors.col('name'), "' OR 1=1 --") })).length, 0));
+    for (const limit of [undefined, 2]) await check(tool, limit ? 'Per-parent child limit' : 'Batched graph with empty parent', async () => {
+      const before = db.exportTrace().queries;
+      const rows = await repo.findMany({ orderBy: [asc(authors.col('id'))], include: { posts: hasMany(posts, {
+        localKey: authors.col('id'), foreignKey: posts.col('authorId'), orderBy: [asc(posts.col('id'))], ...(limit ? { limit } : {}),
+      }) } });
+      verifyGraph(rows, limit);
+      const selectQueries = recentSelects(db, before); assert.ok(selectQueries <= 3);
+      return { parentRows: rows.length, returnedChildRows: rows.reduce((n, r) => n + r.posts.length, 0), selectQueries };
+    });
+    await check(tool, 'Posts include their referenced author', async () => {
+      const before = db.exportTrace().queries;
+      const rows = await db.table(posts).findMany({ orderBy: [asc(posts.col('id'))], include: { author: belongsTo(authors, { localKey: posts.col('authorId'), foreignKey: authors.col('id') }) } });
+      verifyReferences(rows); return { postRows: rows.length, selectQueries: recentSelects(db, before) };
+    });
+    await check(tool, 'Selected names exclude unrelated application fields', async () => {
+      const rows = await repo.findMany({ select: ['name'], orderBy: [asc(authors.col('id'))] });
+      assert.equal(rows.length, parentCount + 1); assert.deepEqual(Object.keys(rows[0]), ['name']); return { returnedFields: Object.keys(rows[0]) };
+    });
+    await check(tool, 'Real insert rolls back after transaction failure', async () => {
+      await assert.rejects(db.transaction(async tx => { await tx.table(authors).insert({ id: 500, name: 'RollbackSample' }); throw new Error('synthetic rollback'); }), /synthetic rollback/);
+      assert.equal(raw.prepare('SELECT count(*) AS n FROM authors WHERE id=500').get().n, 0);
+    });
+    await check(tool, 'Independent stale update preserves winning write', async () => {
+      const a = await repo.findFirst({ where: eq(authors.col('id'), 1) }), b = await second.table(authors).findFirst({ where: eq(authors.col('id'), 1) });
+      await repo.updateVersion({ id: a.id }, a.version, { name: 'SampleWinner' });
+      await assert.rejects(second.table(authors).updateVersion({ id: b.id }, b.version, { name: 'SampleLoser' }));
+      assert.equal(raw.prepare('SELECT name FROM authors WHERE id=1').get().name, 'SampleWinner');
+    });
+    await check(tool, 'Real JSON update tolerates reordered equivalent stored keys', async () => {
+      const row = await repo.findFirst({ where: eq(authors.col('id'), 2) });
+      raw.prepare('UPDATE authors SET preferences=? WHERE id=2').run(JSON.stringify({ tags: ['sample'], theme: 'light' }));
+      await repo.updateVersion({ id: 2 }, row.version, { preferences: { ...row.preferences, theme: 'dark' } });
+      assert.equal(JSON.parse(raw.prepare('SELECT preferences FROM authors WHERE id=2').get().preferences).theme, 'dark');
+    });
+    await check(tool, 'Schema introspection includes both tables', async () => assert.deepEqual((await db.inspectSchema()).map(t => t.name).sort(), ['authors', 'posts']));
+  } finally { try { await second?.close(); } finally { try { await db?.close(); } finally { raw.close(); } } }
+}
+
 function loadReference(name, expected) {
   const require = createRequire(path.join(referenceDir, 'package.json'));
   const entry = require.resolve(name);
@@ -295,7 +341,7 @@ async function runReferences() {
 }
 
 try {
-  await runRowstitch(); await runRaw();
+  await runRowstitch(); await runAsyncRowstitch(); await runRaw();
   if (referenceDir) await runReferences();
   else report.limitations.push('External references were not loaded. Pass --reference-dir to compare the pinned released packages.');
   report.summary = { passed: report.cases.filter(c => c.status === 'pass').length, failed: report.cases.filter(c => c.status === 'fail').length };

@@ -8,3 +8,5 @@ export { eq, ne, gt, gte, lt, lte, eqColumns, neColumns, gtColumns, gteColumns, 
 export type { Predicate, Ordering, FindOptions, Includes, ManyRelation, SingularRelation, FilterRelation, CompiledQuery, WithIncludes, SelectedRow, Selection, RelationOptions, SingularOptions, TextMatchOptions, RelationCountOperator } from './core/predicates.js';
 export { openDatabase, Database, Repository } from './core/database.js';
 export type { DatabaseOptions, WriteOptions, TraceEntry, TraceDocument, SchemaTable, SchemaColumn, SchemaForeignKey, SchemaIndex, SchemaPlan, QueryPlan } from './core/database.js';
+export { openAsyncDatabase, AsyncDatabase, AsyncRepository } from './core/async-database.js';
+export type { AsyncDatabaseOptions, AsyncTransactionOptions } from './core/async-database.js';

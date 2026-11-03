@@ -15,7 +15,7 @@ This release includes the 0.7.1 correction for related summaries with different 
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.8.0/rowstitch-0.8.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.9.0/rowstitch-0.9.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -37,7 +37,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.8.0/rowstitch-0.8.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.9.0/rowstitch-0.9.0.tgz
 ```
 
 ```ts
@@ -62,6 +62,33 @@ db.close();
 `updateVersion` checks the version and increments it atomically. A stale save raises `ConflictError`; it does not overwrite the newer row. Ordinary updates and deletes require a meaningful filter and use an affected-row limit inside a transaction. Primary keys and version fields cannot be patched directly.
 
 See [examples/basic.mjs](examples/basic.mjs) for transactions and trace export. [examples/relations.mjs](examples/relations.mjs) shows one-to-one, many-to-one and one-to-many reads with selected fields. [Agent instructions](docs/agent-instructions.md) describe a safe integration workflow for coding assistants.
+
+### Use async queries
+
+Use `openAsyncDatabase` when SQLite work should run in a background worker. It uses the same table definitions, filters, relationships and aggregate selectors. Await database operations and close the connection when finished:
+
+```ts
+import { column, defineTable, openAsyncDatabase } from 'rowstitch';
+
+const notes = defineTable('notes', {
+  id: column.integer().primaryKey({ generated: true }),
+  title: column.text(),
+});
+const db = await openAsyncDatabase('notes.sqlite', { tables: [notes] });
+try {
+  await db.ensureSchema();
+  await db.transaction(async tx => {
+    await tx.table(notes).insert({ title: 'Moon garden' });
+  });
+  console.log(await db.table(notes).findMany());
+} finally {
+  await db.close();
+}
+```
+
+`table()`, the compile methods, `clearTrace()` and `exportTrace()` remain synchronous. Async trace export uses the most recently inspected schema and states when it was captured. Query execution runs in the worker; planning and decoding still run on the calling thread.
+
+Await each write inside a transaction, or use `insertMany` for a batch. Concurrent writes inside the same callback are refused because they would overlap savepoints. Work from outside the callback queues separately. Unfinished work at callback settlement is drained and rolled back; a lost COMMIT response raises `COMMIT_UNCONFIRMED` and must be reconciled before retrying. The [async example](examples/async.mjs) and [driver guide](docs/async-drivers.md) cover ownership, cancellation, limits and trace interpretation.
 
 ## Read connected records
 

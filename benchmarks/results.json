@@ -5,7 +5,7 @@
     "node": "v24.22.2",
     "platform": "win32",
     "architecture": "x64",
-    "rowstitch": "0.3.1",
+    "rowstitch": "0.9.0",
     "nodeSQLite": "3.53.4",
     "kyselySQLite": "3.51.2",
     "orange": "5.5.1",
@@ -77,6 +77,62 @@
     },
     {
       "tool": "rowstitch",
+      "name": "Schema introspection includes both tables",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch async worker",
+      "name": "Bound injection text returns no rows",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch async worker",
+      "name": "Batched graph with empty parent",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 120,
+      "selectQueries": 2
+    },
+    {
+      "tool": "rowstitch async worker",
+      "name": "Per-parent child limit",
+      "status": "pass",
+      "parentRows": 41,
+      "returnedChildRows": 80,
+      "selectQueries": 2
+    },
+    {
+      "tool": "rowstitch async worker",
+      "name": "Posts include their referenced author",
+      "status": "pass",
+      "postRows": 120,
+      "selectQueries": 2
+    },
+    {
+      "tool": "rowstitch async worker",
+      "name": "Selected names exclude unrelated application fields",
+      "status": "pass",
+      "returnedFields": [
+        "name"
+      ]
+    },
+    {
+      "tool": "rowstitch async worker",
+      "name": "Real insert rolls back after transaction failure",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch async worker",
+      "name": "Independent stale update preserves winning write",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch async worker",
+      "name": "Real JSON update tolerates reordered equivalent stored keys",
+      "status": "pass"
+    },
+    {
+      "tool": "rowstitch async worker",
       "name": "Schema introspection includes both tables",
       "status": "pass"
     },
@@ -240,7 +296,7 @@
     "Orange supports many more databases/runtimes than Rowstitch. Passing this fixture is not feature parity or a complete security audit."
   ],
   "summary": {
-    "passed": 31,
+    "passed": 40,
     "failed": 0
   }
 }

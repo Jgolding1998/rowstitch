@@ -1,6 +1,6 @@
 {
   "name": "rowstitch",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "A SQLite ORM with guarded writes, batched relations and a local SQL inspector.",
   "type": "module",
   "license": "MIT",
@@ -13,7 +13,7 @@
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "types": "./dist/index.d.ts",
   "bin": { "rowstitch": "./dist/cli.js" },
-  "files": ["dist", "studio", "README.md", "LICENSE", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "docs/agent-instructions.md", "docs/research.md", "docs/compatibility.md", "docs/images/studio.png", "examples"],
+  "files": ["dist", "studio", "README.md", "LICENSE", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "docs/agent-instructions.md", "docs/research.md", "docs/compatibility.md", "docs/async-drivers.md", "docs/images/studio.png", "examples"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test tests/*.test.mjs",

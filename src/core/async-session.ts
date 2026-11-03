@@ -16,13 +16,25 @@
  *   and its connection closed once. COMMIT_UNCONFIRMED never implies rollback and the callback is never replayed.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { performance } from 'node:perf_hooks';
 import { RowstitchError } from './errors.js';
 import { isAcknowledgedRejection, type AsyncExecutor, type ExecutorRows } from './executor.js';
 import { MAX_BOUND_PARAMETERS, queryModel, type TransactionAction } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
 import type { Parameter } from './schema.js';
 
+/**
+ * Internal trace hook. Called once per transaction-control statement after its outcome is known, before the lifecycle
+ * continues. `handle` identifies the frame. 'rejected' is an acknowledged engine rejection; 'unconfirmed' means the
+ * statement's effect is unknown (never evidence of rollback). Observer exceptions are ignored.
+ */
+export interface AsyncControlEvent {
+  readonly handle: AsyncTransaction; readonly action: TransactionAction; readonly sql: string;
+  readonly outcome: 'ok' | 'rejected' | 'unconfirmed'; readonly startedAt: number;
+}
+export interface AsyncSessionObserver { control(event: AsyncControlEvent): void }
 export interface AsyncSessionOptions {
+  readonly observer?: AsyncSessionObserver;
   readonly readOnly?: boolean;
   readonly maxQueue?: number;
   readonly maxPending?: number;
@@ -99,7 +111,7 @@ interface Frame {
 
 interface QueueEntry { start(): void; fail(error: unknown): void }
 
-const OPTION_KEYS = new Set(['readOnly', 'maxQueue', 'maxPending', 'queueTimeoutMs']);
+const OPTION_KEYS = new Set(['readOnly', 'maxQueue', 'maxPending', 'queueTimeoutMs', 'observer']);
 
 function plainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -154,6 +166,7 @@ class Session {
   readonly #maxQueue: number;
   readonly #maxPending: number;
   readonly #queueTimeoutMs: number;
+  readonly #observer: ((event: AsyncControlEvent) => void) | undefined;
   readonly #context = new AsyncLocalStorage<Frame>();
   readonly #queue: QueueEntry[] = [];
   #tail: Promise<void> = Promise.resolve();
@@ -177,6 +190,10 @@ class Session {
     this.#maxQueue = integerOption(raw, 'maxQueue', ASYNC_SESSION_LIMITS.defaultQueue, ASYNC_SESSION_LIMITS.queue);
     this.#maxPending = integerOption(raw, 'maxPending', ASYNC_SESSION_LIMITS.defaultPending, ASYNC_SESSION_LIMITS.pending);
     this.#queueTimeoutMs = integerOption(raw, 'queueTimeoutMs', ASYNC_SESSION_LIMITS.defaultQueueTimeoutMs, ASYNC_SESSION_LIMITS.queueTimeoutMs);
+    const observer = raw.observer;
+    if (observer !== undefined && (observer === null || typeof observer !== 'object' || typeof (observer as { control?: unknown }).control !== 'function')) throw failure('VALIDATION');
+    const notify = observer === undefined ? undefined : (observer as AsyncSessionObserver).control.bind(observer);
+    this.#observer = notify === undefined ? undefined : event => { try { notify(event); } catch { /* A trace hook can never change a transaction outcome. */ } };
   }
 
   facade(): AsyncSession {
@@ -244,7 +261,15 @@ class Session {
 
   #control(frame: Frame, action: TransactionAction, name?: string): Promise<void> {
     const sql = controlSql(action, name);
-    return this.#execute(frame, action === 'commit' ? 'commit' : 'control', () => this.#executor.exec(sql));
+    const startedAt = performance.now();
+    const run = this.#execute(frame, action === 'commit' ? 'commit' : 'control', () => this.#executor.exec(sql));
+    const observer = this.#observer;
+    if (observer) {
+      // Registered before the lifecycle awaits `run`, so the event is delivered before any later statement completes.
+      run.then(() => observer({ handle: frame.handle, action, sql, outcome: 'ok', startedAt }),
+        error => observer({ handle: frame.handle, action, sql, outcome: isAcknowledgedRejection(error) ? 'rejected' : 'unconfirmed', startedAt }));
+    }
+    return run;
   }
 
   #inTransaction(frame: Frame): Promise<boolean> {
