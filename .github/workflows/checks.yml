@@ -9,7 +9,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Standard Intel Mac runners retain macOS coverage when the arm64 pool has no capacity.
+        # This matrix validates x64 macOS; it does not claim an arm64 result.
+        os: [ubuntu-latest, windows-latest, macos-26-intel]
         node: ['24.22.2', '26.13.0']
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
