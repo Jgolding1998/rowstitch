@@ -36,7 +36,7 @@ Status meanings:
 | Bun and Deno | Missing | Real runtime suites and package-resolution tests; a Node pass is not a Bun/Deno pass. |
 | CommonJS, ESM and browser package conditions | Partial | Rowstitch currently exposes an ESM Node SDK. CommonJS and a browser ORM client need separate installed-package tests. |
 | Orange's `map(...).map(...)` schema DSL and legacy table API | Missing | An independently authored compatibility facade, explicit version scope and positive/negative TypeScript contract tests. |
-| Promise-returning database/client operations | Missing | An asynchronous driver boundary and clear transaction ownership, without breaking the synchronous SQLite API. |
+| Promise-returning database/client operations | Missing | The current source has an internal async session and a shared SQLite executor, with transaction ownership, cancellation and uncertain-outcome tests. The public Promise-returning repository API and actual async/network drivers still need implementation and integration; see the [driver boundary](async-drivers.md). |
 
 ## Mapping, values and types
 

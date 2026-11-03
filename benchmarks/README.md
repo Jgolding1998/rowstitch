@@ -59,7 +59,7 @@ node benchmarks/columns.mjs --reference-dir /path/to/reference-directory --outpu
 
 Without references, 216 Rowstitch/raw-SQL checks run. Native NOCASE, BINARY and RTRIM behavior remains observable, including the effect of reversing operands. Schema inspection currently does not report or certify these collations. Orange and Kysely already support column operands with broader SQL and relationship contracts; Rowstitch's narrower helpers are not evidence of a defect in either tool.
 
-To check all eight local fixture sets without installing reference libraries:
+To check all nine local fixture sets without installing reference libraries:
 
 ```sh
 node benchmarks/check.mjs
@@ -156,3 +156,14 @@ The [recorded run](grouped-related-results.json) separates these counts:
 - 12 rows from the two-collection expression show joined multiplicity. On these fixtures, Orange 5.5.1 joins both collections before aggregating; its result matches a separately calculated LEFT JOIN cross-product. Rowstitch calculates each path independently. This observation describes the tested expression and fixtures, not every Orange query or driver.
 
 These are result-row counts, not hundreds of independent use cases. `summary.passed` counts only the 109 Rowstitch oracle rows; reference matches, normalized results and observations remain separate. Unexpected values or extra statements fail the run without producing a success report. Related domain filters use the Rowstitch oracle only, since they do not reproduce the Orange API. Shared numeric inputs stay in the safe integer range; separate runtime tests cover large exact totals, text collations and malformed storage. No timing or universal superiority claim is made.
+
+## Synchronous behavior across the driver extraction
+
+The [executor comparison](executor.mjs) exercises 22 named public-SDK observations on one fictional dataset. These include schema metadata, bound values, includes, exact totals, guarded and versioned writes, nested rollback, read-only access and a trace comparison that excludes only clock measurements. It also runs without a baseline as a local fixture check in CI.
+
+```sh
+node benchmarks/executor.mjs
+node benchmarks/executor.mjs --baseline-dir /path/to/installed/rowstitch-0.8.0 --output /path/to/executor-results.json
+```
+
+With `--baseline-dir`, the runner verifies every distribution file against the [pinned release manifest](executor-baseline.json) before importing it. The same observations must match that released Rowstitch 0.8.0 package exactly. A mismatch fails without writing a success report. Counts describe observations from this fixture, not independent datasets or a performance comparison. The async transaction protocol is tested separately with real SQLite and a controllable fault adapter. Those tests establish neither nonblocking execution nor a network driver's behavior.

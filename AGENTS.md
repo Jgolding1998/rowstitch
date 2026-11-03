@@ -2,7 +2,7 @@
 
 - Build a small, honest SQLite ORM for supported Node 24 and 26 LTS releases, with no runtime npm dependencies. Use node:sqlite with foreign keys and defensive mode enabled and extensions disabled. Do not enable WAL automatically.
 - Keep all SQL values bound and identifiers validated and quoted. Never accept arbitrary SQL through the inspector or from trace files.
-- Require meaningful filters for writes. Guard affected-row counts and optimistic version checks atomically. Transactions and savepoints must recover after errors; reject asynchronous transaction callbacks.
+- Require meaningful filters for writes. Guard affected-row counts and optimistic version checks atomically. Transactions and savepoints must recover after errors. The synchronous public API rejects asynchronous callbacks; the internal async session must await callbacks, isolate connection ownership and refuse unfinished work at settlement.
 - Preserve integer precision, nullability and insert-versus-read type contracts. Include actual negative TypeScript checks, not only runtime assertions.
 - The studio is a read-only local inspector and fictional demo. It must not expose an arbitrary database/file/SQL API. Trace imports stay in browser memory. Treat all imported strings as untrusted text.
 - Use fictional examples only. Never commit databases, captures of private schemas, credentials, machine paths, profiles, node_modules, test logs or proof folders. Keep proof outside this repository.

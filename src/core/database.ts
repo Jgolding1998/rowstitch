@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { DatabaseSync } from 'node:sqlite';
+import type { SyncExecutor } from './executor.js';
+import { openSqliteExecutor } from './sqlite-executor.js';
 import { NODE_REQUIREMENT, supportedNode } from '../runtime.js';
 import { ConflictError, RowstitchError, databaseError, fail } from './errors.js';
 import { decode, encode, identifier, isColumnRef, isTable, literal, plainRecord, sqlType,
@@ -41,7 +42,7 @@ export interface DatabaseOptions {
 }
 interface Lease { active: boolean }
 interface State {
-  handle: DatabaseSync; tables: Map<string, AnyTable>; closed: boolean; poisoned: boolean; readOnly: boolean;
+  handle: SyncExecutor; tables: Map<string, AnyTable>; closed: boolean; poisoned: boolean; readOnly: boolean;
   traceValues: boolean; capacity: number; traces: TraceEntry[]; sequence: number;
   transactionSequence: number; transactionId: string | null; depth: number; context: AsyncLocalStorage<Lease>;
   traceBytes: number; omittedEntries: number;
@@ -133,9 +134,7 @@ export class Database {
     this.#check();
     const start = performance.now();
     try {
-      const stmt = this.#state.handle.prepare(sql);
-      stmt.setReadBigInts(true);
-      const rows = stmt.all(...parameters);
+      const rows = this.#state.handle.all(sql, parameters);
       const plan = explain ? rows.map(row => ({ id: Number(row.id), parent: Number(row.parent), detail: String(row.detail) })) : undefined;
       this.#record(operation, table, sql, parameters, start, rows.length, 'ok', plan);
       return rows;
@@ -192,8 +191,8 @@ export class Database {
         if (nested) {
           control('rollback-to', savepoint);
           control('release', savepoint);
-        } else if (this.#state.handle.isTransaction) control('rollback');
-        if (!nested && this.#state.handle.isTransaction) throw new Error('Incomplete cleanup');
+        } else if (this.#state.handle.inTransaction()) control('rollback');
+        if (!nested && this.#state.handle.inTransaction()) throw new Error('Incomplete cleanup');
       } catch {
         this.#state.poisoned = true;
         try { this.#state.handle.close(); } catch { /* Explicitly unusable even if close also fails. */ }
@@ -209,9 +208,7 @@ export class Database {
   #metadata(sql: string, parameters: readonly Parameter[] = []): Record<string, unknown>[] {
     this.#check();
     try {
-      const stmt = this.#state.handle.prepare(sql);
-      stmt.setReadBigInts(true);
-      return stmt.all(...parameters);
+      return this.#state.handle.all(sql, parameters);
     } catch (error) { throw databaseError(error); }
   }
   inspectSchema(): SchemaTable[] {
@@ -358,17 +355,7 @@ export function openDatabase(filename = ':memory:', options: DatabaseOptions = {
     identifier(table.name);
     names.add(table.name.toLowerCase()); tables.set(table.name, table);
   }
-  let handle: DatabaseSync | undefined;
-  try {
-    handle = new DatabaseSync(filename, { readOnly: options.readOnly === true, timeout,
-      enableForeignKeyConstraints: true, enableDoubleQuotedStringLiterals: false, allowExtension: false, defensive: true });
-    handle.enableDefensive(true);
-    handle.exec('PRAGMA trusted_schema = OFF');
-    if (handle.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 1) throw new Error('Foreign keys unavailable');
-  } catch {
-    try { handle?.close(); } catch { /* Do not leak an incompletely initialized handle. */ }
-    return fail('OPEN', 'The local SQLite database could not be opened with the required safety settings.');
-  }
+  const handle = openSqliteExecutor(filename, { readOnly: options.readOnly === true, busyTimeoutMs: timeout });
   return new Database({ handle, tables, closed: false, poisoned: false, readOnly: options.readOnly === true,
     traceValues: options.traceValues === true, capacity, traces: [], sequence: 0, depth: 0,
     transactionSequence: 0, transactionId: null, context: new AsyncLocalStorage(), traceBytes: 0, omittedEntries: 0 });
