@@ -8,6 +8,7 @@ export interface TableModel {
   readonly primaryKey: readonly string[];
   readonly version?: string;
   readonly kinds?: Readonly<Record<string, Kind>>;
+  readonly nullable?: Readonly<Record<string, boolean>>;
 }
 export type ComparisonOperator = '=' | '<>' | '>' | '>=' | '<' | '<=' | 'IN';
 export type ColumnComparisonOperator = Exclude<ComparisonOperator, 'IN'>;
@@ -31,6 +32,19 @@ export interface SelectModel extends HasTable {
   readonly orderBy: readonly OrderModel[]; readonly limit: number; readonly offset: number;
 }
 export interface CountModel extends HasTable { readonly kind: 'count'; readonly where?: PredicateModel }
+export interface AggregateSelectModel {
+  readonly alias: string; readonly operation: 'count' | 'sum' | 'avg' | 'min' | 'max';
+  readonly column?: string; readonly approximate?: true;
+}
+export interface AggregateModel extends HasTable {
+  readonly kind: 'aggregate'; readonly select: readonly AggregateSelectModel[]; readonly where?: PredicateModel;
+}
+export interface AggregateOrderModel { readonly field: string; readonly direction: 'ASC' | 'DESC' }
+export interface GroupModel extends HasTable {
+  readonly kind: 'group'; readonly select: readonly AggregateSelectModel[]; readonly by: readonly string[];
+  readonly where?: PredicateModel; readonly orderBy: readonly AggregateOrderModel[];
+  readonly limit: number; readonly offset: number; readonly overflow: boolean;
+}
 export interface InsertModel extends HasTable { readonly kind: 'insert'; readonly columns: readonly string[]; readonly values: readonly Parameter[] }
 export interface AssignmentModel { readonly column: string; readonly value: Parameter }
 export interface UpdateModel extends HasTable { readonly kind: 'update'; readonly assignments: readonly AssignmentModel[]; readonly where: PredicateModel }
@@ -50,8 +64,8 @@ export interface CreateTableModel extends HasTable { readonly kind: 'create-tabl
 export interface CreateIndexModel extends HasTable { readonly kind: 'create-index'; readonly name: string; readonly columns: readonly string[] }
 export type TransactionAction = 'begin' | 'begin-immediate' | 'commit' | 'rollback' | 'savepoint' | 'release' | 'rollback-to';
 export interface TransactionModel { readonly kind: 'transaction'; readonly action: TransactionAction; readonly name?: string }
-export interface ExplainModel { readonly kind: 'explain'; readonly query: SelectModel }
-export type QueryModel = SelectModel | CountModel | InsertModel | UpdateModel | DeleteModel | RelationModel | CreateTableModel | CreateIndexModel | TransactionModel | ExplainModel;
+export interface ExplainModel { readonly kind: 'explain'; readonly query: SelectModel | AggregateModel | GroupModel }
+export type QueryModel = SelectModel | CountModel | AggregateModel | GroupModel | InsertModel | UpdateModel | DeleteModel | RelationModel | CreateTableModel | CreateIndexModel | TransactionModel | ExplainModel;
 
 function record(value: unknown, keys: readonly string[], code = 'QUERY'): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -120,15 +134,21 @@ export function textMatchOptions(input: unknown = {}): TextMatchCase {
 }
 
 export function tableModel(input: TableModel): TableModel {
-  const value = record(input, ['name', 'columns', 'primaryKey', 'version', 'kinds'], 'SCHEMA');
+  const value = record(input, ['name', 'columns', 'primaryKey', 'version', 'kinds', 'nullable'], 'SCHEMA');
   const columns = names(value.columns, 100, 1);
   if (new Set(columns.map(v => v.toLowerCase())).size !== columns.length) fail('SCHEMA', 'Mapped column names must be unique ignoring case.');
-  let metadata: { kinds?: Readonly<Record<string, Kind>> } = {};
+  let metadata: { kinds?: Readonly<Record<string, Kind>>; nullable?: Readonly<Record<string, boolean>> } = {};
   if (Object.hasOwn(value, 'kinds')) {
     const kinds = record(value.kinds, columns, 'SCHEMA');
     if (Object.keys(kinds).length !== columns.length || columns.some(column => !Object.hasOwn(kinds, column))) fail('SCHEMA', 'Column kind metadata must describe every mapped column.');
     for (const kind of Object.values(kinds)) if (typeof kind !== 'string' || !['integer', 'bigint', 'real', 'text', 'boolean', 'json'].includes(kind)) fail('SCHEMA', 'Column kind metadata contains an unsupported kind.');
     metadata = { kinds: Object.freeze(kinds as Record<string, Kind>) };
+  }
+  if (Object.hasOwn(value, 'nullable')) {
+    const nullable = record(value.nullable, columns, 'SCHEMA');
+    if (Object.keys(nullable).length !== columns.length || columns.some(column => !Object.hasOwn(nullable, column))
+        || Object.values(nullable).some(flag => typeof flag !== 'boolean')) fail('SCHEMA', 'Nullability metadata must describe every mapped column with booleans.');
+    metadata.nullable = Object.freeze(nullable as Record<string, boolean>);
   }
   const base = { name: name(value.name), columns, primaryKey: names(value.primaryKey, 100, 1), ...metadata };
   if (base.primaryKey.some(v => !columns.includes(v))) fail('SCHEMA', 'A primary key must reference mapped columns.');
@@ -308,9 +328,45 @@ function definition(input: unknown, table: TableModel): ColumnDefinitionModel {
   return Object.freeze({ ...base, ...defaultValue, ...foreignKey });
 }
 
+function aggregateSelections(table: TableModel, source: unknown, groupKeys: readonly string[] = []): readonly AggregateSelectModel[] {
+  if (!table.kinds || !table.nullable) fail('QUERY', 'Aggregates require complete column kind and nullability metadata.');
+  const occupied = new Set(groupKeys.map(key => key.toLowerCase()));
+  const selections = list(source, 32, 1).map(item => {
+    const value = record(item, ['alias', 'operation', 'column', 'approximate']);
+    const alias = name(value.alias), operation = value.operation;
+    if (occupied.has(alias.toLowerCase())) fail('QUERY', 'Aggregate aliases must be unique and distinct from grouping keys ignoring case.');
+    occupied.add(alias.toLowerCase());
+    if (typeof operation !== 'string' || !['count', 'sum', 'avg', 'min', 'max'].includes(operation)) fail('QUERY', 'The aggregate operation is not supported.');
+    const column = value.column === undefined ? undefined : field(table, value.column);
+    if (column === undefined && operation !== 'count') fail('QUERY', 'This aggregate requires a mapped column.');
+    const kind = column === undefined ? undefined : table.kinds![column];
+    if (kind === 'json' || (operation === 'sum' || operation === 'avg') && !['integer', 'bigint', 'real'].includes(kind!)
+        || (operation === 'min' || operation === 'max') && !['integer', 'bigint', 'real', 'text'].includes(kind!)) fail('QUERY', 'The aggregate does not support this column kind.');
+    if (Object.hasOwn(value, 'approximate') && (value.approximate !== true || operation !== 'avg')
+        || operation === 'avg' && kind === 'bigint' && value.approximate !== true) fail('QUERY', 'Bigint averages require approximate: true; only averages accept that option.');
+    return Object.freeze({ alias, operation: operation as AggregateSelectModel['operation'], ...(column === undefined ? {} : { column }),
+      ...(value.approximate === true ? { approximate: true as const } : {}) });
+  });
+  const outputs = groupKeys.length + 1 + selections.reduce((total, selection) => total + (selection.operation === 'sum' && ['integer', 'bigint'].includes(table.kinds![selection.column!]) ? 2 : 1), 0);
+  if (outputs > 128) fail('QUERY', 'An aggregate query has too many generated outputs.');
+  return Object.freeze(selections);
+}
+
+function aggregateOrdering(source: unknown, keys: readonly string[], selections: readonly AggregateSelectModel[]): readonly AggregateOrderModel[] {
+  const fields = new Set([...keys, ...selections.map(selection => selection.alias)]);
+  const orders = list(source, 100).map(item => {
+    const value = record(item, ['field', 'direction']);
+    if (typeof value.field !== 'string' || !fields.has(value.field) || value.direction !== 'ASC' && value.direction !== 'DESC') fail('QUERY', 'Grouped ordering must name a selected key or aggregate and use ASC or DESC.');
+    return Object.freeze({ field: value.field, direction: value.direction });
+  });
+  if (new Set(orders.map(order => order.field)).size !== orders.length) fail('QUERY', 'Grouped ordering fields must be distinct.');
+  for (const key of keys) if (!orders.some(order => order.field === key)) orders.push(Object.freeze({ field: key, direction: 'ASC' }));
+  return Object.freeze(orders);
+}
+
 /** Revalidation is public to internal compilers: forged objects do not bypass constructors. */
 export function normalizeQueryModel(input: QueryModel): QueryModel {
-  const value = record(input, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'values', 'assignments', 'partitionBy', 'keys', 'correlateKeys', 'readLimit', 'definitions', 'name', 'action', 'query']);
+  const value = record(input, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'values', 'assignments', 'partitionBy', 'keys', 'correlateKeys', 'readLimit', 'definitions', 'name', 'action', 'query', 'select', 'by', 'overflow']);
   const kind = value.kind;
   if (kind === 'transaction') {
     record(value, ['kind', 'action', 'name']);
@@ -322,14 +378,28 @@ export function normalizeQueryModel(input: QueryModel): QueryModel {
   }
   if (kind === 'explain') {
     record(value, ['kind', 'query']);
-    const select = record(value.query, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset']);
-    if (select.kind !== 'select') fail('QUERY', 'Only generated selects can be explained.');
-    const query = normalizeQueryModel(select as unknown as SelectModel);
-    if (query.kind !== 'select') fail('QUERY', 'Only generated selects can be explained.');
+    const select = record(value.query, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'select', 'by', 'overflow']);
+    if (!['select', 'aggregate', 'group'].includes(select.kind as string)) fail('QUERY', 'Only generated row, aggregate or group reads can be explained.');
+    const query = normalizeQueryModel(select as unknown as SelectModel | AggregateModel | GroupModel);
+    if (query.kind !== 'select' && query.kind !== 'aggregate' && query.kind !== 'group') fail('QUERY', 'Only generated row, aggregate or group reads can be explained.');
     return Object.freeze({ kind, query });
   }
-  if (typeof kind !== 'string' || !['select', 'count', 'insert', 'update', 'delete', 'relation', 'create-table', 'create-index'].includes(kind)) fail('QUERY', 'The query model kind is not supported.');
+  if (typeof kind !== 'string' || !['select', 'count', 'aggregate', 'group', 'insert', 'update', 'delete', 'relation', 'create-table', 'create-index'].includes(kind)) fail('QUERY', 'The query model kind is not supported.');
   const table = tableModel(value.table as TableModel);
+  if (kind === 'aggregate') {
+    record(value, ['kind', 'table', 'select', 'where']);
+    return Object.freeze({ kind, table, select: aggregateSelections(table, value.select), ...optionalWhere(table, value.where) });
+  }
+  if (kind === 'group') {
+    record(value, ['kind', 'table', 'select', 'by', 'where', 'orderBy', 'limit', 'offset', 'overflow']);
+    const by = names(value.by, 16, 1, table);
+    if (!table.kinds || !table.nullable || by.some(key => table.kinds![key] === 'json')) fail('QUERY', 'Grouping requires complete metadata and scalar keys other than JSON.');
+    const select = aggregateSelections(table, value.select, by);
+    if (typeof value.overflow !== 'boolean') fail('QUERY', 'The group overflow option must be a boolean.');
+    const limit = value.overflow ? number(value.limit, 10_001, 10_001) : number(value.limit, 0, 10_000);
+    return Object.freeze({ kind, table, select, by, ...optionalWhere(table, value.where),
+      orderBy: aggregateOrdering(value.orderBy, by, select), limit, offset: number(value.offset, 0, 1_000_000_000), overflow: value.overflow });
+  }
   if (kind === 'select') {
     record(value, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset']);
     return Object.freeze({ kind, table, columns: names(value.columns, 100, 1, table), ...optionalWhere(table, value.where),
@@ -394,6 +464,8 @@ function build<M extends QueryModel>(kind: M['kind'], input: Input<M>, allowed: 
 export const queryModel = Object.freeze({
   select: (input: Input<SelectModel>): SelectModel => build('select', input, ['table', 'columns', 'where', 'orderBy', 'limit', 'offset']),
   count: (input: Input<CountModel>): CountModel => build('count', input, ['table', 'where']),
+  aggregate: (input: Input<AggregateModel>): AggregateModel => build('aggregate', input, ['table', 'select', 'where']),
+  group: (input: Input<GroupModel>): GroupModel => build('group', input, ['table', 'select', 'by', 'where', 'orderBy', 'limit', 'offset', 'overflow']),
   insert: (input: Input<InsertModel>): InsertModel => build('insert', input, ['table', 'columns', 'values']),
   update: (input: Input<UpdateModel>): UpdateModel => build('update', input, ['table', 'assignments', 'where']),
   delete: (input: Input<DeleteModel>): DeleteModel => build('delete', input, ['table', 'where']),

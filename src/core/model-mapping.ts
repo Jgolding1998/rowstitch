@@ -11,6 +11,7 @@ export function mappedTableModel(table: AnyTable): TableModel {
     const columns = Object.entries(table.columns as Columns);
     model = tableModel({ name: table.name, columns: columns.map(([name]) => name),
       kinds: Object.fromEntries(columns.map(([name, column]) => [name, column.config.kind])),
+      nullable: Object.fromEntries(columns.map(([name, column]) => [name, column.config.nullable])),
       primaryKey: columns.filter(([, column]) => column.config.primary).map(([name]) => name),
       ...(table.version === undefined ? {} : { version: table.version }) });
     mappedTables.set(table, model);

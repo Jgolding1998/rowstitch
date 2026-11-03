@@ -1,0 +1,2673 @@
+{
+  "format": "rowstitch-root-aggregate-comparison",
+  "version": 1,
+  "environment": {
+    "node": "v24.22.2",
+    "nodeSQLite": "3.53.4",
+    "rowstitch": "0.6.0",
+    "orange": "5.5.1",
+    "orangeEntry": "Published npm CommonJS source export, explicitly resolved and dynamically imported",
+    "orangeSQLite": "3.53.4"
+  },
+  "fixture": {
+    "samples": [
+      {
+        "id": 1,
+        "category": "A",
+        "qty": 2,
+        "amount": 1.5,
+        "label": "Zulu",
+        "exact": {
+          "bigint": "9007199254740993"
+        }
+      },
+      {
+        "id": 2,
+        "category": "A",
+        "qty": null,
+        "amount": null,
+        "label": "Alpha",
+        "exact": {
+          "bigint": "9007199254740995"
+        }
+      },
+      {
+        "id": 3,
+        "category": "B",
+        "qty": 3,
+        "amount": 2.5,
+        "label": null,
+        "exact": null
+      },
+      {
+        "id": 4,
+        "category": "B",
+        "qty": -1,
+        "amount": -1,
+        "label": "' OR 1=1 --",
+        "exact": {
+          "bigint": "0"
+        }
+      },
+      {
+        "id": 5,
+        "category": null,
+        "qty": null,
+        "amount": null,
+        "label": null,
+        "exact": null
+      },
+      {
+        "id": 6,
+        "category": null,
+        "qty": 1,
+        "amount": 0.5,
+        "label": null,
+        "exact": {
+          "bigint": "5"
+        }
+      }
+    ],
+    "exactRows": [
+      {
+        "id": 1,
+        "category": "above",
+        "amount": {
+          "bigint": "9223372036854775807"
+        }
+      },
+      {
+        "id": 2,
+        "category": "above",
+        "amount": {
+          "bigint": "9223372036854775807"
+        }
+      },
+      {
+        "id": 3,
+        "category": "cancel",
+        "amount": {
+          "bigint": "9223372036854775807"
+        }
+      },
+      {
+        "id": 4,
+        "category": "cancel",
+        "amount": {
+          "bigint": "9223372036854775807"
+        }
+      },
+      {
+        "id": 5,
+        "category": "cancel",
+        "amount": {
+          "bigint": "-9223372036854775807"
+        }
+      },
+      {
+        "id": 6,
+        "category": "cancel",
+        "amount": {
+          "bigint": "-9223372036854775807"
+        }
+      },
+      {
+        "id": 7,
+        "category": "cancel",
+        "amount": {
+          "bigint": "-1"
+        }
+      },
+      {
+        "id": 8,
+        "category": "carry",
+        "amount": {
+          "bigint": "4294967295"
+        }
+      },
+      {
+        "id": 9,
+        "category": "carry",
+        "amount": {
+          "bigint": "1"
+        }
+      },
+      {
+        "id": 10,
+        "category": "negative",
+        "amount": {
+          "bigint": "-4294967296"
+        }
+      },
+      {
+        "id": 11,
+        "category": "zero",
+        "amount": {
+          "bigint": "0"
+        }
+      },
+      {
+        "id": 12,
+        "category": "null",
+        "amount": null
+      }
+    ],
+    "storedRealRows": 1025,
+    "storedRealValue": 9007199254740991
+  },
+  "cases": [
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows",
+      "status": "pass",
+      "expected": {
+        "rows": 6,
+        "present": 4,
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 1.25,
+        "low": -1,
+        "high": 3
+      },
+      "actual": {
+        "rows": {
+          "bigint": "6"
+        },
+        "present": {
+          "bigint": "4"
+        },
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 1.25,
+        "low": {
+          "bigint": "-1"
+        },
+        "high": {
+          "bigint": "3"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows",
+      "status": "pass",
+      "expected": {
+        "rows": 6,
+        "present": 4,
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 1.25,
+        "low": -1,
+        "high": 3
+      },
+      "actual": {
+        "rows": 6,
+        "present": 4,
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 1.25,
+        "low": -1,
+        "high": 3
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows",
+      "status": "pass",
+      "expected": {
+        "rows": 6,
+        "present": 4,
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 1.25,
+        "low": -1,
+        "high": 3
+      },
+      "actual": {
+        "rows": 6,
+        "present": 4,
+        "total": 5,
+        "mean": 1.25,
+        "low": -1,
+        "high": 3
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "filtered rows",
+      "status": "pass",
+      "expected": {
+        "rows": 4,
+        "present": 3,
+        "total": {
+          "bigint": "4"
+        },
+        "mean": 1.3333333333333333,
+        "low": -1,
+        "high": 3
+      },
+      "actual": {
+        "rows": {
+          "bigint": "4"
+        },
+        "present": {
+          "bigint": "3"
+        },
+        "total": {
+          "bigint": "4"
+        },
+        "mean": 1.3333333333333333,
+        "low": {
+          "bigint": "-1"
+        },
+        "high": {
+          "bigint": "3"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples WHERE id<=?",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "filtered rows",
+      "status": "pass",
+      "expected": {
+        "rows": 4,
+        "present": 3,
+        "total": {
+          "bigint": "4"
+        },
+        "mean": 1.3333333333333333,
+        "low": -1,
+        "high": 3
+      },
+      "actual": {
+        "rows": 4,
+        "present": 3,
+        "total": {
+          "bigint": "4"
+        },
+        "mean": 1.3333333333333333,
+        "low": -1,
+        "high": 3
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"id\" <= ?",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "filtered rows",
+      "status": "pass",
+      "expected": {
+        "rows": 4,
+        "present": 3,
+        "total": {
+          "bigint": "4"
+        },
+        "mean": 1.3333333333333333,
+        "low": -1,
+        "high": 3
+      },
+      "actual": {
+        "rows": 4,
+        "present": 3,
+        "total": 4,
+        "mean": 1.3333333333333333,
+        "low": -1,
+        "high": 3
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" where \"samples\".\"id\"<=4",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "positive values",
+      "status": "pass",
+      "expected": {
+        "rows": 3,
+        "present": 3,
+        "total": {
+          "bigint": "6"
+        },
+        "mean": 2,
+        "low": 1,
+        "high": 3
+      },
+      "actual": {
+        "rows": {
+          "bigint": "3"
+        },
+        "present": {
+          "bigint": "3"
+        },
+        "total": {
+          "bigint": "6"
+        },
+        "mean": 2,
+        "low": {
+          "bigint": "1"
+        },
+        "high": {
+          "bigint": "3"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples WHERE qty>?",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "positive values",
+      "status": "pass",
+      "expected": {
+        "rows": 3,
+        "present": 3,
+        "total": {
+          "bigint": "6"
+        },
+        "mean": 2,
+        "low": 1,
+        "high": 3
+      },
+      "actual": {
+        "rows": 3,
+        "present": 3,
+        "total": {
+          "bigint": "6"
+        },
+        "mean": 2,
+        "low": 1,
+        "high": 3
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"qty\" > ?",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "positive values",
+      "status": "pass",
+      "expected": {
+        "rows": 3,
+        "present": 3,
+        "total": {
+          "bigint": "6"
+        },
+        "mean": 2,
+        "low": 1,
+        "high": 3
+      },
+      "actual": {
+        "rows": 3,
+        "present": 3,
+        "total": 6,
+        "mean": 2,
+        "low": 1,
+        "high": 3
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" where \"samples\".\"qty\">0",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "bound quote",
+      "status": "pass",
+      "expected": {
+        "rows": 1,
+        "present": 1,
+        "total": {
+          "bigint": "-1"
+        },
+        "mean": -1,
+        "low": -1,
+        "high": -1
+      },
+      "actual": {
+        "rows": {
+          "bigint": "1"
+        },
+        "present": {
+          "bigint": "1"
+        },
+        "total": {
+          "bigint": "-1"
+        },
+        "mean": -1,
+        "low": {
+          "bigint": "-1"
+        },
+        "high": {
+          "bigint": "-1"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples WHERE label=?",
+          "parameters": [
+            "' OR 1=1 --"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "bound quote",
+      "status": "pass",
+      "expected": {
+        "rows": 1,
+        "present": 1,
+        "total": {
+          "bigint": "-1"
+        },
+        "mean": -1,
+        "low": -1,
+        "high": -1
+      },
+      "actual": {
+        "rows": 1,
+        "present": 1,
+        "total": {
+          "bigint": "-1"
+        },
+        "mean": -1,
+        "low": -1,
+        "high": -1
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"label\" = ?",
+          "parameters": [
+            "' OR 1=1 --"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "bound quote",
+      "status": "pass",
+      "expected": {
+        "rows": 1,
+        "present": 1,
+        "total": {
+          "bigint": "-1"
+        },
+        "mean": -1,
+        "low": -1,
+        "high": -1
+      },
+      "actual": {
+        "rows": 1,
+        "present": 1,
+        "total": -1,
+        "mean": -1,
+        "low": -1,
+        "high": -1
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" where \"samples\".\"label\"=?",
+          "parameters": [
+            "' OR 1=1 --"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "related count does not multiply root rows",
+      "status": "pass",
+      "expected": {
+        "rows": 2,
+        "present": 2,
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 2.5,
+        "low": 2,
+        "high": 3
+      },
+      "actual": {
+        "rows": {
+          "bigint": "2"
+        },
+        "present": {
+          "bigint": "2"
+        },
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 2.5,
+        "low": {
+          "bigint": "2"
+        },
+        "high": {
+          "bigint": "3"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples WHERE (SELECT COUNT(*) FROM children c WHERE c.sample_id=samples.id)>=?",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "related count does not multiply root rows",
+      "status": "pass",
+      "expected": {
+        "rows": 2,
+        "present": 2,
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 2.5,
+        "low": 2,
+        "high": 3
+      },
+      "actual": {
+        "rows": 2,
+        "present": 2,
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 2.5,
+        "low": 2,
+        "high": 3
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"sample_id\" = \"samples\".\"id\") >= ?",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "related count does not multiply root rows",
+      "status": "pass",
+      "expected": {
+        "rows": 2,
+        "present": 2,
+        "total": {
+          "bigint": "5"
+        },
+        "mean": 2.5,
+        "low": 2,
+        "high": 3
+      },
+      "actual": {
+        "rows": 2,
+        "present": 2,
+        "total": 5,
+        "mean": 2.5,
+        "low": 2,
+        "high": 3
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"samples\".\"id\"=\"x1\".\"sample_id\") >= ?",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "group including NULL key",
+      "status": "pass",
+      "expected": [
+        {
+          "category": null,
+          "rows": 2,
+          "present": 1,
+          "total": {
+            "bigint": "1"
+          },
+          "mean": 1,
+          "low": 1,
+          "high": 1
+        },
+        {
+          "category": "A",
+          "rows": 2,
+          "present": 1,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 2,
+          "low": 2,
+          "high": 2
+        },
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "actual": [
+        {
+          "category": null,
+          "rows": 2,
+          "present": 1,
+          "total": {
+            "bigint": "1"
+          },
+          "mean": 1,
+          "low": 1,
+          "high": 1
+        },
+        {
+          "category": "A",
+          "rows": 2,
+          "present": 1,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 2,
+          "low": 2,
+          "high": 2
+        },
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"samples\".\"category\" AS \"__rs_key_0\", COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"samples\".\"category\" IS NULL THEN 0 WHEN typeof(\"samples\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"samples\" GROUP BY \"samples\".\"category\" ORDER BY 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            100,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "group including NULL key",
+      "status": "pass",
+      "expected": [
+        {
+          "category": null,
+          "rows": 2,
+          "present": 1,
+          "total": {
+            "bigint": "1"
+          },
+          "mean": 1,
+          "low": 1,
+          "high": 1
+        },
+        {
+          "category": "A",
+          "rows": 2,
+          "present": 1,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 2,
+          "low": 2,
+          "high": 2
+        },
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "actual": [
+        {
+          "category": null,
+          "rows": {
+            "bigint": "2"
+          },
+          "present": {
+            "bigint": "1"
+          },
+          "total": {
+            "bigint": "1"
+          },
+          "mean": 1,
+          "low": {
+            "bigint": "1"
+          },
+          "high": {
+            "bigint": "1"
+          }
+        },
+        {
+          "category": "A",
+          "rows": {
+            "bigint": "2"
+          },
+          "present": {
+            "bigint": "1"
+          },
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 2,
+          "low": {
+            "bigint": "2"
+          },
+          "high": {
+            "bigint": "2"
+          }
+        },
+        {
+          "category": "B",
+          "rows": {
+            "bigint": "2"
+          },
+          "present": {
+            "bigint": "2"
+          },
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": {
+            "bigint": "-1"
+          },
+          "high": {
+            "bigint": "3"
+          }
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT category,COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples GROUP BY category ORDER BY category LIMIT ? OFFSET ?",
+          "parameters": [
+            100,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "group including NULL key",
+      "status": "pass",
+      "expected": [
+        {
+          "category": null,
+          "rows": 2,
+          "present": 1,
+          "total": {
+            "bigint": "1"
+          },
+          "mean": 1,
+          "low": 1,
+          "high": 1
+        },
+        {
+          "category": "A",
+          "rows": 2,
+          "present": 1,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 2,
+          "low": 2,
+          "high": 2
+        },
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "actual": [
+        {
+          "category": null,
+          "rows": 2,
+          "present": 1,
+          "total": 1,
+          "mean": 1,
+          "low": 1,
+          "high": 1
+        },
+        {
+          "category": "A",
+          "rows": 2,
+          "present": 1,
+          "total": 2,
+          "mean": 2,
+          "low": 2,
+          "high": 2
+        },
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": 2,
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"category\" \"category\",count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" GROUP BY \"samples\".\"category\" order by \"category\" limit 100",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "aggregate ordering and page",
+      "status": "pass",
+      "expected": [
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "actual": [
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"samples\".\"category\" AS \"__rs_key_0\", COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"samples\".\"category\" IS NULL THEN 0 WHEN typeof(\"samples\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"samples\" GROUP BY \"samples\".\"category\" ORDER BY 4 DESC, 5 DESC, 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "aggregate ordering and page",
+      "status": "pass",
+      "expected": [
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "actual": [
+        {
+          "category": "B",
+          "rows": {
+            "bigint": "2"
+          },
+          "present": {
+            "bigint": "2"
+          },
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": {
+            "bigint": "-1"
+          },
+          "high": {
+            "bigint": "3"
+          }
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT category,COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples GROUP BY category ORDER BY total DESC,category LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "aggregate ordering and page",
+      "status": "pass",
+      "expected": [
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": {
+            "bigint": "2"
+          },
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "actual": [
+        {
+          "category": "B",
+          "rows": 2,
+          "present": 2,
+          "total": 2,
+          "mean": 1,
+          "low": -1,
+          "high": 3
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"category\" \"category\",count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" GROUP BY \"samples\".\"category\" order by \"total\" desc,\"category\" limit 1 offset 1",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "empty root",
+      "status": "pass",
+      "expected": {
+        "rows": 0,
+        "present": 0,
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "actual": {
+        "rows": 0,
+        "present": 0,
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"id\" < ?",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "empty root",
+      "status": "pass",
+      "expected": {
+        "rows": 0,
+        "present": 0,
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "actual": {
+        "rows": {
+          "bigint": "0"
+        },
+        "present": {
+          "bigint": "0"
+        },
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples WHERE id<?",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "empty root native contract",
+      "status": "pass",
+      "actual": {
+        "rows": 0,
+        "present": 0,
+        "total": 0,
+        "mean": 0,
+        "low": {
+          "number": "NaN"
+        },
+        "high": {
+          "number": "NaN"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" where \"samples\".\"id\"<0",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all-NULL root",
+      "status": "pass",
+      "expected": {
+        "rows": 1,
+        "present": 0,
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "actual": {
+        "rows": 1,
+        "present": 0,
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"id\" = ?",
+          "parameters": [
+            5
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all-NULL root",
+      "status": "pass",
+      "expected": {
+        "rows": 1,
+        "present": 0,
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "actual": {
+        "rows": {
+          "bigint": "1"
+        },
+        "present": {
+          "bigint": "0"
+        },
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(id) AS rows,COUNT(qty) AS present,SUM(qty) AS total,AVG(qty) AS mean,MIN(qty) AS low,MAX(qty) AS high FROM samples WHERE id=?",
+          "parameters": [
+            5
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all-NULL root native contract",
+      "status": "pass",
+      "actual": {
+        "rows": 1,
+        "present": 0,
+        "total": 0,
+        "mean": 0,
+        "low": {
+          "number": "NaN"
+        },
+        "high": {
+          "number": "NaN"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" where \"samples\".\"id\"=5",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "empty groups",
+      "status": "pass",
+      "actual": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"samples\".\"category\" AS \"__rs_key_0\", COUNT(*) AS \"__rs_agg_0\", COUNT(\"samples\".\"qty\") AS \"__rs_agg_1\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_2\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_2\", AVG(\"samples\".\"qty\") AS \"__rs_agg_3\", MIN(\"samples\".\"qty\") AS \"__rs_agg_4\", MAX(\"samples\".\"qty\") AS \"__rs_agg_5\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"samples\".\"category\" IS NULL THEN 0 WHEN typeof(\"samples\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"id\" < ? GROUP BY \"samples\".\"category\" ORDER BY 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            10001,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "empty groups",
+      "status": "pass",
+      "actual": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT category,COUNT(*) FROM samples WHERE id<0 GROUP BY category",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "empty groups",
+      "status": "pass",
+      "actual": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"category\" \"category\",count(\"samples\".\"id\") as \"rows\",count(\"samples\".\"qty\") as \"present\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"total\",COALESCE(avg(\"samples\".\"qty\"), 0) as \"mean\",min(\"samples\".\"qty\") as \"low\",max(\"samples\".\"qty\") as \"high\" from \"samples\" \"samples\" where \"samples\".\"id\"<0 GROUP BY \"samples\".\"category\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "NOCASE text extrema",
+      "status": "pass",
+      "actual": {
+        "low": "a",
+        "high": "Z"
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT MIN(\"collated\".\"label\") AS \"__rs_agg_0\", MAX(\"collated\".\"label\") AS \"__rs_agg_1\", COALESCE(MAX((CASE WHEN (CASE WHEN \"collated\".\"label\" IS NULL THEN 1 WHEN typeof(\"collated\".\"label\") = 'text' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"collated\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "NOCASE text extrema",
+      "status": "pass",
+      "actual": {
+        "low": "a",
+        "high": "Z"
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT MIN(label) AS low,MAX(label) AS high FROM collated",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "NOCASE text extrema native decoding",
+      "status": "pass",
+      "actual": {
+        "low": {
+          "number": "NaN"
+        },
+        "high": {
+          "number": "NaN"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select min(\"collated\".\"label\") as \"low\",max(\"collated\".\"label\") as \"high\" from \"collated\" \"collated\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "NOCASE grouping and ordering",
+      "status": "pass",
+      "actual": [
+        {
+          "label": "a",
+          "rows": 2
+        },
+        {
+          "label": "b",
+          "rows": 1
+        },
+        {
+          "label": "Z",
+          "rows": 1
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"collated\".\"label\" AS \"__rs_key_0\", COUNT(*) AS \"__rs_agg_0\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"collated\".\"label\" IS NULL THEN 1 WHEN typeof(\"collated\".\"label\") = 'text' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"collated\" GROUP BY \"collated\".\"label\" ORDER BY 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            10001,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "NOCASE grouping and ordering",
+      "status": "pass",
+      "actual": [
+        {
+          "label": "a",
+          "rows": {
+            "bigint": "2"
+          }
+        },
+        {
+          "label": "b",
+          "rows": {
+            "bigint": "1"
+          }
+        },
+        {
+          "label": "Z",
+          "rows": {
+            "bigint": "1"
+          }
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT label,COUNT(*) AS rows FROM collated GROUP BY label ORDER BY label",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "NOCASE grouping and ordering",
+      "status": "pass",
+      "actual": [
+        {
+          "label": "a",
+          "rows": 2
+        },
+        {
+          "label": "b",
+          "rows": 1
+        },
+        {
+          "label": "Z",
+          "rows": 1
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"collated\".\"label\" \"label\",count(\"collated\".\"id\") as \"rows\" from \"collated\" \"collated\" GROUP BY \"collated\".\"label\" order by \"label\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "large bigint ordinary read",
+      "status": "pass",
+      "actual": {
+        "exact": {
+          "bigint": "9007199254740993"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"exact\" FROM \"samples\" WHERE \"id\" = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "large bigint ordinary read",
+      "status": "pass",
+      "actual": {
+        "exact": {
+          "bigint": "9007199254740993"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT exact FROM samples WHERE id=?",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "large bigint ordinary read",
+      "status": "pass",
+      "actual": {
+        "id": 1,
+        "exact": "9007199254740993"
+      },
+      "note": "The normal bigint read succeeds; aggregate observations must not be generalized to this path.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",CAST(\"samples\".\"exact\" AS TEXT) as \"ssamples5\" from \"samples\" \"samples\" where \"samples\".\"id\"=1 order by \"samples\".\"id\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "large bigint minimum",
+      "status": "pass",
+      "actual": {
+        "low": {
+          "bigint": "9007199254740993"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT MIN(\"samples\".\"exact\") AS \"__rs_agg_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"exact\" IS NULL THEN 0 WHEN typeof(\"samples\".\"exact\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"id\" = ?",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "large bigint minimum",
+      "status": "pass",
+      "actual": {
+        "low": {
+          "bigint": "9007199254740993"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT MIN(exact) AS low FROM samples WHERE id=?",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "large bigint minimum native decoding",
+      "status": "pass",
+      "expectedError": "ERR_OUT_OF_RANGE",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select min(\"samples\".\"exact\") as \"low\" from \"samples\" \"samples\" where \"samples\".\"id\"=1",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "small bigint ordinary read",
+      "status": "pass",
+      "actual": {
+        "exact": {
+          "bigint": "5"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"exact\" FROM \"samples\" WHERE \"id\" = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            6,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "small bigint ordinary read",
+      "status": "pass",
+      "actual": {
+        "exact": {
+          "bigint": "5"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT exact FROM samples WHERE id=?",
+          "parameters": [
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "small bigint ordinary read",
+      "status": "pass",
+      "actual": {
+        "id": 6,
+        "exact": "5"
+      },
+      "note": "The normal bigint read succeeds; aggregate observations must not be generalized to this path.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"id\" as \"ssamples0\",CAST(\"samples\".\"exact\" AS TEXT) as \"ssamples5\" from \"samples\" \"samples\" where \"samples\".\"id\"=6 order by \"samples\".\"id\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "small bigint minimum",
+      "status": "pass",
+      "actual": {
+        "low": {
+          "bigint": "5"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT MIN(\"samples\".\"exact\") AS \"__rs_agg_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"exact\" IS NULL THEN 0 WHEN typeof(\"samples\".\"exact\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"id\" = ?",
+          "parameters": [
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "small bigint minimum",
+      "status": "pass",
+      "actual": {
+        "low": {
+          "bigint": "5"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT MIN(exact) AS low FROM samples WHERE id=?",
+          "parameters": [
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "small bigint minimum native decoding",
+      "status": "pass",
+      "actual": {
+        "low": 5
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select min(\"samples\".\"exact\") as \"low\" from \"samples\" \"samples\" where \"samples\".\"id\"=6",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "bigint average explicit approximation",
+      "status": "pass",
+      "exactInput": {
+        "bigint": "9007199254740993"
+      },
+      "actual": {
+        "mean": 9007199254740992
+      },
+      "note": "The approximate result cannot represent the original odd integer exactly.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT AVG(\"samples\".\"exact\") AS \"__rs_agg_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"samples\".\"exact\" IS NULL THEN 0 WHEN typeof(\"samples\".\"exact\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"id\" = ?",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "bigint average approximation",
+      "status": "pass",
+      "actual": {
+        "mean": 9007199254740992
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT AVG(exact) AS mean FROM samples WHERE id=?",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "bigint average approximation succeeds",
+      "status": "pass",
+      "actual": {
+        "mean": 9007199254740992
+      },
+      "note": "This large-input AVG succeeds; the MIN decoding observation does not describe all bigint aggregates.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select COALESCE(avg(\"samples\".\"exact\"), 0) as \"mean\" from \"samples\" \"samples\" where \"samples\".\"id\"=1",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "alias matching a non-group column",
+      "status": "pass",
+      "actual": [
+        {
+          "category": "B",
+          "qty": {
+            "bigint": "3"
+          }
+        },
+        {
+          "category": "A",
+          "qty": {
+            "bigint": "2"
+          }
+        },
+        {
+          "category": null,
+          "qty": {
+            "bigint": "1"
+          }
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"samples\".\"category\" AS \"__rs_key_0\", (SUM((\"samples\".\"qty\" >> 32)) + (SUM((\"samples\".\"qty\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_0\", (SUM((\"samples\".\"qty\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_0\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"samples\".\"category\" IS NULL THEN 0 WHEN typeof(\"samples\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"samples\".\"qty\" IS NULL THEN 0 WHEN typeof(\"samples\".\"qty\") = 'integer' AND \"samples\".\"qty\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"samples\" WHERE \"samples\".\"qty\" > ? GROUP BY \"samples\".\"category\" ORDER BY 2 DESC, 3 DESC, 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            10001,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "alias matching a non-group column",
+      "status": "pass",
+      "actual": [
+        {
+          "category": "B",
+          "qty": {
+            "bigint": "3"
+          }
+        },
+        {
+          "category": "A",
+          "qty": {
+            "bigint": "2"
+          }
+        },
+        {
+          "category": null,
+          "qty": {
+            "bigint": "1"
+          }
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT samples.category,SUM(samples.qty) AS qty FROM samples WHERE samples.qty>? GROUP BY samples.category ORDER BY 2 DESC,1",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "alias matching a non-group column",
+      "status": "pass",
+      "actual": [
+        {
+          "category": "B",
+          "qty": 3
+        },
+        {
+          "category": "A",
+          "qty": 2
+        },
+        {
+          "category": null,
+          "qty": 1
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"samples\".\"category\" \"category\",COALESCE(sum(\"samples\".\"qty\"), 0) as \"qty\" from \"samples\" \"samples\" where \"samples\".\"qty\">0 GROUP BY \"samples\".\"category\" order by \"qty\" desc,\"category\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "beyond int64",
+      "status": "pass",
+      "expected": {
+        "bigint": "18446744073709551614"
+      },
+      "actual": {
+        "total": {
+          "bigint": "18446744073709551614"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT (SUM((\"exact_sums\".\"amount\" >> 32)) + (SUM((\"exact_sums\".\"amount\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_0\", (SUM((\"exact_sums\".\"amount\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"exact_sums\".\"amount\" IS NULL THEN 0 WHEN typeof(\"exact_sums\".\"amount\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"exact_sums\" WHERE \"exact_sums\".\"category\" = ?",
+          "parameters": [
+            "above"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite split recipe + JS oracle",
+      "name": "beyond int64",
+      "status": "pass",
+      "expected": {
+        "bigint": "18446744073709551614"
+      },
+      "actual": {
+        "bigint": "18446744073709551614"
+      },
+      "partials": {
+        "high": {
+          "bigint": "4294967294"
+        },
+        "low": {
+          "bigint": "8589934590"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(amount >> 32) AS high,SUM(amount & 4294967295) AS low FROM exact_sums WHERE category=?",
+          "parameters": [
+            "above"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "intermediate cancellation",
+      "status": "pass",
+      "expected": {
+        "bigint": "-1"
+      },
+      "actual": {
+        "total": {
+          "bigint": "-1"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT (SUM((\"exact_sums\".\"amount\" >> 32)) + (SUM((\"exact_sums\".\"amount\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_0\", (SUM((\"exact_sums\".\"amount\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"exact_sums\".\"amount\" IS NULL THEN 0 WHEN typeof(\"exact_sums\".\"amount\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"exact_sums\" WHERE \"exact_sums\".\"category\" = ?",
+          "parameters": [
+            "cancel"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite split recipe + JS oracle",
+      "name": "intermediate cancellation",
+      "status": "pass",
+      "expected": {
+        "bigint": "-1"
+      },
+      "actual": {
+        "bigint": "-1"
+      },
+      "partials": {
+        "high": {
+          "bigint": "-3"
+        },
+        "low": {
+          "bigint": "12884901887"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(amount >> 32) AS high,SUM(amount & 4294967295) AS low FROM exact_sums WHERE category=?",
+          "parameters": [
+            "cancel"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "low-word carry",
+      "status": "pass",
+      "expected": {
+        "bigint": "4294967296"
+      },
+      "actual": {
+        "total": {
+          "bigint": "4294967296"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT (SUM((\"exact_sums\".\"amount\" >> 32)) + (SUM((\"exact_sums\".\"amount\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_0\", (SUM((\"exact_sums\".\"amount\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"exact_sums\".\"amount\" IS NULL THEN 0 WHEN typeof(\"exact_sums\".\"amount\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"exact_sums\" WHERE \"exact_sums\".\"category\" = ?",
+          "parameters": [
+            "carry"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite split recipe + JS oracle",
+      "name": "low-word carry",
+      "status": "pass",
+      "expected": {
+        "bigint": "4294967296"
+      },
+      "actual": {
+        "bigint": "4294967296"
+      },
+      "partials": {
+        "high": {
+          "bigint": "0"
+        },
+        "low": {
+          "bigint": "4294967296"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(amount >> 32) AS high,SUM(amount & 4294967295) AS low FROM exact_sums WHERE category=?",
+          "parameters": [
+            "carry"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all-NULL exact sum",
+      "status": "pass",
+      "expected": null,
+      "actual": {
+        "total": null
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT (SUM((\"exact_sums\".\"amount\" >> 32)) + (SUM((\"exact_sums\".\"amount\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_0\", (SUM((\"exact_sums\".\"amount\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"exact_sums\".\"amount\" IS NULL THEN 0 WHEN typeof(\"exact_sums\".\"amount\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"exact_sums\" WHERE \"exact_sums\".\"category\" = ?",
+          "parameters": [
+            "null"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite split recipe + JS oracle",
+      "name": "all-NULL exact sum",
+      "status": "pass",
+      "expected": null,
+      "actual": null,
+      "partials": {
+        "high": null,
+        "low": null
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(amount >> 32) AS high,SUM(amount & 4294967295) AS low FROM exact_sums WHERE category=?",
+          "parameters": [
+            "null"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "exact grouped sum order asc",
+      "status": "pass",
+      "expected": [
+        {
+          "category": "null",
+          "total": null
+        },
+        {
+          "category": "negative",
+          "total": {
+            "bigint": "-4294967296"
+          }
+        },
+        {
+          "category": "cancel",
+          "total": {
+            "bigint": "-1"
+          }
+        },
+        {
+          "category": "zero",
+          "total": {
+            "bigint": "0"
+          }
+        },
+        {
+          "category": "carry",
+          "total": {
+            "bigint": "4294967296"
+          }
+        },
+        {
+          "category": "above",
+          "total": {
+            "bigint": "18446744073709551614"
+          }
+        }
+      ],
+      "actual": [
+        {
+          "category": "null",
+          "total": null
+        },
+        {
+          "category": "negative",
+          "total": {
+            "bigint": "-4294967296"
+          }
+        },
+        {
+          "category": "cancel",
+          "total": {
+            "bigint": "-1"
+          }
+        },
+        {
+          "category": "zero",
+          "total": {
+            "bigint": "0"
+          }
+        },
+        {
+          "category": "carry",
+          "total": {
+            "bigint": "4294967296"
+          }
+        },
+        {
+          "category": "above",
+          "total": {
+            "bigint": "18446744073709551614"
+          }
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"exact_sums\".\"category\" AS \"__rs_key_0\", (SUM((\"exact_sums\".\"amount\" >> 32)) + (SUM((\"exact_sums\".\"amount\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_0\", (SUM((\"exact_sums\".\"amount\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_0\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"exact_sums\".\"category\" IS NULL THEN 1 WHEN typeof(\"exact_sums\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"exact_sums\".\"amount\" IS NULL THEN 0 WHEN typeof(\"exact_sums\".\"amount\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"exact_sums\" GROUP BY \"exact_sums\".\"category\" ORDER BY 2 ASC, 3 ASC, 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            10001,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite split recipe + JS oracle",
+      "name": "exact grouped sum order asc",
+      "status": "pass",
+      "expected": [
+        {
+          "category": "null",
+          "total": null
+        },
+        {
+          "category": "negative",
+          "total": {
+            "bigint": "-4294967296"
+          }
+        },
+        {
+          "category": "cancel",
+          "total": {
+            "bigint": "-1"
+          }
+        },
+        {
+          "category": "zero",
+          "total": {
+            "bigint": "0"
+          }
+        },
+        {
+          "category": "carry",
+          "total": {
+            "bigint": "4294967296"
+          }
+        },
+        {
+          "category": "above",
+          "total": {
+            "bigint": "18446744073709551614"
+          }
+        }
+      ],
+      "actual": [
+        {
+          "category": "null",
+          "total": null
+        },
+        {
+          "category": "negative",
+          "total": {
+            "bigint": "-4294967296"
+          }
+        },
+        {
+          "category": "cancel",
+          "total": {
+            "bigint": "-1"
+          }
+        },
+        {
+          "category": "zero",
+          "total": {
+            "bigint": "0"
+          }
+        },
+        {
+          "category": "carry",
+          "total": {
+            "bigint": "4294967296"
+          }
+        },
+        {
+          "category": "above",
+          "total": {
+            "bigint": "18446744073709551614"
+          }
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT category,(SUM(amount >> 32)+(SUM(amount & 4294967295) >> 32)) AS high,(SUM(amount & 4294967295) & 4294967295) AS low FROM exact_sums GROUP BY category ORDER BY high ASC,low ASC,category",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "exact grouped sum order desc",
+      "status": "pass",
+      "expected": [
+        {
+          "category": "above",
+          "total": {
+            "bigint": "18446744073709551614"
+          }
+        },
+        {
+          "category": "carry",
+          "total": {
+            "bigint": "4294967296"
+          }
+        },
+        {
+          "category": "zero",
+          "total": {
+            "bigint": "0"
+          }
+        },
+        {
+          "category": "cancel",
+          "total": {
+            "bigint": "-1"
+          }
+        },
+        {
+          "category": "negative",
+          "total": {
+            "bigint": "-4294967296"
+          }
+        },
+        {
+          "category": "null",
+          "total": null
+        }
+      ],
+      "actual": [
+        {
+          "category": "above",
+          "total": {
+            "bigint": "18446744073709551614"
+          }
+        },
+        {
+          "category": "carry",
+          "total": {
+            "bigint": "4294967296"
+          }
+        },
+        {
+          "category": "zero",
+          "total": {
+            "bigint": "0"
+          }
+        },
+        {
+          "category": "cancel",
+          "total": {
+            "bigint": "-1"
+          }
+        },
+        {
+          "category": "negative",
+          "total": {
+            "bigint": "-4294967296"
+          }
+        },
+        {
+          "category": "null",
+          "total": null
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"exact_sums\".\"category\" AS \"__rs_key_0\", (SUM((\"exact_sums\".\"amount\" >> 32)) + (SUM((\"exact_sums\".\"amount\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_0\", (SUM((\"exact_sums\".\"amount\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_0\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"exact_sums\".\"category\" IS NULL THEN 1 WHEN typeof(\"exact_sums\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"exact_sums\".\"amount\" IS NULL THEN 0 WHEN typeof(\"exact_sums\".\"amount\") = 'integer' THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"exact_sums\" GROUP BY \"exact_sums\".\"category\" ORDER BY 2 DESC, 3 DESC, 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            10001,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite split recipe + JS oracle",
+      "name": "exact grouped sum order desc",
+      "status": "pass",
+      "expected": [
+        {
+          "category": "above",
+          "total": {
+            "bigint": "18446744073709551614"
+          }
+        },
+        {
+          "category": "carry",
+          "total": {
+            "bigint": "4294967296"
+          }
+        },
+        {
+          "category": "zero",
+          "total": {
+            "bigint": "0"
+          }
+        },
+        {
+          "category": "cancel",
+          "total": {
+            "bigint": "-1"
+          }
+        },
+        {
+          "category": "negative",
+          "total": {
+            "bigint": "-4294967296"
+          }
+        },
+        {
+          "category": "null",
+          "total": null
+        }
+      ],
+      "actual": [
+        {
+          "category": "above",
+          "total": {
+            "bigint": "18446744073709551614"
+          }
+        },
+        {
+          "category": "carry",
+          "total": {
+            "bigint": "4294967296"
+          }
+        },
+        {
+          "category": "zero",
+          "total": {
+            "bigint": "0"
+          }
+        },
+        {
+          "category": "cancel",
+          "total": {
+            "bigint": "-1"
+          }
+        },
+        {
+          "category": "negative",
+          "total": {
+            "bigint": "-4294967296"
+          }
+        },
+        {
+          "category": "null",
+          "total": null
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT category,(SUM(amount >> 32)+(SUM(amount & 4294967295) >> 32)) AS high,(SUM(amount & 4294967295) & 4294967295) AS low FROM exact_sums GROUP BY category ORDER BY high DESC,low DESC,category",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite native SUM",
+      "name": "above engine overflow",
+      "status": "pass",
+      "expectedError": "integer overflow",
+      "note": "Same native engine limit as Orange; raw split recipe passes above.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(amount) FROM exact_sums WHERE category=?",
+          "parameters": [
+            "above"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1 native SUM",
+      "name": "above engine overflow",
+      "status": "pass",
+      "expectedError": "integer overflow",
+      "note": "SQLite native SUM behavior, not an Orange-specific defect.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select COALESCE(sum(\"exact_sums\".\"amount\"), 0) as \"total\" from \"exact_sums\" \"exact_sums\" where \"exact_sums\".\"category\"=?",
+          "parameters": [
+            "above"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite native SUM",
+      "name": "cancel engine overflow",
+      "status": "pass",
+      "expectedError": "integer overflow",
+      "note": "Same native engine limit as Orange; raw split recipe passes above.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(amount) FROM exact_sums WHERE category=?",
+          "parameters": [
+            "cancel"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1 native SUM",
+      "name": "cancel engine overflow",
+      "status": "pass",
+      "expectedError": "integer overflow",
+      "note": "SQLite native SUM behavior, not an Orange-specific defect.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select COALESCE(sum(\"exact_sums\".\"amount\"), 0) as \"total\" from \"exact_sums\" \"exact_sums\" where \"exact_sums\".\"category\"=?",
+          "parameters": [
+            "cancel"
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "mapped real sum over INTEGER storage",
+      "status": "pass",
+      "approximateExpected": 9232379236109515000,
+      "actual": {
+        "total": 9232379236109515000
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(CAST(\"stored_real\".\"amount\" AS REAL)) AS \"__rs_agg_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"stored_real\".\"amount\" IS NULL THEN 1 WHEN (typeof(\"stored_real\".\"amount\") = 'real' AND \"stored_real\".\"amount\" BETWEEN -1.7976931348623157e308 AND 1.7976931348623157e308) OR (typeof(\"stored_real\".\"amount\") = 'integer' AND \"stored_real\".\"amount\" BETWEEN -9007199254740991 AND 9007199254740991) THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"stored_real\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite explicit REAL cast",
+      "name": "mapped real sum over INTEGER storage",
+      "status": "pass",
+      "approximateExpected": 9232379236109515000,
+      "actual": {
+        "total": 9232379236109515000
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(CAST(amount AS REAL)) AS total FROM stored_real",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite native SUM",
+      "name": "INTEGER storage engine overflow",
+      "status": "pass",
+      "expectedError": "integer overflow",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(amount) FROM stored_real",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1 native SUM",
+      "name": "INTEGER storage engine overflow",
+      "status": "pass",
+      "expectedError": "integer overflow",
+      "note": "Explicit raw REAL cast above is a working alternative for this approximate contract.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select COALESCE(sum(\"stored_real\".\"amount\"), 0) as \"total\" from \"stored_real\" \"stored_real\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nonfinite real sum rejection",
+      "status": "pass",
+      "expectedError": "AGGREGATE_RANGE",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(CAST(\"real_overflow\".\"amount\" AS REAL)) AS \"__rs_agg_0\", COALESCE(MAX((CASE WHEN (CASE WHEN \"real_overflow\".\"amount\" IS NULL THEN 1 WHEN (typeof(\"real_overflow\".\"amount\") = 'real' AND \"real_overflow\".\"amount\" BETWEEN -1.7976931348623157e308 AND 1.7976931348623157e308) OR (typeof(\"real_overflow\".\"amount\") = 'integer' AND \"real_overflow\".\"amount\" BETWEEN -9007199254740991 AND 9007199254740991) THEN 0 ELSE 1 END) THEN 1 ELSE 0 END)), 0) AS \"__rs_bad\" FROM \"real_overflow\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite",
+      "name": "nonfinite real sum native result",
+      "status": "pass",
+      "actual": {
+        "total": {
+          "number": "Infinity"
+        }
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT SUM(amount) AS total FROM real_overflow",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nonfinite real sum native result",
+      "status": "pass",
+      "actual": {
+        "total": {
+          "number": "Infinity"
+        }
+      },
+      "note": "Same engine result as raw SQLite; Rowstitch explicitly rejects it.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select COALESCE(sum(\"real_overflow\".\"amount\"), 0) as \"total\" from \"real_overflow\" \"real_overflow\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "count all ignores unrelated invalid storage",
+      "status": "pass",
+      "actual": {
+        "rows": 2
+      },
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT COUNT(*) AS \"__rs_agg_0\", COALESCE(MAX(0), 0) AS \"__rs_bad\" FROM \"invalid\"",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "guard catches invalid group outside page",
+      "status": "pass",
+      "expectedError": "DATA",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"invalid\".\"category\" AS \"__rs_key_0\", COUNT(\"invalid\".\"amount\") AS \"__rs_agg_0\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"invalid\".\"category\" IS NULL THEN 1 WHEN typeof(\"invalid\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"invalid\".\"amount\" IS NULL THEN 1 WHEN typeof(\"invalid\".\"amount\") = 'integer' AND \"invalid\".\"amount\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"invalid\" GROUP BY \"invalid\".\"category\" ORDER BY 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "guard excludes filtered-out invalid data",
+      "status": "pass",
+      "actual": [
+        {
+          "category": "a",
+          "total": {
+            "bigint": "1"
+          }
+        }
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"invalid\".\"category\" AS \"__rs_key_0\", (SUM((\"invalid\".\"amount\" >> 32)) + (SUM((\"invalid\".\"amount\" & 4294967295)) >> 32)) AS \"__rs_sum_hi_0\", (SUM((\"invalid\".\"amount\" & 4294967295)) & 4294967295) AS \"__rs_sum_lo_0\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"invalid\".\"category\" IS NULL THEN 1 WHEN typeof(\"invalid\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"invalid\".\"amount\" IS NULL THEN 1 WHEN typeof(\"invalid\".\"amount\") = 'integer' AND \"invalid\".\"amount\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"invalid\" WHERE \"invalid\".\"id\" = ? GROUP BY \"invalid\".\"category\" ORDER BY 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "empty page carries no guard",
+      "status": "pass",
+      "actual": [],
+      "note": "An empty page makes no data-validity assertion.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"invalid\".\"category\" AS \"__rs_key_0\", COUNT(\"invalid\".\"amount\") AS \"__rs_agg_0\", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN \"invalid\".\"category\" IS NULL THEN 1 WHEN typeof(\"invalid\".\"category\") = 'text' THEN 0 ELSE 1 END) OR (CASE WHEN \"invalid\".\"amount\" IS NULL THEN 1 WHEN typeof(\"invalid\".\"amount\") = 'integer' AND \"invalid\".\"amount\" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS \"__rs_bad\" FROM \"invalid\" GROUP BY \"invalid\".\"category\" ORDER BY 1 ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            10001,
+            100
+          ]
+        }
+      ]
+    }
+  ],
+  "contractDifferences": [
+    {
+      "name": "empty root",
+      "rowstitch": {
+        "rows": 0,
+        "present": 0,
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "orange": {
+        "rows": 0,
+        "present": 0,
+        "total": 0,
+        "mean": 0,
+        "low": {
+          "number": "NaN"
+        },
+        "high": {
+          "number": "NaN"
+        }
+      },
+      "note": "SUM/AVG zero follows Orange COALESCE; empty MIN/MAX NaN is observed in this pinned aggregate decoder only."
+    },
+    {
+      "name": "all-NULL root",
+      "rowstitch": {
+        "rows": 1,
+        "present": 0,
+        "total": null,
+        "mean": null,
+        "low": null,
+        "high": null
+      },
+      "orange": {
+        "rows": 1,
+        "present": 0,
+        "total": 0,
+        "mean": 0,
+        "low": {
+          "number": "NaN"
+        },
+        "high": {
+          "number": "NaN"
+        }
+      },
+      "note": "SUM/AVG zero follows Orange COALESCE; empty MIN/MAX NaN is observed in this pinned aggregate decoder only."
+    },
+    {
+      "name": "text extrema decoding",
+      "rowstitch": {
+        "low": "a",
+        "high": "Z"
+      },
+      "orange": {
+        "low": {
+          "number": "NaN"
+        },
+        "high": {
+          "number": "NaN"
+        }
+      },
+      "note": "Pinned aggregate-path observation; no statement about all Orange text APIs or other drivers."
+    },
+    {
+      "name": "large bigint minimum on node:sqlite aggregate path",
+      "rowstitch": {
+        "bigint": "9007199254740993"
+      },
+      "orangeError": "ERR_OUT_OF_RANGE",
+      "note": "The same value was read successfully through Orange getMany above. Other drivers and versions are untested."
+    }
+  ],
+  "limitations": [
+    "Fixed SQLite correctness and observed statement counts only; no timing, universal superiority or full Orange compatibility claim.",
+    "Orange 5.5.1 observations cover its published CommonJS node:sqlite path on the recorded runtime, not other versions or drivers.",
+    "Shared safe numeric fixtures normalize documented return representations for comparison; native results are also recorded.",
+    "Raw SQLite uses explicit application-written SQL, including a working split-SUM alternative. It is not an intentionally weaker baseline.",
+    "Integer split partials retain SQLite int64 limits. Real SUM and all AVG results are approximate; this fixture does not claim unbounded arithmetic.",
+    "A group page with no rows carries no data guard. No assertion about unreturned data is made for an empty page.",
+    "Related aggregate projections, HAVING, DISTINCT, per-selector filters and non-SQLite engines are outside this milestone."
+  ],
+  "summary": {
+    "passed": 81,
+    "failed": 0,
+    "contractDifferences": 4
+  }
+}

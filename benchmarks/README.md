@@ -59,7 +59,7 @@ node benchmarks/columns.mjs --reference-dir /path/to/reference-directory --outpu
 
 Without references, 216 Rowstitch/raw-SQL checks run. Native NOCASE, BINARY and RTRIM behavior remains observable, including the effect of reversing operands. Schema inspection currently does not report or certify these collations. Orange and Kysely already support column operands with broader SQL and relationship contracts; Rowstitch's narrower helpers are not evidence of a defect in either tool.
 
-To check all five local fixture sets without installing reference libraries:
+To check all six local fixture sets without installing reference libraries:
 
 ```sh
 node benchmarks/check.mjs
@@ -102,4 +102,26 @@ Counts use `COUNT(*)`: a related row with a NULL score still contributes to an u
 
 On the 5,000-parent/20,000-child fixture, both tools use the `(parent_id, score)` covering index for the tested count queries. A count may visit the entire matching range, while `EXISTS` can stop at its first match. This benchmark records correctness and plans, not a claim that count is faster. The two text-collation comparisons retain the documented foreign-column-left versus parent-column-left difference.
 
-This milestone covers count comparisons in read filters. It does not implement count projections, distinct counts, grouping or Orange's full numeric expression API. Sources: [Orange's pinned count API](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/count.js), its [implemented feature request](https://github.com/alfateam/orange-orm/issues/151), and [SQLite's aggregate contracts](https://www.sqlite.org/lang_aggfunc.html).
+This comparison covers count predicates in read filters. It does not cover count projections, distinct counts, grouping or Orange's full numeric expression API. The root aggregate comparison below covers grouped summaries separately. Sources: [Orange's pinned count API](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/count.js), its [implemented feature request](https://github.com/alfateam/orange-orm/issues/151), and [SQLite's aggregate contracts](https://www.sqlite.org/lang_aggfunc.html).
+
+## Root aggregates and grouping
+
+The [recorded aggregate comparison](aggregates-results.json) checks root COUNT, SUM, AVG, MIN and MAX; grouped results; NULL keys; global filters; related-count filters; sorting and pagination; source-column aliases; and declared text collation. It passes 59 local checks, or 81 with Orange, and records four contract differences separately. Expected numeric results are computed independently in JavaScript. Each case records the actual generated statements and requires one executed SELECT, including cases whose expected outcome is a documented error. This is a correctness fixture, not a latency comparison.
+
+```sh
+node benchmarks/aggregates.mjs --reference-dir /path/to/reference-directory --output /path/to/aggregates-results.json
+```
+
+Use the existing reference directory with `orange-orm@5.5.1`; no new package is required. Without `--reference-dir`, Rowstitch and raw SQLite checks still run. `--entry /path/to/installed/rowstitch/dist/index.js` selects another built package. The runner uses temporary fictional data, restores its native statement instrumentation, reports failures in `summary.failed`, and exits nonzero if an assertion fails. The local comparison gate includes this runner.
+
+The shared fixtures compare working root and grouped queries in both tools. Safe numeric return representations are normalized for these comparisons, with native results preserved in the report. The separate observations are deliberately narrow:
+
+- Empty or all-NULL SUM/AVG returns `null` in Rowstitch and raw SQLite; Orange 5.5.1 uses COALESCE and returns `0`. This is an intentional contract difference.
+- On the tested Orange 5.5.1 node:sqlite aggregate path, empty numeric MIN/MAX and text MIN/MAX return `NaN`. The report records this pinned behavior without generalizing to all drivers or text APIs.
+- A large bigint minimum produces `ERR_OUT_OF_RANGE` on that Orange aggregate path. The same fixture verifies that an ordinary Orange bigint read succeeds, and that AVG of the same large input succeeds approximately. This is not a claim that Orange cannot read large integers or perform bigint aggregates generally.
+
+The pinned [aggregate SQL construction](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/column/columnAggregate.js) and [aggregate result decoding](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/groupBy.js) explain those observations. No Orange implementation is embedded in this runner.
+
+Exact integer totals beyond int64, intermediate cancellation, and grouped sum ordering are checked against a BigInt oracle **and a working raw SQLite split-SUM recipe**. Native integer SUM raises the same engine overflow in raw SQLite and Orange on these fixtures. It is an [SQLite arithmetic limit](https://www.sqlite.org/lang_aggfunc.html), not an Orange-specific defect. Rowstitch's split partials still retain SQLite limits. For a mapped real column containing safe INTEGER values, the raw comparison also uses an explicit REAL cast, matching the approximate contract. Both tools remain subject to floating-point rounding; Rowstitch rejects a nonfinite aggregate result.
+
+Additional Rowstitch cases check storage guards outside a requested group page and filtering invalid data out of the domain. An empty page has no guard-bearing row and makes no data-validity assertion. Related aggregate projections, HAVING, DISTINCT, per-selector filters and other database engines are outside this root-aggregate slice. None of these checks establishes overall superiority or complete Orange parity.

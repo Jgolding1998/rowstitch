@@ -13,7 +13,7 @@ Use the library inside a Node app, such as a small inventory tool or a backend t
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.5.0/rowstitch-0.5.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.6.0/rowstitch-0.6.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -35,7 +35,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.5.0/rowstitch-0.5.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.6.0/rowstitch-0.6.0.tgz
 ```
 
 ```ts
@@ -119,6 +119,46 @@ The relation's `where` still defines the domain. The optional last argument narr
 Choose `=`, `<>`, `>`, `>=`, `<` or `<=` and a nonnegative safe integer threshold. Counts share the relation filters' registration, key, collation, nesting and read-only rules. A singular descriptor counts its actual matching rows too; it does not clamp duplicates to one. Including that singular relation still checks cardinality.
 
 Use `some` or `none` when you only need to know whether a match exists; those queries can stop at the first match. A count may scan the full matching range. This API filters the returned parents; it does not add a count field to each result or provide grouping or distinct counts. See [the runnable example](examples/related-counts.mjs) and [the count comparison](benchmarks/README.md#filtered-relation-counts).
+
+## Calculate totals and grouped results
+
+Use `agg` selectors with `aggregate` for one summary, or `groupBy` for a summary per key. For a mapped orders table:
+
+```ts
+import { agg, eq } from 'rowstitch';
+
+const paid = eq(orders.col('paid'), true);
+const totals = db.table(orders).aggregate({
+  where: paid,
+  select: { orders: agg.count(), totalCents: agg.sum(orders.col('cents')) },
+});
+const categories = db.table(orders).groupBy({
+  by: ['category'], where: paid,
+  select: { orders: agg.count(), totalCents: agg.sum(orders.col('cents')) },
+  orderBy: [{ field: 'totalCents', direction: 'desc' }],
+});
+```
+
+`aggregate` returns one object even when nothing matches. `groupBy` returns an array, empty when nothing matches. `agg.count()` counts rows; `agg.count(column)` counts non-NULL values. The other selectors skip NULL inputs and return `null` when there are no values. Select at least one aggregate and group by at least one key. See the complete [paid-orders example](examples/aggregates.mjs).
+
+| Selector | Result |
+| --- | --- |
+| `agg.count()` or `agg.count(column)` | A safe JavaScript number |
+| `agg.sum(integerOrBigintColumn)` | Exact `bigint`, or `null` |
+| `agg.sum(realColumn)` | Finite approximate number, or `null` |
+| `agg.avg(integerOrRealColumn)` | Finite approximate number, or `null` |
+| `agg.avg(bigintColumn, { approximate: true })` | Finite approximate number, or `null`; integer precision can be lost |
+| `agg.min(column)` / `agg.max(column)` | The column's scalar value type, or `null` |
+
+Integer totals can exceed int64 even though each stored value must fit its column. The SQLite compiler adds high and low portions separately to avoid native SUM's intermediate overflow on ordinary datasets. Those partial sums still have SQLite's limits; this is not an unlimited-size guarantee. Bigint results need an explicit conversion when preparing JSON. Real sums and averages remain approximate and reject nonfinite results.
+
+Grouped ordering names selected keys or aggregate aliases, not row references. Missing group keys are appended as tie-breakers. SQLite puts NULL first in ascending order and last in descending order. Text grouping and extrema use the declared column collation; equivalent strings can share a group with a representative spelling chosen by SQLite.
+
+Without an explicit `limit`, more than 10,000 groups raises `RESULT_LIMIT`; supplying only `offset` keeps that cap on the remaining results. Set `limit` and `offset` to request a page. The current bounds are 32 aggregate selectors, 16 group keys and 10,000 returned groups. `compileAggregate`/`compileGroupBy` expose SQL and parameters; `explainAggregate`/`explainGroupBy` return query plans. Compiled parameters are not redacted, so keep them private.
+
+The same query checks the storage types of referenced columns, including grouped keys and counted columns. A returned group also carries a check across the other filtered groups before pagination. This catches cases where SQLite could otherwise turn malformed stored input into a plausible total. An empty page carries no such check; it is not evidence that the underlying data is valid. `count()` does not inspect unrelated columns. If the implicit group cap is exceeded, `RESULT_LIMIT` takes precedence over decoding the data-check flag.
+
+This slice supports root summaries and grouped summaries with one shared `where`, including relationship predicates. It does not yet support HAVING, DISTINCT, a separate filter per selector or aggregate fields on each fetched parent. Those options are refused. JSON is excluded from grouping and column aggregates; min/max accept numeric or text columns. A column from another table is rejected at runtime, since column-reference types do not encode table identity.
 
 ## Search text and ranges
 

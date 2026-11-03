@@ -1,5 +1,6 @@
 /** Pure SQLite rendering from validated structured plans. Never opens a connection. */
 import { identifier, literal, type Parameter } from './schema.js';
+import { compileSqliteAggregate } from './sqlite-aggregate.js';
 import { hasRelationFilter, normalizeQueryModel, orderingModel, predicateModel, predicateTruth, tableModel,
   type ColumnDefinitionModel, type OrderModel, type PredicateModel, type QueryModel, type TableModel } from './query-model.js';
 
@@ -117,6 +118,7 @@ export function compileSqlite(input: QueryModel): CompiledQuery {
     sql: 'INSERT INTO ' + table + (query.columns.length ? ' (' + query.columns.map(identifier).join(', ') + ') VALUES (' + query.columns.map(() => '?').join(', ') + ')' : ' DEFAULT VALUES') + ' RETURNING *',
     parameters: [...query.values],
   };
+  if (query.kind === 'aggregate' || query.kind === 'group') return compileSqliteAggregate(query, renderPredicate(query.where, table));
   const where = renderPredicate(query.where, hasRelationFilter(query.where) ? table : undefined);
   if (query.kind === 'count') return { sql: 'SELECT count(*) AS n FROM ' + table + (where.sql ? ' WHERE ' + where.sql : ''), parameters: where.parameters };
   if (query.kind === 'select') return {

@@ -11,6 +11,10 @@ import { ManyRelation, SingularRelation, and, assertOptions, eq, isRelation, ord
 import { mappedCreateTableModel, mappedTableModel } from './model-mapping.js';
 import { hasRelationFilter, predicateTruth, queryModel, relationKindsCompatible, type CreateIndexModel, type CreateTableModel, type PredicateModel, type SelectModel, type TransactionAction, type TransactionModel } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
+import { aggregateToModel, groupToModel, type AggregateSelection, type AggregateOptions, type AggregateResult,
+  type GroupKey, type GroupOptions, type GroupResult } from './aggregates.js';
+import { decodeAggregateRow } from './aggregate-decode.js';
+import type { AggregateModel, GroupModel } from './query-model.js';
 
 export interface SchemaColumn { name: string; type: string; nullable: boolean; primaryKey: boolean; primaryKeyOrder: number; default: string | null; generated: boolean; hidden: boolean }
 export interface SchemaForeignKey { column: string; table: string; target: string; onDelete: string; onUpdate: string }
@@ -494,6 +498,44 @@ export class Repository<T extends AnyTable> {
     const query = compileSqlite(queryModel.count({ table: mappedTableModel(this.definition), ...(where === undefined ? {} : { where }) }));
     const rows = ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name);
     return countValue(rows[0].n);
+  }
+
+  #aggregateModel(options: unknown): AggregateModel {
+    ops(this.#db).mapped(this.definition);
+    return aggregateToModel(this.definition, options, where => this.#predicate(where));
+  }
+  #groupModel(options: unknown): GroupModel {
+    ops(this.#db).mapped(this.definition);
+    return groupToModel(this.definition, options, where => this.#predicate(where));
+  }
+  compileAggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): CompiledQuery {
+    return compileSqlite(this.#aggregateModel(options));
+  }
+  compileGroupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): CompiledQuery {
+    return compileSqlite(this.#groupModel(options));
+  }
+  #explainAggregate(model: AggregateModel | GroupModel): QueryPlan[] {
+    const query = compileSqlite(queryModel.explain({ query: model }));
+    return ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name, true)
+      .map(row => ({ id: Number(row.id), parent: Number(row.parent), detail: String(row.detail) }));
+  }
+  explainAggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): QueryPlan[] {
+    return this.#explainAggregate(this.#aggregateModel(options));
+  }
+  explainGroupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): QueryPlan[] {
+    return this.#explainAggregate(this.#groupModel(options));
+  }
+  aggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): AggregateResult<S> {
+    const model = this.#aggregateModel(options), query = compileSqlite(model);
+    const rows = ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name);
+    if (rows.length !== 1) fail('DATA', 'An aggregate query must return one result.');
+    return decodeAggregateRow(this.definition, model, rows[0]) as AggregateResult<S>;
+  }
+  groupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): GroupResult<T, B, S>[] {
+    const model = this.#groupModel(options), query = compileSqlite(model);
+    const rows = ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name);
+    if (model.overflow && rows.length > 10_000) fail('RESULT_LIMIT', 'Grouped results exceed 10,000 rows. Add an explicit limit and offset to page the groups.');
+    return rows.map(row => decodeAggregateRow(this.definition, model, row)) as GroupResult<T, B, S>[];
   }
 
   #loadIncludes(rows: Row<T>[], includes: Includes | undefined, budget: { remaining: number }, depth: number): void {
