@@ -396,3 +396,105 @@ test('accepted durations never produce an infinite recorded-time total', async (
   await expect(page.locator('#main')).toHaveAttribute('aria-busy', 'false');
   await expect(page.locator('#counts')).not.toContainText(/Infinity|NaN/);
 });
+
+test('getting-started guide supports keyboard discovery and recovery after Clear', async ({ page, studioURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, studioURL);
+  const guide = page.locator('details#guide');
+  const summary = page.locator('#guide-summary');
+  await expect(page.locator('#workspace')).toBeVisible();
+  expect(await guide.evaluate(node => node.open)).toBe(false);
+  await expect(page.locator('#guide-brief')).toBeHidden();
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#guide-brief')).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#guide-demo')).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#guide-brief')).toBeHidden();
+  await importTrace(page, trace('Ordinary imported onboarding fixture'));
+  await page.locator('#clear-trace').click();
+  await expect(page.locator('#empty-title')).toBeFocused();
+  await expect(page.locator('#export-trace')).toBeDisabled();
+  await page.getByRole('button', { name: 'How do I get a trace from my app?', exact: true }).click();
+  await expect(summary).toBeFocused();
+  await expect(page.locator('#guide-brief')).toBeVisible();
+  await expect(page.locator('#loaded-kind')).toHaveText('Nothing loaded');
+});
+
+test('README navigation stays static and requires an explicit click after hostile imports', async ({ page, context, studioURL }) => {
+  const navigations = [];
+  // Fulfil the new tab locally: exercise an explicit navigation without contacting GitHub.
+  await context.route('https://**/*', async route => {
+    const request = route.request();
+    if (request.isNavigationRequest()) navigations.push(request.url());
+    if (request.isNavigationRequest() && request.url() === 'https://github.com/Jgolding1998/rowstitch') {
+      await route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>README test landing</title>' });
+    } else await route.abort();
+  });
+  await open(page, studioURL);
+  await page.locator('#guide-summary').click();
+  const brief = await page.locator('#guide-brief').inputValue();
+  const document = trace('https://outside.example/not-installation');
+  document.notes = ['<a href="https://outside.example/setup">Imported installation link</a>'];
+  await importTrace(page, document);
+  expect(await page.locator('#guide-brief').inputValue()).toBe(brief);
+  await expect(page.locator('#workspace a')).toHaveCount(0);
+  const destinations = [
+    'https://github.com/Jgolding1998/rowstitch#use-it-in-an-application',
+    'https://github.com/Jgolding1998/rowstitch#readme',
+  ];
+  const links = page.locator('#guide a');
+  await expect(links).toHaveCount(2);
+  expect(navigations).toEqual([]);
+  for (const [index, destination] of destinations.entries()) {
+    const link = links.nth(index);
+    await expect(link).toHaveAttribute('href', destination);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', /\bnoopener\b/);
+    await expect(link).toHaveAttribute('rel', /\bnoreferrer\b/);
+    const popupReady = context.waitForEvent('page');
+    await link.click();
+    const popup = await popupReady;
+    try {
+      await popup.waitForLoadState('domcontentloaded');
+      expect(popup.url()).toBe(destination);
+      expect(await popup.evaluate(() => window.opener === null)).toBe(true);
+    } finally { await popup.close(); }
+    expect(navigations).toHaveLength(index + 1);
+    expect(page.url()).toBe(studioURL + '/');
+    await expect(page.locator('#loaded-title')).toHaveText(document.title);
+  }
+});
+
+test('guide copy controls use fixed content and select complete text when clipboard access fails', async ({ page, studioURL }) => {
+  // Keep the user's system clipboard intact and make permission denial deterministic.
+  await page.addInitScript(() => {
+    window.__guideCopies = [];
+    window.__blockGuideCopy = false;
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async value => {
+      window.__guideCopies.push(value);
+      if (window.__blockGuideCopy) throw new Error('Clipboard blocked for this test');
+    } } });
+  });
+  await open(page, studioURL);
+  await page.locator('#guide-summary').click();
+  const brief = page.locator('#guide-brief');
+  const briefText = await brief.inputValue();
+  const codeText = await page.locator('#guide-trace-code').textContent();
+  await importTrace(page, trace('Imported data is separate from the static guide'));
+  await page.getByRole('button', { name: 'Copy brief', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__guideCopies)).toEqual([briefText]);
+  await page.getByRole('button', { name: 'Copy code', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__guideCopies)).toEqual([briefText, codeText]);
+  await page.evaluate(() => { window.__blockGuideCopy = true; });
+  await page.getByRole('button', { name: 'Copy brief', exact: true }).click();
+  await expect(brief).toBeFocused();
+  expect(await brief.evaluate(node => node.value.slice(node.selectionStart, node.selectionEnd))).toBe(briefText);
+  await expect(page.locator('#status')).toContainText(/Ctrl\+C|Command\+C/);
+  await page.getByRole('button', { name: 'Copy code', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => String(window.getSelection()))).toBe(codeText);
+  await expect(page.locator('#status')).toContainText(/Ctrl\+C|Command\+C/);
+});

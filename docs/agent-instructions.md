@@ -18,4 +18,6 @@ Use `contains`, `startsWith` and `endsWith` for literal text searches. They requ
 
 Preserve inferred column/reference types when calling these new helpers. If an explicit annotation is needed, retain the codec, such as `ColumnRef<string | null, 'text'>`. A broad `Column<string>` or `ColumnRef<string>` loses that information. A nonempty search may still be broad; retain a deliberate affected-row limit for writes.
 
+Use the explicit `eqColumns`/`neColumns`/`gtColumns`/`gteColumns`/`ltColumns`/`lteColumns` helpers to compare two different columns of the same mapped table. Do not pass a column reference as the value to `eq`. Numeric codecs can mix without converting bigint to Number; text compares with text, boolean equality with boolean, and JSON is excluded. NULL keeps SQL three-valued behavior. Preserve existing SQLite collation rules and account for left-operand precedence when text columns differ. Column comparisons still need deliberate write limits and application authorization.
+
 Check [the compatibility plan](compatibility.md) before promising features. Rowstitch is independent of Orange and does not yet match its database, runtime, graph-save or browser-client coverage. Do not treat planned support as implemented support.

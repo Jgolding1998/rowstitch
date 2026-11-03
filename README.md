@@ -4,6 +4,8 @@ A small SQLite ORM for Node and TypeScript. Define your tables, load related row
 
 Rowstitch has no runtime npm dependencies. It uses Node's built-in SQLite driver and includes a local, read-only query inspector. No account, AI subscription or API key is needed.
 
+Use the library inside a Node app, such as a small inventory tool or a backend that stores related records in SQLite. Your app reads and writes through Rowstitch; the browser inspector helps you understand the SQL it ran. Coding assistants can follow the included integration instructions. There is no MCP server in the current package.
+
 ![Rowstitch Studio showing a real query trace from its fictional notebook demo](docs/images/studio.png)
 
 ## Try the inspector
@@ -11,7 +13,7 @@ Rowstitch has no runtime npm dependencies. It uses Node's built-in SQLite driver
 Use **Node 24.22.2 or a newer Node 24 LTS release**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.2.0/rowstitch-0.2.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.3.0/rowstitch-0.3.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -33,7 +35,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.2.0/rowstitch-0.2.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.3.0/rowstitch-0.3.0.tgz
 ```
 
 ```ts
@@ -88,6 +90,24 @@ Keep column and reference types inferred from their factories. An explicit refer
 
 Even a nonempty search can match many rows. Updates and deletes still use the atomic `maxRows` limit, and application authorization remains the caller's responsibility.
 
+## Compare two columns
+
+Use `eqColumns`, `neColumns`, `gtColumns`, `gteColumns`, `ltColumns` and `lteColumns` when both operands are mapped columns in the same table. For example, a supplies table can find shortages directly in SQL:
+
+```ts
+import { ltColumns } from 'rowstitch';
+
+const shortage = ltColumns(supplies.col('available'), supplies.col('needed'));
+const rows = db.table(supplies).findMany({ where: shortage });
+db.table(supplies).update({ reorder: true }, { where: shortage, maxRows: 20 });
+```
+
+Integer, bigint and real columns can be compared with each other without converting bigint values to JavaScript numbers. Stored real values remain approximate. Text compares with text; booleans support equality and inequality only. JSON, comparisons between tables and self-comparisons are rejected. A NULL operand remains unknown, including under NOT; use explicit NULL predicates when needed.
+
+Existing text columns keep SQLite's collation rules. When two columns declare different collations, the left column's collation takes precedence, so reversing operands can change the result. Text ordering can also depend on the database encoding. See [the runnable inventory example](examples/column-comparisons.mjs).
+
+Each helper reads left to right: `gtColumns(a, b)` means `a > b`. Different columns can still compare true for every row, so retain a deliberate write limit. These queries may scan rows; check `explain()` before assuming an index helps.
+
 ## Inspect an existing schema
 
 ```sh
@@ -97,6 +117,8 @@ node dist/cli.js schema path/to/database.sqlite
 This command opens the named file read-only and prints schema metadata as JSON. It does not copy application rows or create a missing database. It is an inspection report, not a complete model-code generator.
 
 `planSchema()` describes missing tables and declared indexes without applying them. `ensureSchema()` creates compatible missing objects atomically and rejects detected drift. Neither generates destructive migrations, rebuilds tables or silently drops data. Back up a real database before adopting any new database library.
+
+The schema report and drift checks do not currently identify column collations. Existing `NOCASE` or `RTRIM` columns can change equality, ordering and uniqueness behavior. Literal text searches keep their explicitly chosen case behavior, so they can differ from equality on those columns. Review the existing schema's declarations when those distinctions matter.
 
 ## Trace your own code
 

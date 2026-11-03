@@ -48,3 +48,21 @@ node benchmarks/expressions.mjs --reference-dir /path/to/reference-directory --o
 Use the same reference directory described above, containing `orange-orm@5.5.1`. Without `--reference-dir`, the Rowstitch and raw-SQL checks still run. `--entry /path/to/installed/rowstitch/dist/index.js` can select a built installed package.
 
 The recorded comparison passes 132 cases and identifies nine LIKE/literal contract differences. Orange's SQLite helpers use LIKE patterns; percent signs, underscores, case handling and NUL behavior differ from literal matching. These are different contracts, not upstream defects. The report records generated SQL, binding order and actual SELECT counts; it makes no latency or full-parity claim. The upstream [string predicate](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/column/string/containsCore.js) and [range implementation](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/column/newColumn.js) define the pinned reference behavior. No Orange implementation is embedded in the runner.
+
+## Column comparisons
+
+The [column comparison](columns-results.json) checks all nine integer/bigint/real type pairs, text with declared collations, boolean equality and SQL NULL behavior. It passes 432 checks across Rowstitch, raw SQLite, Orange 5.5.1 and Kysely 0.29.8, using three database encodings. Numeric operators rotate across the nine type pairs; the text fixtures exercise all six operators and reversed operands. Numeric expectations use exact rational arithmetic for the stored binary64 and integer values, without rounding bigint to a JavaScript number.
+
+```sh
+node benchmarks/columns.mjs --reference-dir /path/to/reference-directory --output /path/to/columns-results.json
+```
+
+Without references, 216 Rowstitch/raw-SQL checks run. Native NOCASE, BINARY and RTRIM behavior remains observable, including the effect of reversing operands. Schema inspection currently does not report or certify these collations. Orange and Kysely already support column operands with broader SQL and relationship contracts; Rowstitch's narrower helpers are not evidence of a defect in either tool.
+
+To check all three local fixture sets without installing reference libraries:
+
+```sh
+node benchmarks/check.mjs
+```
+
+This command fails if any exercised case fails. CI runs it alongside the runtime and type tests on Linux, Windows and macOS. These are correctness checks, not a representative performance or production workload benchmark.

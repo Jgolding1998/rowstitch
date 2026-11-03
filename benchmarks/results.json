@@ -5,7 +5,7 @@
     "node": "v24.22.2",
     "platform": "win32",
     "architecture": "x64",
-    "rowstitch": "0.2.0",
+    "rowstitch": "0.3.0",
     "nodeSQLite": "3.53.4",
     "kyselySQLite": "3.51.2",
     "orange": "5.5.1",

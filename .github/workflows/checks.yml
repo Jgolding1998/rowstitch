@@ -23,6 +23,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run test:types
+      - name: Check local comparison fixtures
+        run: node benchmarks/check.mjs
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 10

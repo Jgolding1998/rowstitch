@@ -1,4 +1,4 @@
-import { column, defineTable, openDatabase, eq, contains, startsWith, endsWith, between, hasMany, hasOne, belongsTo, type InsertRow, type Row, type Column, type ColumnRef, type TextMatchOptions } from '../../src/index.js';
+import { column, defineTable, openDatabase, eq, eqColumns, neColumns, gtColumns, gteColumns, ltColumns, lteColumns, contains, startsWith, endsWith, between, hasMany, hasOne, belongsTo, type InsertRow, type Row, type Column, type ColumnRef, type TextMatchOptions } from '../../src/index.js';
 const authors = defineTable('authors', {
   id: column.integer().primaryKey({ generated: true }), name: column.text(),
   active: column.boolean().default(true), metadata: column.json<{ tag: string }>().nullable(),
@@ -142,3 +142,69 @@ between(authors.col('active'), false, true);
 // @ts-expect-error Column-valued range bounds are deferred.
 between(literalTable.col('id'), literalTable.col('id'), 2);
 void [oldColumnAnnotation, oldThreeGenerics, oldRefAnnotation];
+
+// M3b: explicit column domains remain distinct from value operands.
+const comparisonTypes = defineTable('column_type_contract', {
+ id: column.integer().primaryKey(), i: column.integer().nullable(), i2: column.integer(), b: column.bigint(), b2: column.bigint().nullable(), r: column.real(), r2: column.real().nullable(),
+ t: column.text(), t2: column.text().nullable(), flag: column.boolean(), flag2: column.boolean().nullable(), js: column.json<string>(), jn: column.json<number>(), jb: column.json<boolean>(),
+});
+const numericRefs = [comparisonTypes.col('i'), comparisonTypes.col('b'), comparisonTypes.col('r')] as const;
+for (const lhs of numericRefs) for (const rhs of numericRefs) {
+ eqColumns(lhs,rhs); neColumns(lhs,rhs); gtColumns(lhs,rhs); gteColumns(lhs,rhs); ltColumns(lhs,rhs); lteColumns(lhs,rhs);
+}
+eqColumns(comparisonTypes.col('i'),comparisonTypes.col('i2')); eqColumns(comparisonTypes.col('i2'),comparisonTypes.col('i'));
+eqColumns(comparisonTypes.col('b2'),comparisonTypes.col('b')); ltColumns(comparisonTypes.col('r2'),comparisonTypes.col('r'));
+eqColumns(comparisonTypes.col('t'),comparisonTypes.col('t2')); neColumns(comparisonTypes.col('flag'),comparisonTypes.col('flag2'));
+gtColumns(comparisonTypes.col('t2'),comparisonTypes.col('t')); gteColumns(comparisonTypes.col('t'),comparisonTypes.col('t2'));
+ltColumns(comparisonTypes.col('t'),comparisonTypes.col('t2')); lteColumns(comparisonTypes.col('t2'),comparisonTypes.col('t'));
+const numberDomainUnion = Math.random() ? comparisonTypes.col('i') : comparisonTypes.col('b');
+eqColumns(numberDomainUnion,comparisonTypes.col('r')); gtColumns(numberDomainUnion,comparisonTypes.col('b2'));
+// The design explicitly enforces same-table/same-column identity at runtime,
+// because current structural types cannot prove JavaScript object identity.
+const comparisonForeign = defineTable('same_structure', { id: column.integer().primaryKey(), t: column.text() });
+eqColumns(comparisonTypes.col('t'),comparisonForeign.col('t'));
+eqColumns(comparisonTypes.col('t'),comparisonTypes.col('t'));
+// @ts-expect-error NoInfer prevents RHS text from widening a numeric LHS domain.
+eqColumns(comparisonTypes.col('i'),comparisonTypes.col('t'));
+// @ts-expect-error Reversing incompatible operands is also rejected.
+eqColumns(comparisonTypes.col('t'),comparisonTypes.col('i'));
+// @ts-expect-error Ordered numeric/text mismatch.
+gtColumns(comparisonTypes.col('r'),comparisonTypes.col('t2'));
+// @ts-expect-error Ordered text/numeric mismatch.
+ltColumns(comparisonTypes.col('t'),comparisonTypes.col('b'));
+// @ts-expect-error Boolean/integer are different mapped domains even if SQL stores both as INTEGER.
+eqColumns(comparisonTypes.col('flag'),comparisonTypes.col('i'));
+// @ts-expect-error Numeric inference cannot absorb boolean.
+eqColumns(comparisonTypes.col('i'),comparisonTypes.col('flag'));
+// @ts-expect-error Boolean ordering is not supported.
+gtColumns(comparisonTypes.col('flag'),comparisonTypes.col('flag2'));
+// @ts-expect-error Boolean ordering is not supported.
+gteColumns(comparisonTypes.col('flag'),comparisonTypes.col('flag2'));
+// @ts-expect-error Boolean ordering is not supported.
+ltColumns(comparisonTypes.col('flag'),comparisonTypes.col('flag2'));
+// @ts-expect-error Boolean ordering is not supported.
+lteColumns(comparisonTypes.col('flag'),comparisonTypes.col('flag2'));
+// @ts-expect-error JSON<string> is not text.
+eqColumns(comparisonTypes.col('t'),comparisonTypes.col('js'));
+// @ts-expect-error JSON<string> cannot become a text-domain LHS.
+eqColumns(comparisonTypes.col('js'),comparisonTypes.col('t'));
+// @ts-expect-error JSON<number> is not numeric.
+neColumns(comparisonTypes.col('i'),comparisonTypes.col('jn'));
+// @ts-expect-error JSON<boolean> is not the boolean codec.
+eqColumns(comparisonTypes.col('flag'),comparisonTypes.col('jb'));
+// @ts-expect-error JSON/JSON equality semantics are not defined in this increment.
+eqColumns(comparisonTypes.col('js'),comparisonTypes.col('js'));
+// @ts-expect-error This explicit column API does not accept scalar RHS values.
+eqColumns(comparisonTypes.col('i'),1);
+// @ts-expect-error This explicit column API does not accept scalar LHS values.
+eqColumns(1,comparisonTypes.col('i'));
+// @ts-expect-error NULL is not a column operand; nullable refs are accepted instead.
+eqColumns(comparisonTypes.col('t'),null);
+const incompatibleUnion = Math.random() ? comparisonTypes.col('i') : comparisonTypes.col('t');
+// @ts-expect-error Mixed-domain LHS unions cannot make incompatible RHS values permissive.
+eqColumns(incompatibleUnion,comparisonTypes.col('t'));
+// @ts-expect-error Mixed-domain LHS unions cannot make incompatible RHS values permissive.
+eqColumns(incompatibleUnion,comparisonTypes.col('i'));
+const widened: ColumnRef<number> = comparisonTypes.col('i2');
+// @ts-expect-error Losing the codec tag cannot imply a known numeric codec; preserve inferred refs.
+eqColumns(widened,comparisonTypes.col('i'));

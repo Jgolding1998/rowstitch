@@ -164,6 +164,65 @@ main:focus { outline: none; }
 .empty-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
 .empty .fine { margin-top: 16px; }
 
+/* Getting-started guide (static, collapsed by default) */
+.guide {
+  margin-bottom: 16px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow);
+}
+.guide-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: 48px; padding: 12px 16px; border-radius: 14px;
+  list-style: none; cursor: pointer;
+}
+.guide-summary::-webkit-details-marker { display: none; }
+.guide-summary:hover .guide-cta { text-decoration: underline; text-underline-offset: 3px; }
+.guide-lede { color: var(--ink-2); }
+.guide-cta {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  color: var(--accent-ink); font-weight: 500;
+}
+.guide-cta::after {
+  content: ""; width: 7px; height: 7px; margin-top: -3px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg); transition: transform 160ms var(--ease);
+}
+.guide[open] .guide-cta::after { margin-top: 3px; transform: rotate(-135deg); }
+.guide[open] .guide-summary { border-bottom: 1px solid var(--line); border-radius: 14px 14px 0 0; }
+.guide-body { display: grid; gap: 12px; padding: 16px 20px 20px; max-width: 920px; }
+.guide-parts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.guide-part { padding: 12px 16px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.guide-part-title { font-size: 14px; line-height: 20px; font-weight: 600; }
+.guide-part p { margin-top: 4px; color: var(--ink-2); }
+.guide-heading { margin-top: 12px; font-size: 14px; line-height: 20px; font-weight: 600; }
+.guide-steps { display: grid; gap: 12px; }
+.guide-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
+.guide-step-num {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border-radius: 50%; border: 1px solid var(--line-strong); color: var(--ink-2);
+  font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.guide-step-body { display: grid; gap: 8px; justify-items: start; min-width: 0; }
+.guide-step-body p { color: var(--ink-2); }
+.guide-step-body strong { color: var(--ink); font-weight: 500; }
+.guide-code {
+  margin: 0; padding: 10px 12px; max-width: 100%; overflow-x: auto;
+  border-radius: 8px; background: var(--sunk); border: 1px solid var(--line);
+  white-space: pre; line-height: 20px;
+}
+.guide-note { color: var(--ink-2); }
+.guide-brief {
+  width: 100%; padding: 10px 12px; resize: vertical;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--bg); color: var(--ink);
+  font-size: 12.5px; line-height: 19px;
+}
+.guide-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.guide-link { color: var(--accent-ink); font-weight: 500; text-underline-offset: 3px; }
+.guide-link:hover { text-decoration-thickness: 2px; }
+.link-button {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--accent-ink); font: inherit; font-weight: 500; text-decoration: underline; text-underline-offset: 3px;
+}
+
 /* Tabs */
 .tabs {
   display: flex; gap: 4px; margin-bottom: 16px; padding: 4px;
@@ -409,6 +468,11 @@ body.is-dragging .drop-hint { display: flex; }
   .legend-scale { margin-left: 0; }
   .tables { grid-template-columns: minmax(0, 1fr); }
   .empty { margin: 24px 0; padding: 24px 20px; }
+  .guide-summary { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .guide-body { padding: 16px; }
+  .guide-parts { grid-template-columns: minmax(0, 1fr); }
+  .guide-step-body .btn, .guide-actions .btn { min-height: 40px; }
+  .link-button, .guide-link { display: inline-flex; align-items: center; min-height: 40px; }
   .search input, .select select { height: 40px; }
   .search .kbd { display: none; }
   .tab { min-height: 36px; }
@@ -417,6 +481,6 @@ body.is-dragging .drop-hint { display: flex; }
 }
 
 @media print {
-  .topbar, .notices, .tabs, .thread, .filters, .detail-nav, .back, .btn { display: none !important; }
+  .topbar, .notices, .tabs, .thread, .filters, .detail-nav, .back, .btn, .guide { display: none !important; }
   .split { grid-template-columns: 1fr; }
 }

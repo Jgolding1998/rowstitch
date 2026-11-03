@@ -8,6 +8,7 @@ export function mappedTableModel(table: AnyTable): TableModel {
   if (!model) {
     const columns = Object.entries(table.columns as Columns);
     model = tableModel({ name: table.name, columns: columns.map(([name]) => name),
+      kinds: Object.fromEntries(columns.map(([name, column]) => [name, column.config.kind])),
       primaryKey: columns.filter(([, column]) => column.config.primary).map(([name]) => name),
       ...(table.version === undefined ? {} : { version: table.version }) });
     mappedTables.set(table, model);

@@ -40,6 +40,78 @@
   </div>
 
   <main id="main" tabindex="-1">
+    <details class="guide" id="guide">
+      <summary class="guide-summary" id="guide-summary">
+        <span class="guide-lede">Rowstitch is a SQLite library for your Node app. This page is its read-only trace viewer.</span>
+        <span class="guide-cta">How to use it</span>
+      </summary>
+      <div class="guide-body">
+        <div class="guide-parts">
+          <section class="guide-part" aria-labelledby="guide-library-title">
+            <h2 class="guide-part-title" id="guide-library-title">The library</h2>
+            <p>You install it in your own Node.js project. Your code defines tables and runs queries against your SQLite file. It can save a trace of the SQL it ran.</p>
+          </section>
+          <section class="guide-part" aria-labelledby="guide-studio-title">
+            <h2 class="guide-part-title" id="guide-studio-title">Studio, this page</h2>
+            <p>It opens those trace files so you can read the SQL, transactions and plans. It never connects to a database or runs SQL, and the file stays in this tab.</p>
+          </section>
+        </div>
+
+        <h2 class="guide-heading">Four steps</h2>
+        <ol class="guide-steps">
+          <li class="guide-step">
+            <span class="guide-step-num" aria-hidden="true">1</span>
+            <div class="guide-step-body">
+              <p><strong>Look around the fictional demo.</strong> It loads when this page opens and is made up for this visit.</p>
+              <button type="button" class="btn btn-small" id="guide-demo">Load the demo again</button>
+            </div>
+          </li>
+          <li class="guide-step">
+            <span class="guide-step-num" aria-hidden="true">2</span>
+            <div class="guide-step-body">
+              <p><strong>Add the library to your Node project.</strong> It is installed from its GitHub release, so use the current command in the README.</p>
+              <a class="guide-link" href="https://github.com/Jgolding1998/rowstitch#use-it-in-an-application" target="_blank" rel="noopener noreferrer">Install instructions in the README</a>
+            </div>
+          </li>
+          <li class="guide-step">
+            <span class="guide-step-num" aria-hidden="true">3</span>
+            <div class="guide-step-body">
+              <p><strong>Save a trace from your code.</strong> Bound values are redacted unless you turn them on.</p>
+              <pre class="guide-code" id="guide-trace-code"><code>import { writeFileSync } from 'node:fs';
+
+writeFileSync('trace.json', JSON.stringify(db.exportTrace({ title: 'My app' })));</code></pre>
+              <button type="button" class="btn btn-small" id="guide-copy-code" data-copy="guide-trace-code">Copy code</button>
+            </div>
+          </li>
+          <li class="guide-step">
+            <span class="guide-step-num" aria-hidden="true">4</span>
+            <div class="guide-step-body">
+              <p><strong>Open the trace here.</strong> Start this page from your project with <code class="mono">npx rowstitch demo</code>, then choose the file or drop it onto the window. Use the Node release the README requires.</p>
+              <button type="button" class="btn btn-small" id="guide-open">Open trace</button>
+            </div>
+          </li>
+        </ol>
+
+        <h2 class="guide-heading" id="guide-brief-title">Using a coding agent?</h2>
+        <p class="guide-note">Paste this into your agent. It keeps the work in your chosen project and on made-up data.</p>
+        <textarea class="guide-brief mono" id="guide-brief" readonly rows="13" spellcheck="false" aria-labelledby="guide-brief-title">Help me add Rowstitch to this Node.js project.
+
+Rowstitch is a SQLite ORM for Node.js 24 LTS. The README lists the minimum Node release; check node --version first. It needs no account or API key and is installed from its GitHub release, not the npm registry. Read the README first and use its current install command:
+https://github.com/Jgolding1998/rowstitch#readme
+
+- Work only in this project. Do not open, copy or pick any existing or private database file unless I name it.
+- Start with a small example table and made-up rows in a new SQLite file or :memory:.
+- Use the typed helpers (eq, contains, between and so on) instead of raw SQL, and keep the maxRows limits on updates and deletes.
+- Save a trace with db.exportTrace() to a JSON file so I can open it in Rowstitch Studio.
+- Only use features the README describes.</textarea>
+        <div class="guide-actions">
+          <button type="button" class="btn btn-small" id="guide-copy-brief" data-copy="guide-brief">Copy brief</button>
+          <a class="guide-link" href="https://github.com/Jgolding1998/rowstitch#readme" target="_blank" rel="noopener noreferrer">Read the full README</a>
+        </div>
+        <p class="fine">Rowstitch runs on your machine. There is no hosted service, account or MCP server.</p>
+      </div>
+    </details>
+
     <section class="empty" id="empty" hidden aria-labelledby="empty-title">
       <h1 id="empty-title" tabindex="-1">Nothing loaded</h1>
       <p>Open a Rowstitch trace to see the SQL your app emitted, its bound-value slots, transactions, query plans and schema. The file is read in this tab only. Nothing is uploaded, saved or executed.</p>
@@ -48,6 +120,7 @@
         <button type="button" class="btn" id="empty-demo">Load the fictional demo</button>
       </div>
       <p class="fine">Rowstitch trace JSON, version 1, up to 2 MiB. You can also drop the file onto this window.</p>
+      <p class="fine"><button type="button" class="link-button" id="empty-guide">How do I get a trace from my app?</button></p>
     </section>
 
     <div class="workspace" id="workspace" hidden>

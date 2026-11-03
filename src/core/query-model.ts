@@ -7,11 +7,14 @@ export interface TableModel {
   readonly columns: readonly string[];
   readonly primaryKey: readonly string[];
   readonly version?: string;
+  readonly kinds?: Readonly<Record<string, Kind>>;
 }
 export type ComparisonOperator = '=' | '<>' | '>' | '>=' | '<' | '<=' | 'IN';
+export type ColumnComparisonOperator = Exclude<ComparisonOperator, 'IN'>;
 export type TextMatchMode = 'contains' | 'starts-with' | 'ends-with';
 export type TextMatchCase = 'sensitive' | 'ascii-insensitive';
 export type PredicateModel =
+  | { readonly kind: 'column-compare'; readonly left: string; readonly right: string; readonly operator: ColumnComparisonOperator }
   | { readonly kind: 'text-match'; readonly column: string; readonly mode: TextMatchMode; readonly case: TextMatchCase; readonly literal: string }
   | { readonly kind: 'compare'; readonly column: string; readonly operator: ComparisonOperator; readonly values: readonly Parameter[] }
   | { readonly kind: 'logic'; readonly operator: 'AND' | 'OR'; readonly children: readonly PredicateModel[] }
@@ -111,10 +114,17 @@ export function textMatchOptions(input: unknown = {}): TextMatchCase {
 }
 
 export function tableModel(input: TableModel): TableModel {
-  const value = record(input, ['name', 'columns', 'primaryKey', 'version'], 'SCHEMA');
+  const value = record(input, ['name', 'columns', 'primaryKey', 'version', 'kinds'], 'SCHEMA');
   const columns = names(value.columns, 100, 1);
   if (new Set(columns.map(v => v.toLowerCase())).size !== columns.length) fail('SCHEMA', 'Mapped column names must be unique ignoring case.');
-  const base = { name: name(value.name), columns, primaryKey: names(value.primaryKey, 100, 1) };
+  let metadata: { kinds?: Readonly<Record<string, Kind>> } = {};
+  if (Object.hasOwn(value, 'kinds')) {
+    const kinds = record(value.kinds, columns, 'SCHEMA');
+    if (Object.keys(kinds).length !== columns.length || columns.some(column => !Object.hasOwn(kinds, column))) fail('SCHEMA', 'Column kind metadata must describe every mapped column.');
+    for (const kind of Object.values(kinds)) if (typeof kind !== 'string' || !['integer', 'bigint', 'real', 'text', 'boolean', 'json'].includes(kind)) fail('SCHEMA', 'Column kind metadata contains an unsupported kind.');
+    metadata = { kinds: Object.freeze(kinds as Record<string, Kind>) };
+  }
+  const base = { name: name(value.name), columns, primaryKey: names(value.primaryKey, 100, 1), ...metadata };
   if (base.primaryKey.some(v => !columns.includes(v))) fail('SCHEMA', 'A primary key must reference mapped columns.');
   if (value.version !== undefined) {
     const version = name(value.version);
@@ -124,12 +134,29 @@ export function tableModel(input: TableModel): TableModel {
   return Object.freeze(base);
 }
 
+/** Codec domains for column operands; this does not cast or inspect stored rows. */
+export function columnKindsCompatible(left: Kind, right: Kind, operator: ColumnComparisonOperator): boolean {
+  const numeric = ['integer', 'bigint', 'real'];
+  return numeric.includes(left) && numeric.includes(right) || left === 'text' && right === 'text'
+    || left === 'boolean' && right === 'boolean' && (operator === '=' || operator === '<>');
+}
+
 export function predicateModel(tableInput: TableModel, input: PredicateModel): PredicateModel {
   const table = tableModel(tableInput);
   let nodes = 0, parameters = 0;
   function visit(source: unknown, depth: number): PredicateModel {
     if (++nodes > 100 || depth > 16) fail('QUERY', 'Predicates exceed their node or depth limit.');
-    const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child', 'mode', 'case', 'literal']);
+    const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child', 'mode', 'case', 'literal', 'left', 'right']);
+    if (node.kind === 'column-compare') {
+      record(node, ['kind', 'left', 'right', 'operator']);
+      if (typeof node.operator !== 'string' || !['=', '<>', '>', '>=', '<', '<='].includes(node.operator)) fail('QUERY', 'The column comparison operator is not supported.');
+      const left = field(table, node.left), right = field(table, node.right);
+      if (left === right) fail('QUERY', 'Compare two distinct mapped columns. Use an explicit NULL predicate for a self check.');
+      if (!table.kinds) fail('QUERY', 'Column comparisons require mapped column kind metadata.');
+      const operator = node.operator as ColumnComparisonOperator;
+      if (!columnKindsCompatible(table.kinds[left], table.kinds[right], operator)) fail('QUERY', 'Column comparison operands must have compatible scalar kinds.');
+      return Object.freeze({ kind: 'column-compare', left, right, operator });
+    }
     if (node.kind === 'text-match') {
       record(node, ['kind', 'column', 'mode', 'case', 'literal']);
       if (node.mode !== 'contains' && node.mode !== 'starts-with' && node.mode !== 'ends-with') fail('QUERY', 'The literal text search mode is not supported.');
@@ -165,7 +192,7 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
 }
 export function predicateTruth(predicate?: PredicateModel): true | false | null {
   if (predicate === undefined) return true;
-  if (predicate.kind === 'text-match') return null;
+  if (predicate.kind === 'text-match' || predicate.kind === 'column-compare') return null;
   if (predicate.kind === 'compare') return predicate.operator === 'IN' && predicate.values.length === 0 ? false : null;
   if (predicate.kind === 'not') {
     const truth = predicateTruth(predicate.child);

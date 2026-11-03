@@ -20,7 +20,7 @@ test('CLI help and version work without starting the inspector', () => {
   for (const args of [[], ['--help'], ['--version']]) {
     const result = run(args);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /0\.2\.0/);
+    assert.match(result.stdout, /0\.3\.0/);
     assert.doesNotMatch(result.stdout, /http:\/\/127\.0\.0\.1:/);
   }
 });

@@ -1194,11 +1194,50 @@
 
   function pickFile() { $('file-input').click(); }
 
+  // Getting-started guide. Static text only: it never reads trace data and copies only its own fixed text.
+  function selectText(node) {
+    if (node instanceof HTMLTextAreaElement) {
+      node.focus();
+      node.select();
+      return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = window.getSelection();
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }
+  async function copyGuideText(sourceId, label) {
+    const node = $(sourceId);
+    const value = node instanceof HTMLTextAreaElement ? node.value : node.textContent;
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') throw new Error('unavailable');
+      await navigator.clipboard.writeText(value);
+      setStatus(`Copied the ${label}.`);
+    } catch {
+      selectText(node);
+      setStatus(`The browser did not allow copying, so the ${label} is selected. Press Ctrl+C, or Command+C on a Mac.`);
+    }
+  }
+  function openGuide() {
+    const guide = $('guide');
+    guide.open = true;
+    $('guide-summary').focus();
+    guide.scrollIntoView({ block: 'start' });
+  }
+
   function init() {
     $('open-trace').addEventListener('click', pickFile);
     $('empty-open').addEventListener('click', pickFile);
     $('load-demo').addEventListener('click', loadDemo);
     $('empty-demo').addEventListener('click', loadDemo);
+    $('guide-demo').addEventListener('click', loadDemo);
+    $('guide-open').addEventListener('click', pickFile);
+    $('guide-copy-code').addEventListener('click', () => copyGuideText('guide-trace-code', 'trace code'));
+    $('guide-copy-brief').addEventListener('click', () => copyGuideText('guide-brief', 'agent brief'));
+    $('empty-guide').addEventListener('click', openGuide);
     $('export-trace').addEventListener('click', exportDocument);
     $('clear-trace').addEventListener('click', clearDocument);
     $('error-dismiss').addEventListener('click', hideError);

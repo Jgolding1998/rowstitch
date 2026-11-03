@@ -12,6 +12,7 @@ Orange already provides multi-database mapping, typed relationships, batched gra
 - [PR 191](https://github.com/alfateam/orange-orm/pull/191) discusses JSON key ordering and change detection. The comparison must force a real persisted update and inspect affected rows, rather than merely exercise an equality shortcut.
 - [Issue 104](https://github.com/alfateam/orange-orm/issues/104) discusses nullability and type behavior. Rowstitch checks required/default/generated/nullable insert types separately from returned-row types.
 - [Issue 190](https://github.com/alfateam/orange-orm/issues/190) concerns unintended published demo content. Rowstitch uses an npm file allowlist and verifies the actual packed tarball, including compiled files and notices.
+- [Issue 150](https://github.com/alfateam/orange-orm/issues/150) is closed; Orange's released column-to-column filters already cover same-table and relationship operands. Rowstitch's first six column helpers cover distinct columns on one mapped table. Relationship operands remain a compatibility gap.
 
 Orange's query events already expose emitted SQL. Rowstitch's distinction is a bounded trace with bound values redacted by default and an included local visual inspector, not an invention of query logging. The inspected Orange README explicitly excludes migrations; Rowstitch only offers conservative creation planning, not a migration-history runner.
 
@@ -26,6 +27,10 @@ Orange's query events already expose emitted SQL. Rowstitch's distinction is a b
 The portable [comparison](../benchmarks/README.md) uses released Orange 5.5.1 and Kysely 0.29.8, with actual row checks and SELECT counts. SQLite driver versions differ, so it does not publish a universal speed ranking. Orange and Rowstitch both achieve two SELECTs on the shared 41-parent fixture.
 
 The [expression comparison](../benchmarks/expressions-results.json) separately checks literal text searches and ranges against independent expected rows, raw SQLite and Orange's SQLite helpers. It exercises actual UTF-8 and UTF-16 databases. Literal searches intentionally differ from LIKE patterns; those differences are recorded rather than described as Orange defects. SQLite's [function contracts](https://www.sqlite.org/lang_corefunc.html) and [expression rules](https://www.sqlite.org/lang_expr.html) informed the NULL, case, encoding and embedded-NUL probes. The implementation does not change the connection's LIKE settings or claim locale-aware Unicode matching.
+
+The [column comparison](../benchmarks/columns-results.json) exercises native numeric comparisons without converting bigint to Number, SQL NULL under NOT, boolean equality, and declared text collations in three database encodings. [SQLite's collation rules](https://www.sqlite.org/datatype3.html#collating_sequences) explain why reversing two text operands can change a result. Rowstitch preserves that behavior; its current schema report does not identify or compare declared collations. Orange's released column operands and [Kysely's whereRef](https://kysely-org.github.io/kysely-apidoc/interfaces/SelectQueryBuilder.html#whereRef) are working reference implementations, not features Rowstitch originated.
+
+The shared singular-relation read still costs Rowstitch two SELECTs versus one for Orange and the explicit Kysely/raw-SQL joins. Orange's closed [issue 177](https://github.com/alfateam/orange-orm/issues/177) and [issue 206](https://github.com/alfateam/orange-orm/issues/206) inform future tests for missing related rows and per-parent pagination. The pinned release passes the exercised cases; these reports are not presented as current upstream failures.
 
 ## Runtime and design
 

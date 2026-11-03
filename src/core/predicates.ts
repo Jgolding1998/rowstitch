@@ -1,10 +1,11 @@
 import { fail } from './errors.js';
 import { ColumnRef, Table, encode, identifier, isColumnRef, plainRecord, type AnyTable, type Kind, type Parameter, type Row } from './schema.js';
 import { mappedTableModel } from './model-mapping.js';
-import { orderingModel, predicateModel, textMatchLiteral, textMatchOptions, type ComparisonOperator, type OrderModel, type PredicateModel, type TextMatchCase, type TextMatchMode } from './query-model.js';
+import { columnKindsCompatible, orderingModel, predicateModel, textMatchLiteral, textMatchOptions, type ColumnComparisonOperator, type ComparisonOperator, type OrderModel, type PredicateModel, type TextMatchCase, type TextMatchMode } from './query-model.js';
 import { compileSqliteOrder, compileSqlitePredicate } from './sqlite-compiler.js';
 
-type Node = { kind: 'text-match'; ref: ColumnRef; mode: TextMatchMode; case: TextMatchCase; literal: string }
+type Node = { kind: 'column-compare'; left: ColumnRef; right: ColumnRef; operator: ColumnComparisonOperator }
+  | { kind: 'text-match'; ref: ColumnRef; mode: TextMatchMode; case: TextMatchCase; literal: string }
   | { kind: 'comparison'; ref: ColumnRef; operator: string; values: readonly Parameter[] }
   | { kind: 'logic'; operator: 'AND' | 'OR'; children: readonly Predicate[] }
   | { kind: 'not'; child: Predicate };
@@ -55,6 +56,30 @@ export function between<T extends string | number | bigint, K extends RangeKind>
   return and(comparison(ref, '>=', [from]), comparison(ref, '<=', [to]));
 }
 
+type NumericKind = Extract<Kind, 'integer' | 'bigint' | 'real'>;
+type EqualityKind = NumericKind | 'text' | 'boolean';
+type OrderedKind = NumericKind | 'text';
+type CompatibleKind<K> = [K] extends [NumericKind] ? NumericKind
+  : [K] extends ['text'] ? 'text' : [K] extends ['boolean'] ? 'boolean' : never;
+type EqualityColumnComparison = <K extends EqualityKind>(left: ColumnRef<unknown, K>, right: ColumnRef<unknown, CompatibleKind<NoInfer<K>>>) => Predicate;
+type OrderedColumnComparison = <K extends OrderedKind>(left: ColumnRef<unknown, K>, right: ColumnRef<unknown, CompatibleKind<NoInfer<K>>>) => Predicate;
+function validateColumnRefs(left: ColumnRef, right: ColumnRef, operator: ColumnComparisonOperator): void {
+  if (!isColumnRef(left) || !isColumnRef(right)) fail('QUERY', 'Column comparisons need two genuine mapped column references.');
+  if (left.table !== right.table) fail('QUERY', 'Column comparison operands must belong to the exact same mapped table.');
+  if (left.name === right.name) fail('QUERY', 'Compare two distinct mapped columns. Use an explicit NULL predicate for a self check.');
+  if (!columnKindsCompatible(left.table.columns[left.name].config.kind, right.table.columns[right.name].config.kind, operator)) fail('QUERY', 'Column comparison operands must have compatible scalar kinds.');
+}
+function columnComparison(left: ColumnRef, right: ColumnRef, operator: ColumnComparisonOperator): Predicate {
+  validateColumnRefs(left, right, operator);
+  return new Predicate({ kind: 'column-compare', left, right, operator });
+}
+export const eqColumns: EqualityColumnComparison = (left, right) => columnComparison(left, right, '=');
+export const neColumns: EqualityColumnComparison = (left, right) => columnComparison(left, right, '<>');
+export const gtColumns: OrderedColumnComparison = (left, right) => columnComparison(left, right, '>');
+export const gteColumns: OrderedColumnComparison = (left, right) => columnComparison(left, right, '>=');
+export const ltColumns: OrderedColumnComparison = (left, right) => columnComparison(left, right, '<');
+export const lteColumns: OrderedColumnComparison = (left, right) => columnComparison(left, right, '<=');
+
 export interface CompiledQuery { sql: string; parameters: Parameter[] }
 export interface CompiledPredicate extends CompiledQuery { truth: true | false | null }
 /** Lower public helpers only after exact mapped-table identity validation. */
@@ -64,6 +89,12 @@ export function predicateToModel(table: AnyTable, predicate?: Predicate): Predic
   function visit(p: Predicate, depth: number): PredicateModel {
     if (!(p instanceof Predicate) || ++count > 100 || depth > 16) fail('QUERY', 'Predicates must be bounded expressions built with Rowstitch helpers.');
     const n = p.node;
+    if (n.kind === 'column-compare') {
+      const left = n.left, right = n.right, operator = n.operator;
+      validateColumnRefs(left, right, operator);
+      if (left.table !== table || right.table !== table) fail('QUERY', 'A predicate must reference the queried table.');
+      return { kind: 'column-compare', left: left.name, right: right.name, operator };
+    }
     if (n.kind === 'text-match') {
       const ref = n.ref;
       if (!isColumnRef(ref) || ref.table !== table || !Object.hasOwn(table.columns, ref.name)) fail('QUERY', 'A predicate must reference the queried table.');

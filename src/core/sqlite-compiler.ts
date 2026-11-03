@@ -12,6 +12,9 @@ const deleteActions = { cascade: 'CASCADE', restrict: 'RESTRICT', 'set null': 'S
 
 function renderPredicate(predicate?: PredicateModel): CompiledQuery {
   if (predicate === undefined) return { sql: '', parameters: [] };
+  if (predicate.kind === 'column-compare') return {
+    sql: identifier(predicate.left) + ' ' + comparisons[predicate.operator] + ' ' + identifier(predicate.right), parameters: [],
+  };
   if (predicate.kind === 'text-match') {
     const column = identifier(predicate.column);
     const fold = (sql: string): string => predicate.case === 'ascii-insensitive' ? 'lower(' + sql + ')' : sql;
