@@ -13,7 +13,7 @@ Use the library inside a Node app, such as a small inventory tool or a backend t
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.4.0/rowstitch-0.4.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.5.0/rowstitch-0.5.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -35,7 +35,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.4.0/rowstitch-0.4.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.5.0/rowstitch-0.5.0.tgz
 ```
 
 ```ts
@@ -101,6 +101,24 @@ On a `hasOne` or `belongsTo` descriptor, `some` and `none` only check existence;
 Relation filters are read-only for now. `update` and `delete` refuse them with `UNSAFE_WRITE`. If you need a read-then-write operation, select explicit keys and perform the key-filtered write with `maxRows` inside the same synchronous transaction. Every table used by a filter must be registered with `openDatabase`. Keys must be integer/bigint or text/text pairs; text keys follow the related column's collation, the same rule eager loading uses.
 
 These subqueries can require a lookup for each parent row, so index the related key. `ensureSchema()` creates an index for a column declared with `.references(...)`. A relation descriptor alone does not create one, so add your own index for relations on undeclared keys, then check `explain()`. Try the complete [relation-filter example](examples/relation-filters.mjs), or reproduce the [Orange comparison](benchmarks/README.md#relation-predicates).
+
+## Filter by how many related records match
+
+Use `countRelated` for questions such as "which projects have at least two unfinished tasks?":
+
+```ts
+import { countRelated, eq } from 'rowstitch';
+
+const busy = db.table(projects).findMany({
+  where: countRelated(openTasks, '>=', 2, eq(tasks.col('done'), false)),
+});
+```
+
+The relation's `where` still defines the domain. The optional last argument narrows the count to rows where that test is TRUE. Without it, every related row counts, including one with NULL values. Empty relations count as zero. This uses SQL `COUNT(*)` without loading the children, so the eager-loading row limit does not truncate the count.
+
+Choose `=`, `<>`, `>`, `>=`, `<` or `<=` and a nonnegative safe integer threshold. Counts share the relation filters' registration, key, collation, nesting and read-only rules. A singular descriptor counts its actual matching rows too; it does not clamp duplicates to one. Including that singular relation still checks cardinality.
+
+Use `some` or `none` when you only need to know whether a match exists; those queries can stop at the first match. A count may scan the full matching range. This API filters the returned parents; it does not add a count field to each result or provide grouping or distinct counts. See [the runnable example](examples/related-counts.mjs) and [the count comparison](benchmarks/README.md#filtered-relation-counts).
 
 ## Search text and ranges
 

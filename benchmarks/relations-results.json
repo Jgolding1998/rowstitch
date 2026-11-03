@@ -4,7 +4,7 @@
   "environment": {
     "node": "v24.22.2",
     "nodeSQLite": "3.53.4",
-    "rowstitch": "0.4.0",
+    "rowstitch": "0.5.0",
     "orange": "5.5.1",
     "orangeEntry": "Published npm CommonJS source export, explicitly resolved and dynamically imported",
     "orangeSQLite": "3.53.4"
@@ -1202,7 +1202,7 @@
     },
     {
       "tool": "orange-orm@5.5.1",
-      "name": "filtered relation count (not yet a Rowstitch capability)",
+      "name": "filtered relation count (reference case; shared coverage in counts.mjs)",
       "status": "pass",
       "expectedIds": [
         2,

@@ -1,11 +1,12 @@
 import { fail } from './errors.js';
 import { ColumnRef, encode, identifier, isColumnRef, isTable, plainRecord, type AnyTable, type Kind, type Parameter, type Row } from './schema.js';
 import { mappedTableModel } from './model-mapping.js';
-import { columnKindsCompatible, relationKindsCompatible, orderingModel, predicateModel, textMatchLiteral, textMatchOptions, type ColumnComparisonOperator, type ComparisonOperator, type OrderModel, type PredicateModel, type RelationQuantifier, type TextMatchCase, type TextMatchMode } from './query-model.js';
+import { columnKindsCompatible, relationKindsCompatible, relationCountComparison, orderingModel, predicateModel, textMatchLiteral, textMatchOptions, type ColumnComparisonOperator, type ComparisonOperator, type OrderModel, type PredicateModel, type RelationQuantifier, type TextMatchCase, type TextMatchMode } from './query-model.js';
 import { compileSqliteOrder, compileSqlitePredicate } from './sqlite-compiler.js';
 
 type Node = { kind: 'column-compare'; left: ColumnRef; right: ColumnRef; operator: ColumnComparisonOperator }
   | { kind: 'relation-filter'; relation: FilterRelation; quantifier: RelationQuantifier; predicate?: Predicate }
+  | { kind: 'relation-count'; relation: FilterRelation; operator: ColumnComparisonOperator; threshold: number; predicate?: Predicate }
   | { kind: 'text-match'; ref: ColumnRef; mode: TextMatchMode; case: TextMatchCase; literal: string }
   | { kind: 'comparison'; ref: ColumnRef; operator: string; values: readonly Parameter[] }
   | { kind: 'logic'; operator: 'AND' | 'OR'; children: readonly Predicate[] }
@@ -90,16 +91,21 @@ export function predicateToModel(table: AnyTable, predicate?: Predicate, mapped?
   function visit(p: Predicate, depth: number, scope: AnyTable = table, relationDepth = 0): PredicateModel {
     if (!(p instanceof Predicate) || ++count > 100 || depth > 16) fail('QUERY', 'Predicates must be bounded expressions built with Rowstitch helpers.');
     const n = p.node;
-    if (n.kind === 'relation-filter') {
+    if (n.kind === 'relation-filter' || n.kind === 'relation-count') {
       if (relationDepth >= 4) fail('QUERY', 'Relation filters support at most four nested relationships.');
       const relation = validateFilterRelation(n.relation);
-      if (!['some', 'none', 'every'].includes(n.quantifier) || n.quantifier === 'every' && n.predicate === undefined) fail('QUERY', 'A relation filter needs a supported quantifier and every requires a predicate.');
+      if (n.kind === 'relation-filter' && (!['some', 'none', 'every'].includes(n.quantifier) || n.quantifier === 'every' && n.predicate === undefined)) fail('QUERY', 'A relation filter needs a supported quantifier and every requires a predicate.');
       const { localKey, foreignKey, where } = relation.options;
       if (localKey.table !== scope) fail('QUERY', 'A relation filter local key must reference the current table.');
       mapped?.(relation.table);
-      return { kind: 'relation-filter', quantifier: n.quantifier, table: mappedTableModel(relation.table), localKey: localKey.name, foreignKey: foreignKey.name,
+      const base = { table: mappedTableModel(relation.table), localKey: localKey.name, foreignKey: foreignKey.name,
         ...(where === undefined ? {} : { where: visit(where, depth + 1, relation.table, relationDepth + 1) }),
         ...(n.predicate === undefined ? {} : { predicate: visit(n.predicate, depth + 1, relation.table, relationDepth + 1) }) };
+      if (n.kind === 'relation-count') {
+        bound++;
+        return { ...base, kind: 'relation-count', ...relationCountComparison(n.operator, n.threshold) };
+      }
+      return { ...base, kind: 'relation-filter', quantifier: n.quantifier };
     }
     if (n.kind === 'column-compare') {
       const left = n.left, right = n.right, operator = n.operator;
@@ -226,6 +232,13 @@ export const some = (relation: FilterRelation, predicate?: Predicate): Predicate
 export const none = (relation: FilterRelation, predicate?: Predicate): Predicate => relationFilter('none', relation, predicate);
 /** Empty domains pass; a related row must evaluate to TRUE, not NULL, to pass. */
 export const every = (relation: FilterRelation, predicate: Predicate): Predicate => relationFilter('every', relation, predicate);
+export type RelationCountOperator = ColumnComparisonOperator;
+/** Compare the count of matching related rows in SQLite, without loading those rows. */
+export function countRelated(relation: FilterRelation, operator: RelationCountOperator, threshold: number, predicate?: Predicate): Predicate {
+  validateFilterRelation(relation);
+  if (predicate !== undefined && !(predicate instanceof Predicate)) fail('QUERY', 'A related count filter needs a Rowstitch predicate.');
+  return new Predicate({ kind: 'relation-count', relation, ...relationCountComparison(operator, threshold), ...(predicate === undefined ? {} : { predicate }) });
+}
 
 export function validateRelation(table: AnyTable, options: RelationOptions<Includes, readonly string[] | undefined>, singular: boolean): void {
   if (!isTable(table)) fail('QUERY', 'A relation requires a genuine mapped target table.');

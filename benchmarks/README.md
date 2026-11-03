@@ -59,7 +59,7 @@ node benchmarks/columns.mjs --reference-dir /path/to/reference-directory --outpu
 
 Without references, 216 Rowstitch/raw-SQL checks run. Native NOCASE, BINARY and RTRIM behavior remains observable, including the effect of reversing operands. Schema inspection currently does not report or certify these collations. Orange and Kysely already support column operands with broader SQL and relationship contracts; Rowstitch's narrower helpers are not evidence of a defect in either tool.
 
-To check all four local fixture sets without installing reference libraries:
+To check all five local fixture sets without installing reference libraries:
 
 ```sh
 node benchmarks/check.mjs
@@ -85,4 +85,21 @@ Measured contract differences remain explicit:
 - Rowstitch `every` includes empty relations and treats a NULL predicate result as a failure. Orange's native `all` requires at least one matching child, and its negated test does not treat NULL as a failing child. For example, `[1, NULL]` passes Orange `all(score = 1)` and fails Rowstitch `every(score = 1)`. The shared comparison expresses strict `every` in Orange using `none(score != 1 OR score IS NULL)`, then checks native `all` separately.
 - With a NOCASE parent key and BINARY foreign key, Orange's relation filter uses the parent collation and Rowstitch uses the foreign collation. Reversing those declared collations reverses the result. Both directions are measured. Rowstitch's eager loader and new relation filters agree on the foreign-column rule.
 
-These differences are documented behavior, not upstream defects. Orange's filtered relation count is exercised separately as a capability Rowstitch has not implemented yet. The pinned sources for these contracts are Orange's [all predicate](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/all.js), [relation count](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/count.js) and [correlation equality](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/query/singleQuery/joinSql/newShallowJoinSqlCore.js).
+These differences are documented behavior, not upstream defects. This runner also includes an Orange count reference case; the dedicated count comparison below checks both tools. The pinned sources for these contracts are Orange's [all predicate](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/all.js), [relation count](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/count.js) and [correlation equality](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/query/singleQuery/joinSql/newShallowJoinSqlCore.js).
+
+## Filtered relation counts
+
+The [count comparison](counts-results.json) checks all six `countRelated` comparison operators, thresholds from zero through `Number.MAX_SAFE_INTEGER`, NULL fields, empty relations, repeated values, orphan keys, filtered domains, nested counts, self-relations and bound text. It runs 140 checks with Rowstitch and raw SQLite, or 208 checks with Orange 5.5.1. Every exercised count query uses one SELECT. Expected rows are calculated from independent JavaScript fixture data and also checked with raw SQL.
+
+```sh
+node benchmarks/counts.mjs
+node benchmarks/counts.mjs --reference-dir /path/to/reference-directory --output /path/to/counts-results.json
+```
+
+Use `--entry /path/to/installed/rowstitch/dist/index.js` to check a built installed package. The local count cases also run through `node benchmarks/check.mjs`, and failures produce a nonzero exit status.
+
+Counts use `COUNT(*)`: a related row with a NULL score still contributes to an unfiltered count. A filtered count includes only rows whose predicate is true. Empty relations count as zero, and equal values in distinct rows are counted separately. Two matching grandchildren do not double-count their parent when used inside a nested predicate. Rowstitch's singular descriptors count matching rows without asserting cardinality; that behavior is tested against raw SQL separately from Orange's typed many-relation count API.
+
+On the 5,000-parent/20,000-child fixture, both tools use the `(parent_id, score)` covering index for the tested count queries. A count may visit the entire matching range, while `EXISTS` can stop at its first match. This benchmark records correctness and plans, not a claim that count is faster. The two text-collation comparisons retain the documented foreign-column-left versus parent-column-left difference.
+
+This milestone covers count comparisons in read filters. It does not implement count projections, distinct counts, grouping or Orange's full numeric expression API. Sources: [Orange's pinned count API](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/count.js), its [implemented feature request](https://github.com/alfateam/orange-orm/issues/151), and [SQLite's aggregate contracts](https://www.sqlite.org/lang_aggfunc.html).

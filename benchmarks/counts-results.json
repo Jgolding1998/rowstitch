@@ -1,0 +1,5596 @@
+{
+  "format": "rowstitch-relation-count-comparison",
+  "version": 1,
+  "environment": {
+    "node": "v24.22.2",
+    "nodeSQLite": "3.53.4",
+    "rowstitch": "0.5.0",
+    "orange": "5.5.1",
+    "orangeEntry": "Published npm CommonJS source export, explicitly resolved and dynamically imported",
+    "orangeSQLite": "3.53.4"
+  },
+  "fixture": {
+    "parentScoreSets": [
+      [],
+      [
+        1
+      ],
+      [
+        0
+      ],
+      [
+        null
+      ],
+      [
+        1,
+        null
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        null
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        0,
+        null
+      ]
+    ],
+    "selfRows": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "score": null
+      },
+      {
+        "id": 2,
+        "parent_id": 1,
+        "score": 1
+      },
+      {
+        "id": 3,
+        "parent_id": 1,
+        "score": 1
+      },
+      {
+        "id": 4,
+        "parent_id": 2,
+        "score": null
+      },
+      {
+        "id": 5,
+        "parent_id": 2,
+        "score": 0
+      },
+      {
+        "id": 6,
+        "parent_id": 3,
+        "score": 1
+      },
+      {
+        "id": 7,
+        "parent_id": 99,
+        "score": 1
+      },
+      {
+        "id": 8,
+        "parent_id": 8,
+        "score": 1
+      }
+    ],
+    "indexedParents": 5000,
+    "indexedChildren": 20000
+  },
+  "cases": [
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows = 0",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) = ? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows = 0",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows = 0",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") = ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) = ? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") = ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows = 2",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) = ? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows = 2",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows = 2",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") = ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows = 3",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) = ? ORDER BY id",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows = 3",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows = 3",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") = ? order by \"parents\".\"id\"",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows = 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) = ? ORDER BY id",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows = 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            4,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows = 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") = ? order by \"parents\".\"id\"",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows = 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) = ? ORDER BY id",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows = 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            9007199254740991,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows = 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") = ? order by \"parents\".\"id\"",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <> 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <> ? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <> 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <> ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <> 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <> ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <> 1",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <> ? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <> 1",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <> ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <> 1",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <> ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <> 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <> ? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <> 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <> ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <> 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <> ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <> 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <> ? ORDER BY id",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <> 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <> ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <> 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <> ? order by \"parents\".\"id\"",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <> 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <> ? ORDER BY id",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <> 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <> ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            4,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <> 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <> ? order by \"parents\".\"id\"",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <> 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <> ? ORDER BY id",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <> 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <> ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            9007199254740991,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <> 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <> ? order by \"parents\".\"id\"",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows > 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) > ? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows > 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") > ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows > 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") > ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows > 1",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) > ? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows > 1",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") > ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows > 1",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") > ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows > 2",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) > ? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows > 2",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") > ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows > 2",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") > ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows > 3",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) > ? ORDER BY id",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows > 3",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") > ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows > 3",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") > ? order by \"parents\".\"id\"",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows > 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) > ? ORDER BY id",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows > 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") > ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            4,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows > 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") > ? order by \"parents\".\"id\"",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows > 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) > ? ORDER BY id",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows > 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") > ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            9007199254740991,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows > 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") > ? order by \"parents\".\"id\"",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows >= 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) >= ? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows >= 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows >= 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") >= ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows >= 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) >= ? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows >= 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows >= 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") >= ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows >= 2",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) >= ? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows >= 2",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows >= 2",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") >= ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows >= 3",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) >= ? ORDER BY id",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows >= 3",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows >= 3",
+      "status": "pass",
+      "expectedIds": [
+        9
+      ],
+      "actualIds": [
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") >= ? order by \"parents\".\"id\"",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows >= 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) >= ? ORDER BY id",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows >= 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            4,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows >= 4",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") >= ? order by \"parents\".\"id\"",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows >= 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) >= ? ORDER BY id",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows >= 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            9007199254740991,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows >= 9007199254740991",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") >= ? order by \"parents\".\"id\"",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows < 0",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) < ? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows < 0",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") < ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows < 0",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") < ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows < 1",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) < ? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows < 1",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") < ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows < 1",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") < ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows < 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) < ? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows < 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") < ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows < 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") < ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows < 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) < ? ORDER BY id",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows < 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") < ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows < 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") < ? order by \"parents\".\"id\"",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows < 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) < ? ORDER BY id",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows < 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") < ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            4,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows < 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") < ? order by \"parents\".\"id\"",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows < 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) < ? ORDER BY id",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows < 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") < ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            9007199254740991,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows < 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") < ? order by \"parents\".\"id\"",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <= 0",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <= ? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <= 0",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <= 0",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <= ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <= 1",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <= ? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <= 1",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <= 1",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <= ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <= 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <= ? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <= 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <= 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <= ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <= 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <= ? ORDER BY id",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <= 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <= 3",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <= ? order by \"parents\".\"id\"",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <= 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <= ? ORDER BY id",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <= 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            4,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <= 4",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <= ? order by \"parents\".\"id\"",
+          "parameters": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "all rows <= 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id) <= ? ORDER BY id",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "all rows <= 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") <= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            9007199254740991,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "all rows <= 9007199254740991",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") <= ? order by \"parents\".\"id\"",
+          "parameters": [
+            9007199254740991
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "positive count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score=?))=? ORDER BY id",
+          "parameters": [
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "positive count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"score\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "positive count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\"=1) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "positive count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score=?))=? ORDER BY id",
+          "parameters": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "positive count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"score\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "positive count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\"=1) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "positive count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score=?))=? ORDER BY id",
+          "parameters": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "positive count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"score\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "positive count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\"=1) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "NULL count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        6,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        6,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score IS NULL))=? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "NULL count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        6,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        6,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"score\" IS NULL)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "NULL count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        3,
+        6,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        3,
+        6,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is null) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "NULL count = 1",
+      "status": "pass",
+      "expectedIds": [
+        4,
+        5,
+        7,
+        9
+      ],
+      "actualIds": [
+        4,
+        5,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score IS NULL))=? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "NULL count = 1",
+      "status": "pass",
+      "expectedIds": [
+        4,
+        5,
+        7,
+        9
+      ],
+      "actualIds": [
+        4,
+        5,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"score\" IS NULL)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "NULL count = 1",
+      "status": "pass",
+      "expectedIds": [
+        4,
+        5,
+        7,
+        9
+      ],
+      "actualIds": [
+        4,
+        5,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is null) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "NULL count = 2",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score IS NULL))=? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "NULL count = 2",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"score\" IS NULL)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "NULL count = 2",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is null) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nonNULL domain AND repeated label count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score IS NOT NULL AND c.label=?))=? ORDER BY id",
+          "parameters": [
+            "repeat",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nonNULL domain AND repeated label count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (NOT (\"__rs_filter_0\".\"score\" IS NULL)) AND (\"__rs_filter_0\".\"label\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "repeat",
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nonNULL domain AND repeated label count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is not null AND \"x1\".\"label\"=?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            "repeat",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nonNULL domain AND repeated label count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score IS NOT NULL AND c.label=?))=? ORDER BY id",
+          "parameters": [
+            "repeat",
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nonNULL domain AND repeated label count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (NOT (\"__rs_filter_0\".\"score\" IS NULL)) AND (\"__rs_filter_0\".\"label\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "repeat",
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nonNULL domain AND repeated label count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is not null AND \"x1\".\"label\"=?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            "repeat",
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nonNULL domain AND repeated label count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.score IS NOT NULL AND c.label=?))=? ORDER BY id",
+          "parameters": [
+            "repeat",
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nonNULL domain AND repeated label count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (NOT (\"__rs_filter_0\".\"score\" IS NULL)) AND (\"__rs_filter_0\".\"label\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "repeat",
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nonNULL domain AND repeated label count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is not null AND \"x1\".\"label\"=?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            "repeat",
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "bound quote count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        4,
+        5,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        4,
+        5,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.label=?))=? ORDER BY id",
+          "parameters": [
+            "' OR 1=1 --",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "bound quote count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        4,
+        5,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        4,
+        5,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"label\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "' OR 1=1 --",
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "bound quote count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2,
+        4,
+        5,
+        8
+      ],
+      "actualIds": [
+        1,
+        2,
+        4,
+        5,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"label\"=?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            "' OR 1=1 --",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "bound quote count = 1",
+      "status": "pass",
+      "expectedIds": [
+        3,
+        6,
+        7,
+        9
+      ],
+      "actualIds": [
+        3,
+        6,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.label=?))=? ORDER BY id",
+          "parameters": [
+            "' OR 1=1 --",
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "bound quote count = 1",
+      "status": "pass",
+      "expectedIds": [
+        3,
+        6,
+        7,
+        9
+      ],
+      "actualIds": [
+        3,
+        6,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"label\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "' OR 1=1 --",
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "bound quote count = 1",
+      "status": "pass",
+      "expectedIds": [
+        3,
+        6,
+        7,
+        9
+      ],
+      "actualIds": [
+        3,
+        6,
+        7,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"label\"=?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            "' OR 1=1 --",
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "bound quote count = 2",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (c.label=?))=? ORDER BY id",
+          "parameters": [
+            "' OR 1=1 --",
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "bound quote count = 2",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"label\" = ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            "' OR 1=1 --",
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "bound quote count = 2",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"label\"=?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            "' OR 1=1 --",
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested count count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND ((SELECT COUNT(*) FROM grandchildren g WHERE g.child_id=c.id AND g.flag=?)>=?))=? ORDER BY id",
+          "parameters": [
+            1,
+            2,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested count count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND ((SELECT count(*) FROM \"grandchildren\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"child_id\" = \"__rs_filter_0\".\"id\" AND (\"__rs_filter_1\".\"flag\" = ?)) >= ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            2,
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested count count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND (SELECT COUNT(*) FROM \"grandchildren\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"child_id\" AND \"x2\".\"flag\"=1) >= ?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            2,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested count count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND ((SELECT COUNT(*) FROM grandchildren g WHERE g.child_id=c.id AND g.flag=?)>=?))=? ORDER BY id",
+          "parameters": [
+            1,
+            2,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested count count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND ((SELECT count(*) FROM \"grandchildren\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"child_id\" = \"__rs_filter_0\".\"id\" AND (\"__rs_filter_1\".\"flag\" = ?)) >= ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            2,
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested count count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND (SELECT COUNT(*) FROM \"grandchildren\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"child_id\" AND \"x2\".\"flag\"=1) >= ?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            2,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested count count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND ((SELECT COUNT(*) FROM grandchildren g WHERE g.child_id=c.id AND g.flag=?)>=?))=? ORDER BY id",
+          "parameters": [
+            1,
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested count count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND ((SELECT count(*) FROM \"grandchildren\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"child_id\" = \"__rs_filter_0\".\"id\" AND (\"__rs_filter_1\".\"flag\" = ?)) >= ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            2,
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested count count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND (SELECT COUNT(*) FROM \"grandchildren\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"child_id\" AND \"x2\".\"flag\"=1) >= ?) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested some count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (EXISTS (SELECT 1 FROM grandchildren g WHERE g.child_id=c.id AND g.flag=?)))=? ORDER BY id",
+          "parameters": [
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested some count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (EXISTS (SELECT 1 FROM \"grandchildren\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"child_id\" = \"__rs_filter_0\".\"id\" AND (\"__rs_filter_1\".\"flag\" = ?)))) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested some count = 0",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "actualIds": [
+        1,
+        3,
+        4,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND EXISTS (SELECT \"x2\".\"id\" FROM \"grandchildren\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"child_id\" AND \"x2\".\"flag\"=1)) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested some count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (EXISTS (SELECT 1 FROM grandchildren g WHERE g.child_id=c.id AND g.flag=?)))=? ORDER BY id",
+          "parameters": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested some count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (EXISTS (SELECT 1 FROM \"grandchildren\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"child_id\" = \"__rs_filter_0\".\"id\" AND (\"__rs_filter_1\".\"flag\" = ?)))) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested some count = 1",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND EXISTS (SELECT \"x2\".\"id\" FROM \"grandchildren\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"child_id\" AND \"x2\".\"flag\"=1)) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested some count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND (EXISTS (SELECT 1 FROM grandchildren g WHERE g.child_id=c.id AND g.flag=?)))=? ORDER BY id",
+          "parameters": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested some count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (EXISTS (SELECT 1 FROM \"grandchildren\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"child_id\" = \"__rs_filter_0\".\"id\" AND (\"__rs_filter_1\".\"flag\" = ?)))) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested some count = 2",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND EXISTS (SELECT \"x2\".\"id\" FROM \"grandchildren\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"child_id\" AND \"x2\".\"flag\"=1)) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "self count = 0",
+      "status": "pass",
+      "expectedIds": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "actualIds": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM nodes n WHERE (SELECT COUNT(*) FROM nodes c WHERE c.parent_id=n.id)=? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "self count = 0",
+      "status": "pass",
+      "expectedIds": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "actualIds": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"nodes\" WHERE (SELECT count(*) FROM \"nodes\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"nodes\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "self count = 0",
+      "status": "pass",
+      "expectedIds": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "actualIds": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"nodes\".\"id\" as \"snodes0\" from \"nodes\" \"nodes\" where (SELECT COUNT(*) FROM \"nodes\" \"x1\" WHERE \"nodes\".\"id\"=\"x1\".\"parent_id\") = ? order by \"nodes\".\"id\"",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested self count = 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM nodes n WHERE (SELECT COUNT(*) FROM nodes c WHERE c.parent_id=n.id AND (SELECT COUNT(*) FROM nodes g WHERE g.parent_id=c.id)>=?)=? ORDER BY id",
+          "parameters": [
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested self count = 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"nodes\" WHERE (SELECT count(*) FROM \"nodes\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"nodes\".\"id\" AND ((SELECT count(*) FROM \"nodes\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"parent_id\" = \"__rs_filter_0\".\"id\") >= ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested self count = 0",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "actualIds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"nodes\".\"id\" as \"snodes0\" from \"nodes\" \"nodes\" where (SELECT COUNT(*) FROM \"nodes\" \"x1\" WHERE \"nodes\".\"id\"=\"x1\".\"parent_id\" AND (SELECT COUNT(*) FROM \"nodes\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"parent_id\") >= ?) = ? order by \"nodes\".\"id\"",
+          "parameters": [
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "self count = 1",
+      "status": "pass",
+      "expectedIds": [
+        3,
+        8
+      ],
+      "actualIds": [
+        3,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM nodes n WHERE (SELECT COUNT(*) FROM nodes c WHERE c.parent_id=n.id)=? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "self count = 1",
+      "status": "pass",
+      "expectedIds": [
+        3,
+        8
+      ],
+      "actualIds": [
+        3,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"nodes\" WHERE (SELECT count(*) FROM \"nodes\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"nodes\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "self count = 1",
+      "status": "pass",
+      "expectedIds": [
+        3,
+        8
+      ],
+      "actualIds": [
+        3,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"nodes\".\"id\" as \"snodes0\" from \"nodes\" \"nodes\" where (SELECT COUNT(*) FROM \"nodes\" \"x1\" WHERE \"nodes\".\"id\"=\"x1\".\"parent_id\") = ? order by \"nodes\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested self count = 1",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM nodes n WHERE (SELECT COUNT(*) FROM nodes c WHERE c.parent_id=n.id AND (SELECT COUNT(*) FROM nodes g WHERE g.parent_id=c.id)>=?)=? ORDER BY id",
+          "parameters": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested self count = 1",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"nodes\" WHERE (SELECT count(*) FROM \"nodes\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"nodes\".\"id\" AND ((SELECT count(*) FROM \"nodes\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"parent_id\" = \"__rs_filter_0\".\"id\") >= ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested self count = 1",
+      "status": "pass",
+      "expectedIds": [
+        8
+      ],
+      "actualIds": [
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"nodes\".\"id\" as \"snodes0\" from \"nodes\" \"nodes\" where (SELECT COUNT(*) FROM \"nodes\" \"x1\" WHERE \"nodes\".\"id\"=\"x1\".\"parent_id\" AND (SELECT COUNT(*) FROM \"nodes\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"parent_id\") >= ?) = ? order by \"nodes\".\"id\"",
+          "parameters": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "self count = 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2
+      ],
+      "actualIds": [
+        1,
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM nodes n WHERE (SELECT COUNT(*) FROM nodes c WHERE c.parent_id=n.id)=? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "self count = 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2
+      ],
+      "actualIds": [
+        1,
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"nodes\" WHERE (SELECT count(*) FROM \"nodes\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"nodes\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "self count = 2",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        2
+      ],
+      "actualIds": [
+        1,
+        2
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"nodes\".\"id\" as \"snodes0\" from \"nodes\" \"nodes\" where (SELECT COUNT(*) FROM \"nodes\" \"x1\" WHERE \"nodes\".\"id\"=\"x1\".\"parent_id\") = ? order by \"nodes\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nested self count = 2",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM nodes n WHERE (SELECT COUNT(*) FROM nodes c WHERE c.parent_id=n.id AND (SELECT COUNT(*) FROM nodes g WHERE g.parent_id=c.id)>=?)=? ORDER BY id",
+          "parameters": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nested self count = 2",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"nodes\" WHERE (SELECT count(*) FROM \"nodes\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"nodes\".\"id\" AND ((SELECT count(*) FROM \"nodes\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"parent_id\" = \"__rs_filter_0\".\"id\") >= ?)) = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nested self count = 2",
+      "status": "pass",
+      "expectedIds": [
+        1
+      ],
+      "actualIds": [
+        1
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"nodes\".\"id\" as \"snodes0\" from \"nodes\" \"nodes\" where (SELECT COUNT(*) FROM \"nodes\" \"x1\" WHERE \"nodes\".\"id\"=\"x1\".\"parent_id\" AND (SELECT COUNT(*) FROM \"nodes\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"parent_id\") >= ?) = ? order by \"nodes\".\"id\"",
+          "parameters": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "count under some",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE EXISTS (SELECT 1 FROM children c WHERE c.parent_id=p.id AND (SELECT COUNT(*) FROM grandchildren g WHERE g.child_id=c.id)>=?) ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "count under some",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE EXISTS (SELECT 1 FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND ((SELECT count(*) FROM \"grandchildren\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"child_id\" = \"__rs_filter_0\".\"id\") >= ?)) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "count under some",
+      "status": "pass",
+      "expectedIds": [
+        2,
+        5,
+        6,
+        8,
+        9
+      ],
+      "actualIds": [
+        2,
+        5,
+        6,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where EXISTS (SELECT \"x1\".\"id\" FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND (SELECT COUNT(*) FROM \"grandchildren\" \"x2\" WHERE \"x1\".\"id\"=\"x2\".\"child_id\") >= ?) order by \"parents\".\"id\"",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "two independent count scopes",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        9
+      ],
+      "actualIds": [
+        5,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id AND c.score=?)>=? AND (SELECT COUNT(*) FROM children d WHERE d.parent_id=p.id AND d.score IS NULL)=? ORDER BY id",
+          "parameters": [
+            1,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "two independent count scopes",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        9
+      ],
+      "actualIds": [
+        5,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE ((SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_0\".\"score\" = ?)) >= ? AND (SELECT count(*) FROM \"children\" AS \"__rs_filter_1\" WHERE \"__rs_filter_1\".\"parent_id\" = \"parents\".\"id\" AND (\"__rs_filter_1\".\"score\" IS NULL)) = ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1,
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "two independent count scopes",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        9
+      ],
+      "actualIds": [
+        5,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\"=1) >= ? AND (SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is null) = ? order by \"parents\".\"id\"",
+          "parameters": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "NOT count comparison",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE NOT ((SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id)=?) ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "NOT count comparison",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE NOT ((SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") = ?) ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "NOT count comparison",
+      "status": "pass",
+      "expectedIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actualIds": [
+        1,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"parents\".\"id\" as \"sparents0\" from \"parents\" \"parents\" where NOT ((SELECT COUNT(*) FROM \"children\" \"x1\" WHERE \"parents\".\"id\"=\"x1\".\"parent_id\") = ?) order by \"parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "hasOne counts rows without cardinality assertion",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM parents p WHERE (SELECT COUNT(*) FROM children c WHERE c.parent_id=p.id)=? ORDER BY id",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "hasOne counts rows without cardinality assertion",
+      "status": "pass",
+      "expectedIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "actualIds": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "referenceScope": "Rowstitch descriptor behavior; Orange singular count is not part of this comparison.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"parents\" WHERE (SELECT count(*) FROM \"children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "belongsTo count distinguishes orphan and NULL foreign keys",
+      "status": "pass",
+      "expectedIds": [
+        15,
+        16
+      ],
+      "actualIds": [
+        15,
+        16
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM children c WHERE (SELECT COUNT(*) FROM parents p WHERE p.id=c.parent_id)=? ORDER BY id",
+          "parameters": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "belongsTo count distinguishes orphan and NULL foreign keys",
+      "status": "pass",
+      "expectedIds": [
+        15,
+        16
+      ],
+      "actualIds": [
+        15,
+        16
+      ],
+      "referenceScope": "Rowstitch descriptor behavior; Orange singular count is not part of this comparison.",
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"children\" WHERE (SELECT count(*) FROM \"parents\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"id\" = \"children\".\"parent_id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            0,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "nocase_parents foreign-left count",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM nocase_parents p WHERE (SELECT COUNT(*) FROM binary_children c WHERE c.parent_id=p.id)=? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "nocase_parents foreign-left count",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"nocase_parents\" WHERE (SELECT count(*) FROM \"binary_children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"nocase_parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "nocase_parents parent-left count",
+      "status": "pass",
+      "expectedIds": [
+        "Sample"
+      ],
+      "actualIds": [
+        "Sample"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"nocase_parents\".\"id\" as \"snocase_parents0\" from \"nocase_parents\" \"nocase_parents\" where (SELECT COUNT(*) FROM \"binary_children\" \"x1\" WHERE \"nocase_parents\".\"id\"=\"x1\".\"parent_id\") = ? order by \"nocase_parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "binary_parents foreign-left count",
+      "status": "pass",
+      "expectedIds": [
+        "Sample"
+      ],
+      "actualIds": [
+        "Sample"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM binary_parents p WHERE (SELECT COUNT(*) FROM nocase_children c WHERE c.parent_id=p.id)=? ORDER BY id",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "binary_parents foreign-left count",
+      "status": "pass",
+      "expectedIds": [
+        "Sample"
+      ],
+      "actualIds": [
+        "Sample"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"binary_parents\" WHERE (SELECT count(*) FROM \"nocase_children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"binary_parents\".\"id\") = ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            1000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "binary_parents parent-left count",
+      "status": "pass",
+      "expectedIds": [],
+      "actualIds": [],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"binary_parents\".\"id\" as \"sbinary_parents0\" from \"binary_parents\" \"binary_parents\" where (SELECT COUNT(*) FROM \"nocase_children\" \"x1\" WHERE \"binary_parents\".\"id\"=\"x1\".\"parent_id\") = ? order by \"binary_parents\".\"id\"",
+          "parameters": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "indexed all rows >= 3",
+      "status": "pass",
+      "matchingParents": 5000,
+      "plan": [
+        "SCAN p",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH c USING COVERING INDEX bench_child_parent_score (parent_id=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM bench_parents p WHERE (SELECT COUNT(*) FROM bench_children c WHERE c.parent_id=p.id)>=? ORDER BY id LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            10000,
+            0
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN SELECT id FROM bench_parents p WHERE (SELECT COUNT(*) FROM bench_children c WHERE c.parent_id=p.id)>=? ORDER BY id LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            10000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "indexed all rows >= 3",
+      "status": "pass",
+      "matchingParents": 5000,
+      "plan": [
+        "SCAN bench_parents",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH __rs_filter_0 USING COVERING INDEX bench_child_parent_score (parent_id=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"bench_parents\" WHERE (SELECT count(*) FROM \"bench_children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"bench_parents\".\"id\") >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            10000,
+            0
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN SELECT \"id\" FROM \"bench_parents\" WHERE (SELECT count(*) FROM \"bench_children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"bench_parents\".\"id\") >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            3,
+            10000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "indexed all rows >= 3",
+      "status": "pass",
+      "matchingParents": 5000,
+      "plan": [
+        "SCAN bench_parents",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH x1 USING COVERING INDEX bench_child_parent_score (parent_id=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"bench_parents\".\"id\" as \"sbench_parents0\" from \"bench_parents\" \"bench_parents\" where (SELECT COUNT(*) FROM \"bench_children\" \"x1\" WHERE \"bench_parents\".\"id\"=\"x1\".\"parent_id\") >= ? order by \"bench_parents\".\"id\" limit 10000",
+          "parameters": [
+            3
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN select \"bench_parents\".\"id\" as \"sbench_parents0\" from \"bench_parents\" \"bench_parents\" where (SELECT COUNT(*) FROM \"bench_children\" \"x1\" WHERE \"bench_parents\".\"id\"=\"x1\".\"parent_id\") >= ? order by \"bench_parents\".\"id\" limit 10000",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "indexed positive rows >= 3",
+      "status": "pass",
+      "matchingParents": 1666,
+      "plan": [
+        "SCAN p",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH c USING COVERING INDEX bench_child_parent_score (parent_id=? AND score=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM bench_parents p WHERE (SELECT COUNT(*) FROM bench_children c WHERE c.parent_id=p.id AND c.score=?)>=? ORDER BY id LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            3,
+            10000,
+            0
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN SELECT id FROM bench_parents p WHERE (SELECT COUNT(*) FROM bench_children c WHERE c.parent_id=p.id AND c.score=?)>=? ORDER BY id LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            3,
+            10000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "indexed positive rows >= 3",
+      "status": "pass",
+      "matchingParents": 1666,
+      "plan": [
+        "SCAN bench_parents",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH __rs_filter_0 USING COVERING INDEX bench_child_parent_score (parent_id=? AND score=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"bench_parents\" WHERE (SELECT count(*) FROM \"bench_children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"bench_parents\".\"id\" AND (\"__rs_filter_0\".\"score\" = ?)) >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            3,
+            10000,
+            0
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN SELECT \"id\" FROM \"bench_parents\" WHERE (SELECT count(*) FROM \"bench_children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"bench_parents\".\"id\" AND (\"__rs_filter_0\".\"score\" = ?)) >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            1,
+            3,
+            10000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "indexed positive rows >= 3",
+      "status": "pass",
+      "matchingParents": 1666,
+      "plan": [
+        "SCAN bench_parents",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH x1 USING COVERING INDEX bench_child_parent_score (parent_id=? AND score=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"bench_parents\".\"id\" as \"sbench_parents0\" from \"bench_parents\" \"bench_parents\" where (SELECT COUNT(*) FROM \"bench_children\" \"x1\" WHERE \"bench_parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\"=1) >= ? order by \"bench_parents\".\"id\" limit 10000",
+          "parameters": [
+            3
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN select \"bench_parents\".\"id\" as \"sbench_parents0\" from \"bench_parents\" \"bench_parents\" where (SELECT COUNT(*) FROM \"bench_children\" \"x1\" WHERE \"bench_parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\"=1) >= ? order by \"bench_parents\".\"id\" limit 10000",
+          "parameters": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "raw node:sqlite + JS oracle",
+      "name": "indexed NULL rows >= 2",
+      "status": "pass",
+      "matchingParents": 1667,
+      "plan": [
+        "SCAN p",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH c USING COVERING INDEX bench_child_parent_score (parent_id=? AND score=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT id FROM bench_parents p WHERE (SELECT COUNT(*) FROM bench_children c WHERE c.parent_id=p.id AND c.score IS NULL)>=? ORDER BY id LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            10000,
+            0
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN SELECT id FROM bench_parents p WHERE (SELECT COUNT(*) FROM bench_children c WHERE c.parent_id=p.id AND c.score IS NULL)>=? ORDER BY id LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            10000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "rowstitch",
+      "name": "indexed NULL rows >= 2",
+      "status": "pass",
+      "matchingParents": 1667,
+      "plan": [
+        "SCAN bench_parents",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH __rs_filter_0 USING COVERING INDEX bench_child_parent_score (parent_id=? AND score=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "SELECT \"id\" FROM \"bench_parents\" WHERE (SELECT count(*) FROM \"bench_children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"bench_parents\".\"id\" AND (\"__rs_filter_0\".\"score\" IS NULL)) >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            10000,
+            0
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN SELECT \"id\" FROM \"bench_parents\" WHERE (SELECT count(*) FROM \"bench_children\" AS \"__rs_filter_0\" WHERE \"__rs_filter_0\".\"parent_id\" = \"bench_parents\".\"id\" AND (\"__rs_filter_0\".\"score\" IS NULL)) >= ? ORDER BY \"id\" ASC LIMIT ? OFFSET ?",
+          "parameters": [
+            2,
+            10000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "orange-orm@5.5.1",
+      "name": "indexed NULL rows >= 2",
+      "status": "pass",
+      "matchingParents": 1667,
+      "plan": [
+        "SCAN bench_parents",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SEARCH x1 USING COVERING INDEX bench_child_parent_score (parent_id=? AND score=?)"
+      ],
+      "selectQueries": 1,
+      "commands": [
+        {
+          "sql": "select \"bench_parents\".\"id\" as \"sbench_parents0\" from \"bench_parents\" \"bench_parents\" where (SELECT COUNT(*) FROM \"bench_children\" \"x1\" WHERE \"bench_parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is null) >= ? order by \"bench_parents\".\"id\" limit 10000",
+          "parameters": [
+            2
+          ]
+        },
+        {
+          "sql": "EXPLAIN QUERY PLAN select \"bench_parents\".\"id\" as \"sbench_parents0\" from \"bench_parents\" \"bench_parents\" where (SELECT COUNT(*) FROM \"bench_children\" \"x1\" WHERE \"bench_parents\".\"id\"=\"x1\".\"parent_id\" AND \"x1\".\"score\" is null) >= ? order by \"bench_parents\".\"id\" limit 10000",
+          "parameters": [
+            2
+          ]
+        }
+      ]
+    }
+  ],
+  "contractDifferences": [
+    {
+      "name": "nocase_parents equality operand order",
+      "rowstitchIds": [],
+      "orangeIds": [
+        "Sample"
+      ],
+      "note": "Foreign-column-left vs parent-column-left collation; the difference is documented, not an upstream defect."
+    },
+    {
+      "name": "binary_parents equality operand order",
+      "rowstitchIds": [
+        "Sample"
+      ],
+      "orangeIds": [],
+      "note": "Foreign-column-left vs parent-column-left collation; the difference is documented, not an upstream defect."
+    }
+  ],
+  "limitations": [
+    "Fixed SQLite correctness, actual statement counts and query plans only; no timing or general superiority claim.",
+    "COUNT(*) can scan a complete matching range; EXISTS can stop after the first match. One SELECT is not a speed guarantee.",
+    "Native statement calls are observed through forwarding wrappers, restored when the runner finishes.",
+    "Count predicates count matching rows, including duplicates for a singular descriptor; they do not load or validate a singular result.",
+    "This does not test aggregate projections, grouping, DISTINCT, composite relationships or non-SQLite engines."
+  ],
+  "summary": {
+    "passed": 208,
+    "failed": 0,
+    "contractDifferences": 2
+  }
+}

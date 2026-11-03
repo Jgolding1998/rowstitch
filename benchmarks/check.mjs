@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-for (const name of ['compare.mjs', 'expressions.mjs', 'columns.mjs', 'relations.mjs']) {
+for (const name of ['compare.mjs', 'expressions.mjs', 'columns.mjs', 'relations.mjs', 'counts.mjs']) {
   const run = spawnSync(process.execPath, [fileURLToPath(new URL(name, import.meta.url))], {
     encoding: 'utf8', timeout: 120_000, maxBuffer: 8 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],

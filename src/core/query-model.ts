@@ -17,6 +17,8 @@ export type RelationQuantifier = 'some' | 'none' | 'every';
 export type PredicateModel =
   | { readonly kind: 'relation-filter'; readonly quantifier: RelationQuantifier; readonly table: TableModel;
       readonly localKey: string; readonly foreignKey: string; readonly where?: PredicateModel; readonly predicate?: PredicateModel }
+  | { readonly kind: 'relation-count'; readonly operator: ColumnComparisonOperator; readonly threshold: number; readonly table: TableModel;
+      readonly localKey: string; readonly foreignKey: string; readonly where?: PredicateModel; readonly predicate?: PredicateModel }
   | { readonly kind: 'column-compare'; readonly left: string; readonly right: string; readonly operator: ColumnComparisonOperator }
   | { readonly kind: 'text-match'; readonly column: string; readonly mode: TextMatchMode; readonly case: TextMatchCase; readonly literal: string }
   | { readonly kind: 'compare'; readonly column: string; readonly operator: ComparisonOperator; readonly values: readonly Parameter[] }
@@ -150,23 +152,34 @@ export function relationKindsCompatible(left: Kind, right: Kind): boolean {
   return ['integer', 'bigint'].includes(left) && ['integer', 'bigint'].includes(right) || left === 'text' && right === 'text';
 }
 
+export function relationCountComparison(operator: unknown, threshold: unknown): { readonly operator: ColumnComparisonOperator; readonly threshold: number } {
+  if (typeof operator !== 'string' || !['=', '<>', '>', '>=', '<', '<='].includes(operator)) fail('QUERY', 'A related count needs one of =, <>, >, >=, < or <=.');
+  return Object.freeze({ operator: operator as ColumnComparisonOperator, threshold: number(threshold, 0, Number.MAX_SAFE_INTEGER) });
+}
+
 export function predicateModel(tableInput: TableModel, input: PredicateModel): PredicateModel {
   const table = tableModel(tableInput);
   let nodes = 0, parameters = 0;
   function visit(source: unknown, depth: number, scope: TableModel = table, relationDepth = 0): PredicateModel {
     if (++nodes > 100 || depth > 16) fail('QUERY', 'Predicates exceed their node or depth limit.');
-    const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child', 'mode', 'case', 'literal', 'left', 'right', 'quantifier', 'table', 'localKey', 'foreignKey', 'where', 'predicate']);
-    if (node.kind === 'relation-filter') {
+    const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child', 'mode', 'case', 'literal', 'left', 'right', 'quantifier', 'table', 'localKey', 'foreignKey', 'where', 'predicate', 'threshold']);
+    if (node.kind === 'relation-filter' || node.kind === 'relation-count') {
       if (relationDepth >= 4) fail('QUERY', 'Relation filters support at most four nested relationships.');
-      record(node, ['kind', 'quantifier', 'table', 'localKey', 'foreignKey', 'where', 'predicate']);
-      if (node.quantifier !== 'some' && node.quantifier !== 'none' && node.quantifier !== 'every') fail('QUERY', 'The relation quantifier is not supported.');
+      record(node, ['kind', 'table', 'localKey', 'foreignKey', 'where', 'predicate', ...(node.kind === 'relation-filter' ? ['quantifier'] : ['operator', 'threshold'])]);
+      if (node.kind === 'relation-filter' && node.quantifier !== 'some' && node.quantifier !== 'none' && node.quantifier !== 'every') fail('QUERY', 'The relation quantifier is not supported.');
       const target = tableModel(node.table as TableModel);
       const localKey = field(scope, node.localKey), foreignKey = field(target, node.foreignKey);
       if (!scope.kinds || !target.kinds || !relationKindsCompatible(scope.kinds[localKey], target.kinds[foreignKey])) fail('QUERY', 'Relation filters require compatible integer, bigint or text keys.');
       if (node.quantifier === 'every' && node.predicate === undefined) fail('QUERY', 'Every requires a predicate for the related rows.');
-      return Object.freeze({ kind: 'relation-filter', quantifier: node.quantifier, table: target, localKey, foreignKey,
+      const base = { table: target, localKey, foreignKey,
         ...(node.where === undefined ? {} : { where: visit(node.where, depth + 1, target, relationDepth + 1) }),
-        ...(node.predicate === undefined ? {} : { predicate: visit(node.predicate, depth + 1, target, relationDepth + 1) }) });
+        ...(node.predicate === undefined ? {} : { predicate: visit(node.predicate, depth + 1, target, relationDepth + 1) }) };
+      if (node.kind === 'relation-count') {
+        const comparison = relationCountComparison(node.operator, node.threshold);
+        if (++parameters > 10_000) fail('QUERY', 'Predicate parameters exceed their supported length.');
+        return Object.freeze({ ...base, kind: 'relation-count', ...comparison });
+      }
+      return Object.freeze({ ...base, kind: 'relation-filter', quantifier: node.quantifier as RelationQuantifier });
     }
     if (node.kind === 'column-compare') {
       record(node, ['kind', 'left', 'right', 'operator']);
@@ -213,6 +226,20 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
 }
 export function predicateTruth(predicate?: PredicateModel): true | false | null {
   if (predicate === undefined) return true;
+  if (predicate.kind === 'relation-count') {
+    const { operator, threshold } = predicate;
+    if (predicateTruth(predicate.where) === false || predicateTruth(predicate.predicate) === false) {
+      switch (operator) {
+        case '=': return threshold === 0;
+        case '<>': return threshold !== 0;
+        case '>': return false;
+        case '>=': return threshold === 0;
+        case '<': return threshold > 0;
+        case '<=': return true;
+      }
+    }
+    return threshold === 0 && operator === '>=' ? true : threshold === 0 && operator === '<' ? false : null;
+  }
   if (predicate.kind === 'relation-filter') {
     const domain = predicateTruth(predicate.where), test = predicateTruth(predicate.predicate);
     if (predicate.quantifier === 'every') return domain === false || test === true ? true : null;
@@ -231,7 +258,7 @@ export function predicateTruth(predicate?: PredicateModel): true | false | null 
 }
 export function hasRelationFilter(predicate?: PredicateModel): boolean {
   if (predicate === undefined) return false;
-  if (predicate.kind === 'relation-filter') return true;
+  if (predicate.kind === 'relation-filter' || predicate.kind === 'relation-count') return true;
   if (predicate.kind === 'not') return hasRelationFilter(predicate.child);
   return predicate.kind === 'logic' && predicate.children.some(hasRelationFilter);
 }

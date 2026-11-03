@@ -178,7 +178,7 @@ try {
       report.contractDifferences.push({ name: 'all/every empty and NULL behavior', orangeAllIds: actual, rowstitchStrictEveryIds: ids(v => v.every(x => x === 1)), note: 'Orange all excludes empty sets and accepts [true,NULL]; strict every accepts empty sets and rejects [true,NULL]. Both are tested against their stated contract.' });
       return { expectedIds: expected, actualIds: actual };
     });
-    await check('orange-orm@5.5.1', 'filtered relation count (not yet a Rowstitch capability)', async () => {
+    await check('orange-orm@5.5.1', 'filtered relation count (reference case; shared coverage in counts.mjs)', async () => {
       const actual = (await reference.parents.getMany({ where: x => x.children.count(c => c.score.eq(1)).eq(1), orderBy: 'id' })).map(x => x.id);
       const expected = ids(v => v.filter(x => x === 1).length === 1); assert.deepEqual(actual, expected);
       return { expectedIds: expected, actualIds: actual };

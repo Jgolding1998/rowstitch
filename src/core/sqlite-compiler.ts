@@ -13,13 +13,18 @@ const deleteActions = { cascade: 'CASCADE', restrict: 'RESTRICT', 'set null': 'S
 function renderPredicate(predicate?: PredicateModel, scope?: string, aliases = { next: 0 }): CompiledQuery {
   if (predicate === undefined) return { sql: '', parameters: [] };
   const field = (name: string): string => (scope ? scope + '.' : '') + identifier(name);
-  if (predicate.kind === 'relation-filter') {
+  if (predicate.kind === 'relation-filter' || predicate.kind === 'relation-count') {
     // Reserved names are generated only here. User mappings cannot shadow them.
     const alias = '"__rs_filter_' + aliases.next++ + '"';
     const domain = renderPredicate(predicate.where, alias, aliases);
     const test = renderPredicate(predicate.predicate, alias, aliases);
     const join = alias + '.' + identifier(predicate.foreignKey) + ' = ' + field(predicate.localKey);
-    const condition = test.sql ? ' AND (' + test.sql + ')' + (predicate.quantifier === 'every' ? ' IS NOT TRUE' : '') : '';
+    const condition = test.sql ? ' AND (' + test.sql + ')' + (predicate.kind === 'relation-filter' && predicate.quantifier === 'every' ? ' IS NOT TRUE' : '') : '';
+    if (predicate.kind === 'relation-count') return {
+      sql: '(SELECT count(*) FROM ' + identifier(predicate.table.name) + ' AS ' + alias + ' WHERE ' + join
+        + (domain.sql ? ' AND (' + domain.sql + ')' : '') + condition + ') ' + comparisons[predicate.operator] + ' ?',
+      parameters: [...domain.parameters, ...test.parameters, predicate.threshold],
+    };
     const sql = (predicate.quantifier === 'some' ? '' : 'NOT ') + 'EXISTS (SELECT 1 FROM ' + identifier(predicate.table.name) + ' AS ' + alias
       + ' WHERE ' + join + (domain.sql ? ' AND (' + domain.sql + ')' : '') + condition + ')';
     return { sql, parameters: [...domain.parameters, ...test.parameters] };

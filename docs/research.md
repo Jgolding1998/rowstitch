@@ -1,6 +1,6 @@
 # Research behind Rowstitch
 
-Reviewed 2026-11-02. The implementation is original. Research covered source, issue conversations and PR reviews, not just project descriptions. These discussions informed regression fixtures; historical reports are not presented as unfixed flaws in current releases.
+Reviewed 2026-11-03. The implementation is original. Research covered source, issue conversations and PR reviews, not just project descriptions. These discussions informed regression fixtures; historical reports are not presented as unfixed flaws in current releases.
 
 ## Orange ORM
 
@@ -36,7 +36,9 @@ A later review found a Rowstitch-specific relationship bug: SQLite could match a
 
 The [relation comparison](../benchmarks/relations-results.json) checks `some`, `none` and `every` against independent expectations, raw SQLite and equivalent Orange predicates. It records the native Orange `all` contract separately: [its pinned implementation](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/all.js) excludes empty sets and permits a matching row alongside a NULL result. Rowstitch's vacuous `every` requires every considered row to evaluate to true. Two differing-collation fixtures expose another deliberate difference: Rowstitch uses foreign-column collation consistently with its eager loader, while Orange's filter uses the parent column. These are explicit contracts, not a ranking of correctness.
 
-Orange's closed [issue 76](https://github.com/alfateam/orange-orm/issues/76) informed repeated-table alias and same-child correlation tests. Its merged [PR 107](https://github.com/alfateam/orange-orm/pull/107) demonstrates why composite joins need all key components; Rowstitch's new filters still support single-column keys only. Its closed [issue 151](https://github.com/alfateam/orange-orm/issues/151) identifies filtered relation counts as a separate useful capability still to implement here. These historical reports are not current Orange defects. The comparison also exercises 5,000 parents and 20,000 children: both tools use one SELECT and indexed child lookups on that fixed dataset, without a timing or general performance claim.
+Orange's closed [issue 76](https://github.com/alfateam/orange-orm/issues/76) informed repeated-table alias and same-child correlation tests. Its merged [PR 107](https://github.com/alfateam/orange-orm/pull/107) demonstrates why composite joins need all key components; Rowstitch's new filters still support single-column keys only. Its closed [issue 151](https://github.com/alfateam/orange-orm/issues/151) informed the filtered relation count milestone. These historical reports are not current Orange defects. The comparison also exercises 5,000 parents and 20,000 children: both tools use one SELECT and indexed child lookups on that fixed dataset, without a timing or general performance claim.
+
+The separate [count comparison](../benchmarks/counts-results.json) now checks all six count operators, empty relations, NULL values, repeated values, filtered domains, nested counts and self-relations against independent fixture expectations, raw SQLite and Orange 5.5.1. Rowstitch counts related rows in SQL without applying its eager-loading cap. It preserves the foreign-column collation rule and records both differing-collation cases. Orange already offers broader numeric and aggregate expressions; this milestone only adds count predicates to Rowstitch reads. A count may visit more matching rows than an existence check, so plans and correctness are recorded without calling it a speed improvement.
 
 ## Runtime and design
 
