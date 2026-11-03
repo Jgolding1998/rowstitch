@@ -76,7 +76,7 @@ function renderPredicate(predicate?: PredicateModel, scope?: string, aliases = {
  */
 function renderProjected(query: SelectModel, root: string, aliases: { next: number }): CompiledQuery {
   const layout = projectedLayout(query.aggregates ?? []);
-  const selections: string[] = [], guards: string[] = [], parameters: Parameter[] = [];
+  const selections: string[] = [], guards: string[] = [], parameters: Parameter[] = [], guardParameters: Parameter[] = [];
   for (const output of layout.outputs) {
     const aggregate: ProjectedAggregateModel = output.aggregate;
     // Each physical copy re-renders the path so every copy has its own fresh inner aliases and bound values.
@@ -116,11 +116,12 @@ function renderProjected(query: SelectModel, root: string, aliases: { next: numb
       selections.push(subquery(expression) + ' AS "' + output.name + '"');
     }
     const rendered = path();
-    parameters.push(...rendered.parameters);
+    guardParameters.push(...rendered.parameters);
     guards.push('EXISTS (SELECT 1 FROM ' + rendered.from + ' WHERE ' + rendered.where + ' AND (' + rendered.checked.join(' OR ') + '))');
   }
   selections.push('(CASE WHEN ' + guards.join(' OR ') + ' THEN 1 ELSE 0 END) AS "' + layout.guard + '"');
-  return { sql: selections.join(', '), parameters };
+  // Guard SQL is emitted after every selected value. Its bindings must follow all value bindings too.
+  return { sql: selections.join(', '), parameters: [...parameters, ...guardParameters] };
 }
 function renderOrder(order: readonly OrderModel[]): string {
   return order.length ? ' ORDER BY ' + order.map(value => identifier(value.column) + ' ' + directions[value.direction]).join(', ') : '';

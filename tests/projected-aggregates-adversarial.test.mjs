@@ -190,3 +190,24 @@ test('bound domain values remain redacted and compile/explain preserve read-only
   let escaped; db.transaction(tx=>{escaped=tx.table(parent);assert.equal(escaped.findFirst(options).n,0);});
   assert.throws(()=>escaped.findMany(options),code('TRANSACTION_CLOSED'));
 });
+
+test('different projected domains bind values before all trailing guard bindings', t => {
+  const {parent,child}=models(),db=memory(t,[parent,child]);
+  db.table(parent).insert({id:1,label:'Sample'});
+  db.table(child).insertMany([{id:1,parentId:1,amount:3n,real:2,approved:true},{id:2,parentId:1,amount:-11n,real:9,approved:false},{id:3,parentId:1,amount:null,real:4,approved:false}]);
+  const domain=approved=>hasMany(child,{localKey:parent.col('id'),foreignKey:child.col('parentId'),where:eq(child.col('approved'),approved)});
+  const options={select:['id'],where:eq(parent.col('id'),1),aggregates:{paid:agg.related(domain(true),agg.count()),pending:agg.related(domain(false),agg.count()),paidTotal:agg.related(domain(true),agg.sum(child.col('amount'))),pendingTotal:agg.related(domain(false),agg.sum(child.col('amount')))}};
+  assert.deepEqual(db.table(parent).findMany(options),[{id:1,paid:1,pending:2,paidTotal:3n,pendingTotal:-11n}]);
+  assert.deepEqual(db.table(parent).findFirst(options),{id:1,paid:1,pending:2,paidTotal:3n,pendingTotal:-11n});
+  // Value copies first (two for each integer sum), then one guard per selector, then root/page values.
+  assert.deepEqual(db.table(parent).compileSelect(options).parameters,[1,0,1,1,0,0,1,0,1,0,1,1000,0]);
+});
+
+test('a later selector cannot change which rows an earlier storage guard validates', t => {
+  const {parent,child}=models();
+  const fixture=disk(t,"CREATE TABLE pa_parents(id INTEGER NOT NULL PRIMARY KEY,label TEXT NOT NULL); CREATE TABLE pa_children(id INTEGER NOT NULL PRIMARY KEY,parentId INTEGER,amount INTEGER,real REAL,approved INTEGER NOT NULL); INSERT INTO pa_parents VALUES(1,'Sample'); INSERT INTO pa_children VALUES(1,1,'bad',2,1),(2,1,4,3,0);");
+  const db=fixture.database=openDatabase(fixture.path,{tables:[parent,child],readOnly:true});
+  const domain=approved=>hasMany(child,{localKey:parent.col('id'),foreignKey:child.col('parentId'),where:eq(child.col('approved'),approved)});
+  assert.throws(()=>db.table(parent).findMany({select:['id'],aggregates:{paidTotal:agg.related(domain(true),agg.sum(child.col('amount'))),pending:agg.related(domain(false),agg.count())}}),code('DATA'));
+  assert.deepEqual(db.table(parent).findMany({select:['id'],aggregates:{paid:agg.related(domain(true),agg.count()),pending:agg.related(domain(false),agg.count())}}),[{id:1,paid:1,pending:1}]);
+});

@@ -8,12 +8,14 @@ Use the library inside a Node app, such as a small inventory tool or a backend t
 
 ![Rowstitch Studio showing a real query trace from its fictional notebook demo](docs/images/studio.png)
 
+Version 0.7.1 fixes incorrect results and misplaced stored-data checks when several related summaries use different filters. If you use those summaries on 0.7.0, upgrade to this release.
+
 ## Try the inspector
 
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.7.0/rowstitch-0.7.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.7.1/rowstitch-0.7.1.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -35,7 +37,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.7.0/rowstitch-0.7.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.7.1/rowstitch-0.7.1.tgz
 ```
 
 ```ts
