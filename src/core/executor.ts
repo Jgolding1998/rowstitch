@@ -25,6 +25,9 @@ const SAFE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   CONSTRAINT: 'A database constraint rejected this change.',
   READ_ONLY: 'This database is read-only.',
   DATABASE_ERROR: 'The database could not complete this operation.',
+  TRANSACTION_ABORTED: 'The database rolled back the aborted transaction.',
+  SERIALIZATION_FAILURE: 'A concurrent transaction prevented serialization. No callback was automatically retried.',
+  DEADLOCK: 'The database detected a deadlock. No callback was automatically retried.',
 });
 
 /** An engine response proves acknowledgment, not absence of effects from earlier statements in a batch. Never use for transport loss. */

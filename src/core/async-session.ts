@@ -21,6 +21,7 @@ import { RowstitchError } from './errors.js';
 import { isAcknowledgedRejection, type AsyncExecutor, type ExecutorRows } from './executor.js';
 import { MAX_BOUND_PARAMETERS, queryModel, type TransactionAction } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
+import { compilePostgresControl } from './postgres-control.js';
 import type { Parameter } from './schema.js';
 
 /**
@@ -34,6 +35,8 @@ export interface AsyncControlEvent {
 }
 export interface AsyncSessionObserver { control(event: AsyncControlEvent): void }
 export interface AsyncSessionOptions {
+  /** Trusted internal engine selection; not a public database option or raw-SQL hook. */
+  readonly dialect?: 'sqlite' | 'postgresql';
   readonly observer?: AsyncSessionObserver;
   readonly readOnly?: boolean;
   readonly maxQueue?: number;
@@ -111,7 +114,7 @@ interface Frame {
 
 interface QueueEntry { start(): void; fail(error: unknown): void }
 
-const OPTION_KEYS = new Set(['readOnly', 'maxQueue', 'maxPending', 'queueTimeoutMs', 'observer']);
+const OPTION_KEYS = new Set(['readOnly', 'maxQueue', 'maxPending', 'queueTimeoutMs', 'observer', 'dialect']);
 
 function plainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -148,8 +151,9 @@ function captureParameters(parameters: unknown): readonly Parameter[] {
   }
   return Object.freeze(copy as Parameter[]);
 }
-function controlSql(action: TransactionAction, name?: string): string {
-  return compileSqlite(queryModel.transaction({ action, ...(name === undefined ? {} : { name }) })).sql;
+function controlSql(dialect: 'sqlite' | 'postgresql', action: TransactionAction, name?: string): string {
+  const model = queryModel.transaction({ action, ...(name === undefined ? {} : { name }) });
+  return dialect === 'postgresql' ? compilePostgresControl(model) : compileSqlite(model).sql;
 }
 /** Adds safe cleanup metadata to an extensible original error; frozen or primitive errors are returned unchanged. */
 function withCleanup(error: unknown, code: string): unknown {
@@ -163,6 +167,7 @@ function withCleanup(error: unknown, code: string): unknown {
 class Session {
   readonly #executor: Readonly<{ all: AsyncExecutor['all']; exec: AsyncExecutor['exec']; inTransaction: AsyncExecutor['inTransaction']; close: AsyncExecutor['close'] }>;
   readonly #readOnly: boolean;
+  readonly #dialect: 'sqlite' | 'postgresql';
   readonly #maxQueue: number;
   readonly #maxPending: number;
   readonly #queueTimeoutMs: number;
@@ -186,6 +191,8 @@ class Session {
     const raw: unknown = options === undefined ? {} : options;
     if (!plainObject(raw) || Object.keys(raw).some(key => !OPTION_KEYS.has(key))) throw failure('VALIDATION');
     if (raw.readOnly !== undefined && typeof raw.readOnly !== 'boolean') throw failure('VALIDATION');
+    if (raw.dialect !== undefined && raw.dialect !== 'sqlite' && raw.dialect !== 'postgresql') throw failure('VALIDATION');
+    this.#dialect = raw.dialect === 'postgresql' ? 'postgresql' : 'sqlite';
     this.#readOnly = raw.readOnly === true;
     this.#maxQueue = integerOption(raw, 'maxQueue', ASYNC_SESSION_LIMITS.defaultQueue, ASYNC_SESSION_LIMITS.queue);
     this.#maxPending = integerOption(raw, 'maxPending', ASYNC_SESSION_LIMITS.defaultPending, ASYNC_SESSION_LIMITS.pending);
@@ -260,7 +267,7 @@ class Session {
   }
 
   #control(frame: Frame, action: TransactionAction, name?: string): Promise<void> {
-    const sql = controlSql(action, name);
+    const sql = controlSql(this.#dialect, action, name);
     const startedAt = performance.now();
     const run = this.#execute(frame, action === 'commit' ? 'commit' : 'control', () => this.#executor.exec(sql));
     const observer = this.#observer;
