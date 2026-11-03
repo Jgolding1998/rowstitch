@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, writeFileSync, unlinkSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, relative, sep } from 'node:path';
+import { join, resolve, relative, isAbsolute, sep, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import * as orm from '../dist/index.js';
@@ -41,6 +41,11 @@ function temporaryDirectory() {
   const root = resolve(tmpdir()), directory = mkdtempSync(join(root, 'rowstitch-column-'));
   assert.ok(resolve(directory).startsWith(root + sep));
   return directory;
+}
+function moduleSpecifier(fromDirectory, target, paths = { relative, isAbsolute }) {
+  const specifier = paths.relative(fromDirectory, target);
+  // Windows CI can put the temporary consumer and checkout on different drives.
+  return (paths.isAbsolute(specifier) || specifier.startsWith('.') ? specifier : './' + specifier).replaceAll('\\', '/');
 }
 // Independent numeric oracle: exact binary64 rational, never Number(bigint).
 function rational(value) {
@@ -343,9 +348,12 @@ test('existing UTF-8 and UTF-16 text columns retain ordinary left-collation prec
 });
 
 test('compiled declarations preserve non-distributive NoInfer domains for actual consumers', () => {
+  assert.equal(moduleSpecifier('C:\\temp\\consumer', 'C:\\checkout\\dist\\index.js', win32), '../../checkout/dist/index.js');
+  assert.equal(moduleSpecifier('C:\\checkout\\dist', 'C:\\checkout\\dist\\index.js', win32), './index.js');
+  assert.equal(moduleSpecifier('C:\\temp\\consumer', 'D:\\a\\rowstitch\\rowstitch\\dist\\index.js', win32), 'D:/a/rowstitch/rowstitch/dist/index.js');
   const directory = temporaryDirectory(), sourcePath = join(directory, 'consumer.mts'), configPath = join(directory, 'tsconfig.json');
   const sdk = fileURLToPath(new URL('../dist/index.js', import.meta.url));
-  let specifier = relative(directory, sdk).replaceAll('\\', '/'); if (!specifier.startsWith('.')) specifier = './' + specifier;
+  const specifier = moduleSpecifier(directory, sdk);
   const names = operations.map(([name]) => name);
   const source = [
     `import { column, defineTable, ColumnRef, ${names.join(', ')} } from ${JSON.stringify(specifier)};`,
