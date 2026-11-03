@@ -10,6 +10,8 @@ Foreign keys and SQLite defensive mode are enabled; extension loading is disable
 
 Model definitions, application code, the chosen database path and existing schema are trusted inputs. This library is not a sandbox for hostile JavaScript, a substitute for application authorization or a promise that every existing database file is safe. A read-only schema report can still reveal names, constraints and default values.
 
+Stored JSON is checked for text size before parsing and for finite values, bounded depth and node count before materialization. Rejected stored values produce generic `DATA` errors. A valid SQLite JSON value can still exceed JavaScript's finite numeric range; it is refused rather than silently becoming `Infinity` or changing to `null` when serialized.
+
 Transaction callbacks must be synchronous. Nested transactions use savepoints. Failed work is rolled back, callbacks are not automatically replayed, and an unrecoverable connection must not accept more writes. A successful database commit does not guarantee an HTTP client received its response; application code still needs a retry/idempotency policy.
 
 Schema creation does not authorize a destructive migration. Unsupported schema changes are refused. Existing triggers, cascades, collations and application invariants need independent review before adopting a model. The schema report is not a complete recreation script.
@@ -21,5 +23,7 @@ The studio binds only to `127.0.0.1`, serves a fixed asset allowlist and a ficti
 Trace imports are parsed and displayed in browser memory. Imported SQL is never executed. No browser storage, remote scripts, external fonts, analytics or AI provider is used. Initial installation still downloads development packages; a hosted static copy can have hosting access logs.
 
 Traces are bounded and hide bound values by default. They do not retain result rows or raw database errors. SQL text, identifiers and literal defaults may still contain sensitive information. Explicit exports preserve the trace you loaded; review them before sharing. Clear removes the current view and file reference, not operating-system or browser memory caches.
+
+Transaction-effect labels are bounded interpretations of the imported statement order. They are not authenticated evidence of a commit, the current database state or an application's success. A modified trace can misrepresent those outcomes without executing any SQL.
 
 These protections address tested cases. They are not a universal security certification or a guarantee of forensic erasure.

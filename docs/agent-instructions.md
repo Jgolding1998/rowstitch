@@ -1,6 +1,6 @@
 # Instructions for coding assistants
 
-Use Rowstitch for a trusted Node 24 LTS application's SQLite data layer. Start with the README example and inspect the installed type declarations. Do not guess APIs from another ORM.
+Use Rowstitch for a trusted Node 24 or 26 LTS application's SQLite data layer. Start with the README example and inspect the installed type declarations. Do not guess APIs from another ORM.
 
 1. Ask which project/database to use when it is unclear. Use an in-memory database for experiments. Never select a real customer database automatically.
 2. Define tables explicitly. Required, nullable, generated and defaulted columns have different insert types. Use a bigint column when a value can exceed JavaScript's safe integer range.

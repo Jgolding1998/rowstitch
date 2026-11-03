@@ -96,7 +96,7 @@ writeFileSync('trace.json', JSON.stringify(db.exportTrace({ title: 'My app' })))
         <p class="guide-note">Paste this into your agent. It keeps the work in your chosen project and on made-up data.</p>
         <textarea class="guide-brief mono" id="guide-brief" readonly rows="13" spellcheck="false" aria-labelledby="guide-brief-title">Help me add Rowstitch to this Node.js project.
 
-Rowstitch is a SQLite ORM for Node.js 24 LTS. The README lists the minimum Node release; check node --version first. It needs no account or API key and is installed from its GitHub release, not the npm registry. Read the README first and use its current install command:
+Rowstitch is a SQLite ORM for a supported Node.js LTS release. Read the README for the minimum supported versions and check node --version first. It needs no account or API key and is installed from its GitHub release, not the npm registry. Read the README first and use its current install command:
 https://github.com/Jgolding1998/rowstitch#readme
 
 - Work only in this project. Do not open, copy or pick any existing or private database file unless I name it.
@@ -134,6 +134,7 @@ https://github.com/Jgolding1998/rowstitch#readme
       <section class="view" id="view-queries" role="tabpanel" aria-labelledby="tab-queries">
         <h1 class="visually-hidden">Queries</h1>
         <dl class="counts" id="counts"></dl>
+        <p class="outcome-note" id="outcome-note" role="note" hidden></p>
 
         <figure class="thread" id="thread-figure">
           <div class="thread-scroll" id="thread-scroll"></div>
@@ -211,6 +212,7 @@ https://github.com/Jgolding1998/rowstitch#readme
         <section class="block privacy" aria-labelledby="privacy-title">
           <h2 class="block-title" id="privacy-title">Before you share a trace</h2>
           <p>Redaction is not anonymization. Bound values may be replaced with <code class="mono">[redacted]</code>, but the title, table and column names, SQL text, statement counts and timings stay readable, and they can reveal what an application does and how its data is shaped.</p>
+          <p>Write effects such as "Committed" or "Undone" are read from the order of BEGIN, SAVEPOINT, COMMIT and ROLLBACK statements in this file. They describe this trace only, not the current database or whether your application's call succeeded. A file can be edited, so treat them as a reading aid, not proof.</p>
           <p>This page shows what is in the file and nothing else. It keeps the trace in this tab's memory only, makes no requests besides loading the fictional demo from this local server, and never executes SQL. Export downloads the trace exactly as loaded. Clear removes it from the page.</p>
         </section>
       </section>

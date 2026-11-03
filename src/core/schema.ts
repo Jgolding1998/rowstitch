@@ -36,37 +36,45 @@ export function plainRecord(value: unknown): void {
     .some(d => !('value' in d))) fail('VALIDATION', 'Record accessors and symbol keys are not supported.');
 }
 
-function jsonText(value: unknown): string {
+const MAX_JSON_CHARACTERS = 1_048_576;
+function validateJson(value: unknown, code: 'VALIDATION' | 'DATA'): void {
   let nodes = 0;
   const active = new Set<object>();
   function visit(item: unknown, depth: number): void {
-    if (++nodes > 100_000 || depth > 64) fail('VALIDATION', 'JSON exceeds its structure limit.');
+    if (++nodes > 100_000 || depth > 64) fail(code, 'JSON exceeds its structure limit.');
     if (item === null || typeof item === 'boolean' || typeof item === 'string') return;
     if (typeof item === 'number' && Number.isFinite(item)) return;
-    if (!item || typeof item !== 'object') fail('VALIDATION', 'JSON must contain only finite JSON values.');
-    if (active.has(item)) fail('VALIDATION', 'JSON cannot contain a cycle.');
+    if (!item || typeof item !== 'object') fail(code, 'JSON must contain only finite JSON values.');
+    if (active.has(item)) fail(code, 'JSON cannot contain a cycle.');
     active.add(item);
     if (Array.isArray(item)) {
-      if (item.length > 100_000) fail('VALIDATION', 'JSON exceeds its structure limit.');
+      if (item.length > 100_000) fail(code, 'JSON exceeds its structure limit.');
       if (![null, Array.prototype].includes(Object.getPrototypeOf(item)) || Object.getOwnPropertySymbols(item).length
           || Object.getOwnPropertyNames(item).some(key => key !== 'length'
             && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= item.length))) {
-        fail('VALIDATION', 'JSON arrays cannot have custom prototypes, properties or serialization hooks.');
+        fail(code, 'JSON arrays cannot have custom prototypes, properties or serialization hooks.');
       }
       for (let i = 0; i < item.length; i++) {
         const d = Object.getOwnPropertyDescriptor(item, String(i));
-        if (!d || !('value' in d)) fail('VALIDATION', 'JSON arrays cannot have holes or accessors.');
+        if (!d || !('value' in d)) fail(code, 'JSON arrays cannot have holes or accessors.');
         visit(d.value, depth + 1);
       }
     } else {
-      plainRecord(item);
+      try { plainRecord(item); }
+      catch (error) {
+        if (code === 'DATA') fail('DATA', 'Stored JSON must contain only plain data.');
+        throw error;
+      }
       for (const child of Object.values(item)) visit(child, depth + 1);
     }
     active.delete(item);
   }
   visit(value, 0);
+}
+function jsonText(value: unknown): string {
+  validateJson(value, 'VALIDATION');
   const result = JSON.stringify(value);
-  if (result.length > 1_048_576) fail('VALIDATION', 'JSON exceeds one MiB of characters.');
+  if (result.length > MAX_JSON_CHARACTERS) fail('VALIDATION', 'JSON exceeds one MiB of characters.');
   return result;
 }
 
@@ -120,7 +128,11 @@ export function decode(config: Readonly<ColumnConfig>, value: unknown): unknown 
       return value === 1n;
     case 'json':
       if (typeof value !== 'string') fail('DATA', 'Stored data does not match a JSON column.');
-      try { return JSON.parse(value); } catch { return fail('DATA', 'Stored JSON is invalid.'); }
+      if (value.length > MAX_JSON_CHARACTERS) fail('DATA', 'Stored JSON exceeds one MiB of characters.');
+      let parsed: unknown;
+      try { parsed = JSON.parse(value); } catch { return fail('DATA', 'Stored JSON is invalid.'); }
+      validateJson(parsed, 'DATA');
+      return parsed;
   }
 }
 

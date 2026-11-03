@@ -214,8 +214,22 @@ export function belongsTo<T extends AnyTable, I extends Includes = {}, S extends
   validateRelation(table, options, true);
   return new SingularRelation(table, immutableOptions(options), 'belongsTo');
 }
-export type SelectedRow<T extends AnyTable, S extends readonly string[] | undefined> = S extends readonly string[]
-  ? Pick<Row<T>, Extract<S[number], keyof Row<T>>> : Row<T>;
+type IsUnion<Value, Whole = Value> = Value extends Whole ? [Whole] extends [Value] ? false : true : never;
+/** Arrays and union-valued tuple slots do not guarantee any particular selected key. */
+type GuaranteedSelection<S extends readonly string[]> = number extends S['length'] ? never : {
+  [K in keyof S]: IsUnion<S[K]> extends false ? S[K] : never
+}[number];
+// Reify the tuple before distributing: NoInfer<S> in query return types otherwise
+// suppresses distribution of tuple unions and optional selection arrays.
+type SelectionCopy<S> = S extends readonly [...infer Items extends string[]] | undefined ? readonly [...Items] : never;
+type ProjectedRow<T extends AnyTable, S extends readonly string[]> = S extends readonly string[]
+  ? Pick<Row<T>, Extract<GuaranteedSelection<S>, keyof Row<T>>>
+    & Partial<Pick<Row<T>, Exclude<Extract<S[number], keyof Row<T>>, GuaranteedSelection<S>>>>
+  : never;
+export type SelectedRow<T extends AnyTable, S extends readonly string[] | undefined> = [S] extends [never] ? never
+  : [S] extends [undefined] ? Row<T>
+  : undefined extends S ? Row<T> | ProjectedRow<T, SelectionCopy<S>>
+  : ProjectedRow<T, SelectionCopy<S>>;
 export type WithIncludes<T extends AnyTable, I extends Includes, S extends readonly string[] | undefined = undefined> = SelectedRow<T, S> & {
   [K in keyof I]: I[K] extends ManyRelation<infer Child, infer Nested, infer ChildSelect> ? WithIncludes<Child, Nested, ChildSelect>[]
     : I[K] extends SingularRelation<infer Child, infer Nested, infer ChildSelect> ? WithIncludes<Child, Nested, ChildSelect> | null : never

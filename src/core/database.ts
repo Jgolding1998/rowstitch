@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { DatabaseSync } from 'node:sqlite';
+import { NODE_REQUIREMENT, supportedNode } from '../runtime.js';
 import { ConflictError, RowstitchError, databaseError, fail } from './errors.js';
 import { decode, encode, identifier, isColumnRef, literal, plainRecord, sqlType,
   type AnyTable, type Columns, type InsertRow, type KeyRow, type Parameter, type Row, type UpdateRow } from './schema.js';
@@ -168,11 +169,15 @@ export class Database {
     const tx = new Database(this.#state, lease);
     this.#state.depth++;
     try {
-      const result = this.#state.context.run(lease, () => callback(tx));
-      if (result && (typeof result === 'object' || typeof result === 'function') && typeof (result as { then?: unknown }).then === 'function') {
-        if (result instanceof Promise) result.catch(() => {});
-        fail('ASYNC_CALLBACK', 'Transaction callbacks must finish synchronously; all work was rolled back.');
-      }
+      const result = this.#state.context.run(lease, () => {
+        const value = callback(tx);
+        // Result getters and Promise hooks must inherit the callback's lease too.
+        if (value && (typeof value === 'object' || typeof value === 'function') && typeof (value as { then?: unknown }).then === 'function') {
+          if (value instanceof Promise) value.catch(() => {});
+          fail('ASYNC_CALLBACK', 'Transaction callbacks must finish synchronously; all work was rolled back.');
+        }
+        return value;
+      });
       control(nested ? 'release' : 'commit', nested ? savepoint : undefined);
       return result as R;
     } catch (error) {
@@ -331,8 +336,7 @@ export class Database {
 }
 
 export function openDatabase(filename = ':memory:', options: DatabaseOptions = {}): Database {
-  const version = /^(\d+)\.(\d+)\.(\d+)$/.exec(process.versions.node);
-  if (!version || +version[1] !== 24 || +version[2] < 22 || +version[2] === 22 && +version[3] < 2) fail('UNSUPPORTED_RUNTIME', 'Rowstitch requires Node 24.22.2 or a newer Node 24 LTS release.');
+  if (!supportedNode(process.versions.node)) fail('UNSUPPORTED_RUNTIME', 'Rowstitch requires ' + NODE_REQUIREMENT + '.');
   if (typeof filename !== 'string' || !filename.length || filename.includes('\0')) fail('VALIDATION', 'Choose a local SQLite filename or :memory:.');
   assertOptions(options, ['tables', 'readOnly', 'busyTimeoutMs', 'maxTraceEntries', 'traceValues']);
   if (options.readOnly !== undefined && typeof options.readOnly !== 'boolean'
@@ -502,6 +506,7 @@ export class Repository<T extends AnyTable> {
       const localKind = this.definition.columns[localKey.name].config.kind;
       if (!['integer', 'bigint', 'text'].includes(localKind) || sqlType(this.definition.columns[localKey.name].config) !== sqlType(relation.table.columns[foreignKey.name].config)) fail('QUERY', 'Relationship keys must be compatible scalar columns.');
       const key = (value: unknown): string => localKind === 'text' ? 's:' + String(value) : 'i:' + String(value);
+      const correlateKeys = localKind === 'text' && relation.table.columns[foreignKey.name].config.kind === 'text';
       const values = [...new Map(rows.filter(row => row[localKey.name] !== null).map(row => [key(row[localKey.name]), row[localKey.name]])).values()];
       const many = relation instanceof ManyRelation;
       const limit = many ? integer(relation.options.limit, 100, 0, 1000) : 2;
@@ -509,6 +514,7 @@ export class Repository<T extends AnyTable> {
       const repository = new Repository(this.#db, relation.table);
       const fields = repository.#fetchFields(relation.options.select, relation.options.include, [foreignKey.name], depth + 1);
       const children: Row<AnyTable>[] = [];
+      const sourceKeys = new WeakMap<object, string>();
       const where = predicateToModel(relation.table, relation.options.where);
       const ordering = orderToModel(relation.table, relation.options.orderBy, true);
       for (let index = 0; index < values.length && limit > 0; index += 400) {
@@ -517,15 +523,23 @@ export class Repository<T extends AnyTable> {
         // losslessly instead of forcing number IDs through the bigint JS codec.
         const encoded = chunk.map(value => encode(this.definition.columns[localKey.name].config, value));
         const query = compileSqlite(queryModel.relation({ table: mappedTableModel(relation.table), columns: fields, partitionBy: foreignKey.name, keys: encoded,
-          ...(where === undefined ? {} : { where }), orderBy: ordering, offset, limit, readLimit: budget.remaining + 1 }));
-        const result = ops(this.#db).all(query.sql, query.parameters, 'select', relation.table.name).map(row => repository.#decodeRow(row, fields));
+          ...(correlateKeys ? { correlateKeys: true } : {}), ...(where === undefined ? {} : { where }), orderBy: ordering, offset, limit, readLimit: budget.remaining + 1 }));
+        const result = ops(this.#db).all(query.sql, query.parameters, 'select', relation.table.name).map(row => {
+          const decoded = repository.#decodeRow(row, fields);
+          if (correlateKeys) {
+            const ordinal = row.__rs_parent;
+            if (typeof ordinal !== 'bigint' || ordinal < 0n || ordinal >= BigInt(chunk.length)) fail('DATA', 'A relationship returned an invalid source-key ordinal.');
+            sourceKeys.set(decoded, key(chunk[Number(ordinal)]));
+          }
+          return decoded;
+        });
         if (result.length > budget.remaining) fail('RESULT_LIMIT', 'Eager relationships exceeded 10,000 related rows. Narrow the root query or per-parent limits.');
         budget.remaining -= result.length;
         children.push(...result);
       }
       const groups = new Map<string, Row<AnyTable>[]>();
       for (const child of children) {
-        const k = key(child[foreignKey.name]);
+        const k = correlateKeys ? sourceKeys.get(child)! : key(child[foreignKey.name]);
         const list = groups.get(k) ?? []; list.push(child); groups.set(k, list);
       }
       if (!many && [...groups.values()].some(group => group.length > 1)) fail('RELATION_CARDINALITY', 'A singular relationship matched more than one target row. Add a unique constraint or narrow its filter.');

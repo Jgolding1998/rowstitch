@@ -10,10 +10,10 @@ Use the library inside a Node app, such as a small inventory tool or a backend t
 
 ## Try the inspector
 
-Use **Node 24.22.2 or a newer Node 24 LTS release**. Run the prebuilt GitHub release:
+Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.3.0/rowstitch-0.3.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.3.1/rowstitch-0.3.1.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -35,7 +35,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.3.0/rowstitch-0.3.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.3.1/rowstitch-0.3.1.tgz
 ```
 
 ```ts
@@ -66,6 +66,10 @@ See [examples/basic.mjs](examples/basic.mjs) for transactions and trace export. 
 Use `hasMany` for a list, `hasOne` for a single owned record, and `belongsTo` to follow a reference. Relations load in batches. A missing singular relation returns `null`; more than one matching record raises `RELATION_CARDINALITY` instead of silently picking one.
 
 `select: ['name']` returns only the named columns, alongside any explicitly included relations. SQL may also read keys needed to join the records; those internal keys do not appear in the returned object. Select fields separately on each relation; omitting `select` returns every mapped column. This is a query feature, not an authorization system.
+
+Literal selection tuples infer exactly those fields. When the selection is a dynamic array or a tuple slot can name different fields, TypeScript marks uncertain fields optional. Check those fields before using them; a field listed in the array's type is not necessarily present in its value.
+
+Text-key relationships retain SQLite's comparison rules, including existing `NOCASE` and `RTRIM` collations. Matching and per-parent pagination happen in SQL; hidden correlation keys are removed from returned records. One child can match multiple parent keys under a collation, and each returned match counts toward the related-row limits.
 
 ## Search text and ranges
 
@@ -133,9 +137,15 @@ Bound values are redacted at collection by default and result rows are not colle
 
 Trace statuses describe individual SQL statements. An ORM call can still reject a stale edit or ambiguous relationship after its SQL succeeds. Those application-level failures do not yet appear as separate trace events, so zero failed statements does not mean every API call succeeded.
 
+Studio separately shows a write's effect in the recorded transaction: committed, undone, unfinished or unknown. Released savepoints remain subject to an outer rollback. These labels are inferred from recognized transaction statements in the file; missing or inconsistent boundaries stay unknown. They do not certify the current database state or whether an application call succeeded. Edited traces can give misleading results.
+
 ## Scope and checks
 
 This release supports SQLite and synchronous callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, other database drivers, a migration history runner, nested graph writes, a remote database API or an authorization system. Identifiers use simple names of at most 63 characters. Use the dedicated bigint column for integers beyond JavaScript's safe range.
+
+JSON reads and writes accept finite JSON data within the same depth and node limits. Stored JSON text is limited to 1,048,576 characters before parsing; oversized, invalid or out-of-domain stored values raise a `DATA` error. This also applies to existing databases populated by another tool.
+
+JSON numbers use JavaScript number semantics: a large integer can lose precision even when it is finite. Store exact large values as JSON strings or in a mapped `bigint` column. The structure limit counts the root at depth zero and rejects any value beyond depth 64 or 100,000 total nodes.
 
 ```sh
 npm test

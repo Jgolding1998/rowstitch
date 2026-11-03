@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { once } from 'node:events';
+import { NODE_REQUIREMENT, supportedNode } from './runtime.js';
 
-const help = `Rowstitch 0.3.0
+const help = `Rowstitch 0.3.1
 
 Usage:
   rowstitch demo [--port 4317]   Open a local, read-only SQL inspector with fictional data
@@ -9,7 +10,7 @@ Usage:
   rowstitch --help              Show these instructions
   rowstitch --version           Show the version
 
-Requires Node 24.22.2 or a newer Node 24 LTS release.
+Requires ${NODE_REQUIREMENT}.
 The inspector imports trace JSON in browser memory; it never runs imported SQL.
 The schema command opens only the file you name, read-only. Its output can reveal
 schema names and default values. Review it before sharing.
@@ -20,11 +21,10 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (!command || command === '--help' || command === '-h') { process.stdout.write(help); return; }
   if (command === '--version') {
     if (rest.length) throw new Error('Use rowstitch --version without extra arguments.');
-    process.stdout.write('0.3.0\n'); return;
+    process.stdout.write('0.3.1\n'); return;
   }
-  const [major, minor, patch] = process.versions.node.split('.').map(Number);
-  if (major !== 24 || minor! < 22 || minor === 22 && patch! < 2) {
-    throw new Error('Use Node 24.22.2 or a newer Node 24 LTS release.');
+  if (!supportedNode(process.versions.node)) {
+    throw new Error('Use ' + NODE_REQUIREMENT + '.');
   }
   if (command === 'schema') {
     if (rest.length !== 1 || rest[0]!.startsWith('-') || rest[0] === ':memory:') {

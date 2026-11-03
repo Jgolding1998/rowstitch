@@ -361,6 +361,25 @@ main:focus { outline: none; }
 .callout { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
 .callout.is-error { background: var(--error-soft); color: var(--ink); box-shadow: inset 3px 0 0 var(--error); }
 .callout.is-warn { background: var(--warn-soft); color: var(--ink); box-shadow: inset 3px 0 0 var(--warn); }
+.callout.is-note { background: var(--sunk); color: var(--ink-2); box-shadow: inset 3px 0 0 var(--line-strong); }
+
+/* Transaction outcomes inferred from the trace order (quiet, existing tones only) */
+.outcome-note { margin: -4px 0 16px; color: var(--ink-2); font-size: 13px; }
+.q-effect {
+  padding: 0 6px; border-radius: 5px; font-size: 11.5px; font-weight: 500; line-height: 18px;
+  background: var(--raised); color: var(--ink-2);
+}
+.q-effect.is-pending { background: var(--warn-soft); color: var(--warn); }
+.tx-outcome { color: var(--ink-2); font-weight: 500; }
+.tx-outcome.is-rolled-back, .tx-outcome.is-rolled-back-to { color: var(--ink); }
+.tx-outcome.is-unfinished { color: var(--warn); }
+.fact-effect { grid-column: span 2; }
+.fact dd.effect { font-weight: 500; }
+.fact dd.effect.is-kept { color: var(--ok); }
+.fact dd.effect.is-undone { color: var(--ink); }
+.fact dd.effect.is-pending { color: var(--warn); }
+.fact dd.effect.is-unknown { color: var(--ink-3); }
+.fact dd .link-button { font-size: 12.5px; }
 
 .sql {
   margin: 0; padding: 14px 16px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line);

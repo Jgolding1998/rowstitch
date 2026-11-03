@@ -431,12 +431,14 @@
   // Empties every container that can hold trace-derived text so a cleared trace does not linger in hidden DOM.
   const TRACE_CONTAINERS = ['counts', 'thread-scroll', 'thread-scale', 'query-list', 'showing', 'errors-count', 'table-filter-name',
     'detail-body', 'relationships', 'tables', 'results', 'facts', 'notes', 'loaded-title',
-    'tab-count-queries', 'tab-count-schema', 'tab-count-results'];
+    'tab-count-queries', 'tab-count-schema', 'tab-count-results', 'outcome-note'];
   function purgeTraceDom() {
     for (const id of TRACE_CONTAINERS) clear($(id));
     state.rowButtons = [];
     state.paramRows = [];
+    state.outcomes = null;
     $('table-filter').hidden = true;
+    $('outcome-note').hidden = true;
   }
 
   function updateClearButton() {
@@ -457,6 +459,7 @@
 
   function applyDocument(doc, origin) {
     state.doc = doc;
+    state.outcomes = analyzeOutcomes(doc.queries);
     state.origin = origin;
     resetView();
     state.selected = doc.queries.length ? 0 : -1;
@@ -512,14 +515,12 @@
   }
 
   function stats(doc) {
-    const transactions = new Set();
     let failed = 0;
     let withPlan = 0;
     let scans = 0;
     let timed = 0;
     let total = 0;
     for (const q of doc.queries) {
-      if (q.transactionId !== null) transactions.add(q.transactionId);
       if (q.status === 'error') failed += 1;
       if (q.plan && q.plan.length) {
         withPlan += 1;
@@ -527,8 +528,174 @@
       }
       if (q.durationMs !== null) { timed += 1; total += q.durationMs; }
     }
-    return { transactions: transactions.size, failed, withPlan, scans, timed, total };
+    return { failed, withPlan, scans, timed, total };
   }
+
+  // ---------------------------------------------------------------------------
+  // Transaction outcomes, inferred only from the recorded order of Rowstitch's own control statements.
+  // Conservative: anything the order does not prove becomes "unknown". This never claims the current database state.
+  // ---------------------------------------------------------------------------
+
+  const MAX_OUTCOME_DEPTH = 64;
+  // Exact generated forms only, compared by full string equality (no regex anchors, case folding or whitespace tolerance).
+  const PLAIN_CONTROLS = Object.freeze(new Map([['BEGIN', 'begin'], ['BEGIN IMMEDIATE', 'begin'], ['COMMIT', 'commit'], ['ROLLBACK', 'rollback']]));
+  const NAMED_CONTROLS = Object.freeze([
+    ['ROLLBACK TO SAVEPOINT "', 'rollback-to'],
+    ['RELEASE SAVEPOINT "', 'release'],
+    ['SAVEPOINT "', 'savepoint'],
+  ]);
+  const SAVEPOINT_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
+  // SQL that reads like transaction control but is not recorded as a "transaction" operation is ambiguous, never ignored.
+  const CONTROL_LOOKALIKE = /^\s*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
+  const WRITE_OPERATIONS = new Set(['insert', 'update', 'delete']);
+  const UNRECOGNIZED = Object.freeze({ kind: 'unrecognized', name: null });
+
+  function parseControl(q) {
+    if (q.operation !== 'transaction') return CONTROL_LOOKALIKE.test(q.sql) ? UNRECOGNIZED : null;
+    // Rowstitch records its own control statements with no bound values and no table.
+    if (q.parameters.length !== 0 || (q.table !== null && q.table !== '')) return UNRECOGNIZED;
+    const plain = PLAIN_CONTROLS.get(q.sql);
+    if (plain) return { kind: plain, name: null };
+    for (const [prefix, kind] of NAMED_CONTROLS) {
+      if (!q.sql.startsWith(prefix) || !q.sql.endsWith('"') || q.sql.length <= prefix.length + 1) continue;
+      const name = q.sql.slice(prefix.length, -1);
+      if (SAVEPOINT_NAME.test(name) && `${prefix}${name}"` === q.sql) return { kind, name };
+      return UNRECOGNIZED;
+    }
+    return UNRECOGNIZED;
+  }
+
+  /**
+   * Returns per-statement write outcomes and per-statement frame outcomes (for opening statements):
+   *   writes: Map<index, {state: 'kept'|'undone'|'pending'|'unknown', by: index|null, how: string}>
+   *   frames: Map<openingIndex, 'committed'|'rolled-back'|'rolled-back-to'|'unfinished'>
+   */
+  function analyzeOutcomes(queries) {
+    const writes = new Map();
+    const frames = new Map();
+    let stack = [];
+    let synced = false;
+    let transactions = 0;
+    let savepoints = 0;
+    const settle = (indices, outcome) => { for (const i of indices) writes.set(i, outcome); };
+    const desync = (at) => {
+      for (const frame of stack) settle(frame.pending, { state: 'unknown', by: at, how: 'lost' });
+      stack = [];
+      synced = false;
+    };
+    const top = () => stack[stack.length - 1];
+    const limit = Math.min(queries.length, 1000);
+    for (let i = 0; i < limit; i += 1) {
+      const q = queries[i];
+      const control = parseControl(q);
+      const ok = q.status === 'ok';
+      if (control && control.kind === 'begin' && ok) {
+        if (stack.length) desync(i);
+        if (typeof q.transactionId !== 'string') { synced = false; continue; }
+        stack = [{ kind: 'tx', id: q.transactionId, name: null, open: i, pending: [], commitFailed: false }];
+        synced = true;
+        transactions += 1;
+        continue;
+      }
+      if (!synced) {
+        if (!control && ok && WRITE_OPERATIONS.has(q.operation)) writes.set(i, { state: 'unknown', by: null, how: 'no-start' });
+        continue;
+      }
+      if (!control) {
+        const frame = top();
+        const isWrite = ok && WRITE_OPERATIONS.has(q.operation);
+        if (!frame) {
+          // Between transactions: statements must carry no transaction id. Rowstitch wraps every write in a transaction,
+          // so a write here has no recorded start or end and stays unknown.
+          if (q.transactionId !== null) { if (isWrite) writes.set(i, { state: 'unknown', by: i, how: 'lost' }); desync(i); continue; }
+          if (isWrite) writes.set(i, { state: 'unknown', by: null, how: 'no-start' });
+          continue;
+        }
+        if (q.transactionId !== frame.id) { if (isWrite) writes.set(i, { state: 'unknown', by: i, how: 'lost' }); desync(i); continue; }
+        if (isWrite) frame.pending.push(i);
+        continue;
+      }
+      const frame = top();
+      if (control.kind === 'begin') {
+        // A failed BEGIN with nothing open started nothing; anything else is ambiguous.
+        if (!stack.length) continue;
+        desync(i); continue;
+      }
+      if (control.kind === 'commit' && !ok) {
+        if (stack.length === 1 && frame.kind === 'tx' && q.transactionId === frame.id) { frame.commitFailed = true; continue; }
+        desync(i); continue;
+      }
+      if (!ok || control.kind === 'unrecognized') { desync(i); continue; }
+      if (control.kind === 'savepoint') {
+        if (!stack.length || typeof q.transactionId !== 'string' || stack.some((f) => f.id === q.transactionId) || stack.length >= MAX_OUTCOME_DEPTH) { desync(i); continue; }
+        stack.push({ kind: 'sp', id: q.transactionId, name: control.name, open: i, pending: [], commitFailed: false, rolledBackTo: false });
+        savepoints += 1;
+        continue;
+      }
+      if (control.kind === 'release' || control.kind === 'rollback-to') {
+        if (!frame || frame.kind !== 'sp' || frame.name !== control.name || frame.id !== q.transactionId) { desync(i); continue; }
+        if (control.kind === 'rollback-to') {
+          settle(frame.pending, { state: 'undone', by: i, how: 'rollback-to' });
+          frame.pending = [];
+          frame.rolledBackTo = true;
+          continue;
+        }
+        stack.pop();
+        top().pending.push(...frame.pending);
+        if (frame.rolledBackTo) frames.set(frame.open, 'rolled-back-to');
+        continue;
+      }
+      // COMMIT ok or ROLLBACK ok: must close exactly the one open top-level transaction.
+      if (stack.length !== 1 || frame.kind !== 'tx' || frame.id !== q.transactionId || (control.kind === 'commit' && frame.commitFailed)) { desync(i); continue; }
+      if (control.kind === 'commit') {
+        settle(frame.pending, { state: 'kept', by: i, how: 'commit' });
+        frames.set(frame.open, 'committed');
+      } else {
+        settle(frame.pending, { state: 'undone', by: i, how: 'rollback' });
+        frames.set(frame.open, 'rolled-back');
+      }
+      stack = [];
+    }
+    for (const frame of stack) {
+      settle(frame.pending, frame.commitFailed ? { state: 'unknown', by: null, how: 'commit-failed' } : { state: 'pending', by: null, how: 'unfinished' });
+      if (!frame.commitFailed) frames.set(frame.open, 'unfinished');
+    }
+    if (queries.length > limit) for (let i = limit; i < queries.length; i += 1) if (WRITE_OPERATIONS.has(queries[i].operation)) writes.set(i, { state: 'unknown', by: null, how: 'lost' });
+    const totals = { kept: 0, undone: 0, pending: 0, unknown: 0 };
+    for (const outcome of writes.values()) totals[outcome.state] += 1;
+    // Label a list group only when its transaction id belongs to exactly one opened frame in this trace.
+    const frameById = new Map();
+    const seenIds = new Map();
+    for (let i = 0; i < limit; i += 1) {
+      const control = parseControl(queries[i]);
+      if (control && (control.kind === 'begin' || control.kind === 'savepoint') && queries[i].status === 'ok' && typeof queries[i].transactionId === 'string') {
+        seenIds.set(queries[i].transactionId, (seenIds.get(queries[i].transactionId) || 0) + 1);
+      }
+    }
+    for (const [open, outcome] of frames) {
+      const id = queries[open].transactionId;
+      if (seenIds.get(id) === 1) frameById.set(id, outcome);
+    }
+    return { writes, frames, frameById, totals, transactions, savepoints };
+  }
+
+  const FRAME_LABELS = Object.freeze({
+    committed: 'Committed in trace', 'rolled-back': 'Rolled back', 'rolled-back-to': 'Rolled back to savepoint', unfinished: 'Not finished in trace',
+  });
+  const EFFECT_LABELS = Object.freeze({
+    kept: { default: 'Committed in trace' },
+    undone: { rollback: 'Undone by ROLLBACK', 'rollback-to': 'Undone by ROLLBACK TO SAVEPOINT', default: 'Undone' },
+    pending: { default: 'Not finished in this trace' },
+    unknown: { default: 'Unknown from this trace' },
+  });
+  const EFFECT_NOTES = Object.freeze({
+    rollback: 'SQLite ran this write, but its transaction was rolled back later in this trace, so the change was not kept.',
+    'rollback-to': 'SQLite ran this write, but a later ROLLBACK TO SAVEPOINT in this trace undid it.',
+    unfinished: 'The trace ends before this write\'s transaction committed or rolled back. A trace exported inside a transaction looks like this.',
+    'commit-failed': 'COMMIT failed and the trace ends before the transaction\'s outcome, so the effect is unknown.',
+    'no-start': 'This trace does not show where this write\'s transaction began, for example because older entries were left out, so the effect is unknown.',
+    lost: 'The transaction statements around this write do not follow the order Rowstitch records, so no effect is inferred.',
+  });
 
   function renderCounts() {
     const doc = state.doc;
@@ -540,12 +707,20 @@
       wrap.append(el('dt', 'count-label', label), el('dd', 'count-value', value));
       box.append(wrap);
     };
+    const a = state.outcomes;
     item(doc.queries.length.toLocaleString('en-US'), doc.queries.length === 1 ? 'Statement' : 'Statements');
-    item(s.transactions.toLocaleString('en-US'), s.transactions === 1 ? 'Transaction' : 'Transactions');
+    item(a.transactions.toLocaleString('en-US'), `${a.transactions === 1 ? 'Transaction' : 'Transactions'}${a.savepoints ? `, ${plural(a.savepoints, 'savepoint', 'savepoints')}` : ''}`);
     item(s.failed.toLocaleString('en-US'), 'Failed', s.failed ? 'is-error' : '');
     item(`${s.scans} of ${s.withPlan}`, 'Plans with a full scan', s.scans ? 'is-warn' : '');
     const missing = doc.queries.length - s.timed;
     item(s.timed ? formatMs(s.total) : 'none', missing ? `Recorded time, ${missing} without a duration` : 'Recorded time');
+    if (a.totals.undone) item(a.totals.undone.toLocaleString('en-US'), a.totals.undone === 1 ? 'Undone write' : 'Undone writes');
+    const note = $('outcome-note');
+    const parts = [];
+    if (a.totals.pending) parts.push(`${plural(a.totals.pending, 'write is', 'writes are')} not finished in this trace`);
+    if (a.totals.unknown) parts.push(`${plural(a.totals.unknown, 'write has', 'writes have')} an outcome this trace does not show`);
+    note.hidden = parts.length === 0;
+    note.textContent = parts.length ? `${parts.join(', and ')}. Outcomes come from the order of statements in this file.` : '';
   }
 
   function isFullScan(detail) {
@@ -663,6 +838,8 @@
       if (visible.length !== group.items.length) meta.push(`${visible.length} shown`);
       if (groupFailed) meta.push(`${groupFailed} failed`);
       meta.push(formatMs(groupMs));
+      const frameOutcome = state.outcomes ? state.outcomes.frameById.get(group.tx) : undefined;
+      if (frameOutcome) header.append(el('span', `tx-outcome is-${frameOutcome}`, FRAME_LABELS[frameOutcome]));
       header.append(el('span', `tx-meta${groupFailed ? ' has-error' : ''}`, meta.join(' · ')));
       const inner = el('ol', 'tx-items');
       for (const i of visible) inner.append(row(i));
@@ -697,6 +874,8 @@
     top.append(el('span', 'q-id mono', q.id));
     const meta = el('span', 'q-meta');
     if (q.status === 'error') meta.append(el('span', 'q-fail', 'Failed'));
+    const effect = state.outcomes ? state.outcomes.writes.get(i) : undefined;
+    if (effect && (effect.state === 'undone' || effect.state === 'pending')) meta.append(el('span', `q-effect is-${effect.state}`, effect.state === 'undone' ? 'Undone' : 'Not finished'));
     meta.append(el('span', 'mono', formatMs(q.durationMs)));
     top.append(meta);
     button.append(top, el('span', 'q-sql mono', q.sql.replace(/\s+/g, ' ').slice(0, 240)));
@@ -856,10 +1035,27 @@
     fact('Transaction', q.transactionId === null ? 'Autocommit' : q.transactionId, q.transactionId === null ? '' : 'mono');
     fact('Duration', formatMs(q.durationMs), 'mono');
     fact('Rows reported', q.rowCount === null ? 'not recorded' : q.rowCount.toLocaleString('en-US'), 'mono');
+    const effect = state.outcomes ? state.outcomes.writes.get(state.selected) : undefined;
+    if (effect) {
+      const wrap = el('div', 'fact fact-effect');
+      const value = el('dd', `effect is-${effect.state}`);
+      value.append(document.createTextNode(EFFECT_LABELS[effect.state][effect.how] || EFFECT_LABELS[effect.state].default));
+      if (effect.by !== null && (effect.state === 'kept' || effect.state === 'undone')) {
+        const target = effect.by;
+        const jump = el('button', 'link-button mono', doc.queries[target].id);
+        jump.type = 'button';
+        jump.setAttribute('aria-label', `Show statement ${doc.queries[target].id}`);
+        jump.addEventListener('click', () => select(target, { focusDetail: true, reveal: true }));
+        value.append(document.createTextNode(' at '), jump);
+      }
+      wrap.append(el('dt', '', 'Effect in this trace'), value);
+      facts.append(wrap);
+    }
     body.append(facts);
     if (q.status === 'error') {
       body.append(el('p', 'callout is-error', 'This statement failed. Traces do not carry error messages, so check your application log for the reason.'));
     }
+    if (effect && effect.state !== 'kept') body.append(el('p', 'callout is-note', EFFECT_NOTES[effect.how]));
 
     // SQL
     const { tokens, slots } = tokenizeSql(q.sql);
@@ -1132,9 +1328,11 @@
     add('Source', doc.source === 'fictional-demo' ? 'Fictional demo data' : 'Local trace');
     add('Loaded from', state.origin);
     add('Generated', `${doc.generatedAt} (${when.toISOString().replace('T', ' ').slice(0, 19)} UTC)`, 'mono');
-    add('Statements', `${doc.queries.length.toLocaleString('en-US')}, ${s.failed} failed, ${plural(s.transactions, 'transaction', 'transactions')}`);
+    add('Statements', `${doc.queries.length.toLocaleString('en-US')}, ${s.failed} failed, ${plural(state.outcomes.transactions, 'transaction', 'transactions')}, ${plural(state.outcomes.savepoints, 'savepoint', 'savepoints')}`);
     add('Schema', `${plural(doc.schema.length, 'table', 'tables')}, ${plural(columns, 'column', 'columns')}, ${plural(relationships, 'foreign key', 'foreign keys')}`);
     add('Result previews', doc.results ? plural(doc.results.length, 'preview', 'previews') : 'Not included');
+    const t = state.outcomes.totals;
+    add('Write effects in this trace', `${t.kept} committed, ${t.undone} undone, ${t.pending} not finished, ${t.unknown} unknown`);
     const notes = $('notes');
     clear(notes);
     if (!doc.notes || !doc.notes.length) notes.append(el('li', 'muted', 'The trace has no notes.'));

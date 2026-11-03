@@ -32,8 +32,12 @@ The [column comparison](../benchmarks/columns-results.json) exercises native num
 
 The shared singular-relation read still costs Rowstitch two SELECTs versus one for Orange and the explicit Kysely/raw-SQL joins. Orange's closed [issue 177](https://github.com/alfateam/orange-orm/issues/177) and [issue 206](https://github.com/alfateam/orange-orm/issues/206) inform future tests for missing related rows and per-parent pagination. The pinned release passes the exercised cases; these reports are not presented as current upstream failures.
 
+A later review found a Rowstitch-specific relationship bug: SQLite could match a text key under `NOCASE` or `RTRIM`, while JavaScript grouping discarded the result because the original strings differed. Text relationships now carry SQL-generated parent ordinals through decoding. Regression tests compare native SQL results across all three database encodings, including equivalent parent keys, batched pagination and row limits. This fix preserves SQLite's comparison contract; it does not add schema-collation introspection.
+
 ## Runtime and design
 
 [SQLite's change history](https://www.sqlite.org/changes.html) and [CVE notes](https://www.sqlite.org/cves.html) informed the maintained Node baseline, explicit defensive mode and the decision not to enable WAL automatically. A clean npm audit is not an audit of the embedded native engine.
+
+The [Node 26.13.0 LTS release](https://nodejs.org/en/blog/release/v26.13.0) adds a second supported runtime line alongside Node 24.22.2. The tested Windows binaries report SQLite 3.54.0 and 3.53.4 respectively. CI exercises both Node lines on Linux, Windows and macOS, with browser checks for both. Supporting a new major requires actual behavior tests; a permissive version check alone is insufficient.
 
 [Handy](https://github.com/cjpais/Handy) inspired an approachable local tool with quiet navigation. Claude Code uses the installed Unslop design guidance. Rowstitch has its own mark, layout and product language; Handy's restricted branding is not copied. See [credits](../THIRD_PARTY_NOTICES.md).

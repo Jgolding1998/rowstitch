@@ -1,6 +1,6 @@
 # Rowstitch contributor instructions
 
-- Build a small, honest SQLite ORM for current Node 24 LTS, with no runtime npm dependencies. Use node:sqlite with foreign keys and defensive mode enabled and extensions disabled. Do not enable WAL automatically.
+- Build a small, honest SQLite ORM for supported Node 24 and 26 LTS releases, with no runtime npm dependencies. Use node:sqlite with foreign keys and defensive mode enabled and extensions disabled. Do not enable WAL automatically.
 - Keep all SQL values bound and identifiers validated and quoted. Never accept arbitrary SQL through the inspector or from trace files.
 - Require meaningful filters for writes. Guard affected-row counts and optimistic version checks atomically. Transactions and savepoints must recover after errors; reject asynchronous transaction callbacks.
 - Preserve integer precision, nullability and insert-versus-read type contracts. Include actual negative TypeScript checks, not only runtime assertions.

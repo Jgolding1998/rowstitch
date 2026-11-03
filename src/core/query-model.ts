@@ -32,6 +32,7 @@ export interface UpdateModel extends HasTable { readonly kind: 'update'; readonl
 export interface DeleteModel extends HasTable { readonly kind: 'delete'; readonly where: PredicateModel }
 export interface RelationModel extends HasTable {
   readonly kind: 'relation'; readonly columns: readonly string[]; readonly partitionBy: string; readonly keys: readonly Parameter[];
+  readonly correlateKeys?: boolean;
   readonly where?: PredicateModel; readonly orderBy: readonly OrderModel[];
   readonly offset: number; readonly limit: number; readonly readLimit: number;
 }
@@ -250,7 +251,7 @@ function definition(input: unknown, table: TableModel): ColumnDefinitionModel {
 
 /** Revalidation is public to internal compilers: forged objects do not bypass constructors. */
 export function normalizeQueryModel(input: QueryModel): QueryModel {
-  const value = record(input, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'values', 'assignments', 'partitionBy', 'keys', 'readLimit', 'definitions', 'name', 'action', 'query']);
+  const value = record(input, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'values', 'assignments', 'partitionBy', 'keys', 'correlateKeys', 'readLimit', 'definitions', 'name', 'action', 'query']);
   const kind = value.kind;
   if (kind === 'transaction') {
     record(value, ['kind', 'action', 'name']);
@@ -301,12 +302,14 @@ export function normalizeQueryModel(input: QueryModel): QueryModel {
     return Object.freeze({ kind, table, where: guardedWhere(table, value.where) });
   }
   if (kind === 'relation') {
-    record(value, ['kind', 'table', 'columns', 'partitionBy', 'keys', 'where', 'orderBy', 'offset', 'limit', 'readLimit']);
+    record(value, ['kind', 'table', 'columns', 'partitionBy', 'keys', 'correlateKeys', 'where', 'orderBy', 'offset', 'limit', 'readLimit']);
     const columns = names(value.columns, 100, 1, table), partitionBy = field(table, value.partitionBy);
     if (!columns.includes(partitionBy)) fail('QUERY', 'A relationship window must retain its partition key internally.');
     const keys = list(value.keys, 400, 1).map(v => parameter(v));
     if (keys.some(v => v === null)) fail('QUERY', 'Relationship key batches cannot contain NULL.');
-    return Object.freeze({ kind, table, columns, partitionBy, keys: Object.freeze(keys), ...optionalWhere(table, value.where),
+    if (value.correlateKeys !== undefined && typeof value.correlateKeys !== 'boolean') fail('QUERY', 'Relationship key correlation must be a boolean.');
+    if (value.correlateKeys && (table.kinds?.[partitionBy] !== 'text' || keys.some(key => typeof key !== 'string'))) fail('QUERY', 'Correlated relationship keys require mapped text columns and text values.');
+    return Object.freeze({ kind, table, columns, partitionBy, keys: Object.freeze(keys), ...(value.correlateKeys ? { correlateKeys: true } : {}), ...optionalWhere(table, value.where),
       orderBy: orderingModel(table, value.orderBy as readonly OrderModel[]), offset: number(value.offset, 0, 1_000_000_000),
       limit: number(value.limit, 0, 1000), readLimit: number(value.readLimit, 1, 10_001) });
   }
@@ -335,7 +338,7 @@ export const queryModel = Object.freeze({
   insert: (input: Input<InsertModel>): InsertModel => build('insert', input, ['table', 'columns', 'values']),
   update: (input: Input<UpdateModel>): UpdateModel => build('update', input, ['table', 'assignments', 'where']),
   delete: (input: Input<DeleteModel>): DeleteModel => build('delete', input, ['table', 'where']),
-  relation: (input: Input<RelationModel>): RelationModel => build('relation', input, ['table', 'columns', 'partitionBy', 'keys', 'where', 'orderBy', 'offset', 'limit', 'readLimit']),
+  relation: (input: Input<RelationModel>): RelationModel => build('relation', input, ['table', 'columns', 'partitionBy', 'keys', 'correlateKeys', 'where', 'orderBy', 'offset', 'limit', 'readLimit']),
   createTable: (input: Input<CreateTableModel>): CreateTableModel => build('create-table', input, ['table', 'definitions']),
   createIndex: (input: Input<CreateIndexModel>): CreateIndexModel => build('create-index', input, ['table', 'name', 'columns']),
   transaction: (input: Input<TransactionModel>): TransactionModel => build('transaction', input, ['action', 'name']),

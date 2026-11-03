@@ -23,7 +23,7 @@ Status meanings:
 
 | Capability in Orange 5.5.1 | Current Rowstitch status | Coverage required before a compatibility claim |
 | --- | --- | --- |
-| SQLite on current Node | Implemented | Real file and in-memory CRUD, constraints, rollback, precision and packaged-consumer tests. Current Node 24 LTS is required. |
+| SQLite on current Node | Implemented | Real file and in-memory CRUD, constraints, rollback, precision and packaged-consumer tests. Node 24.22.2+ or 26.13.0+ is required within those LTS lines. |
 | SQLite on older supported Node through a native driver | Missing | A versioned adapter and actual runtime tests; do not silently disable defensive features on an older Node release. |
 | PostgreSQL | Missing | An independent dialect/driver adapter, live database tests and transaction/encoding tests. |
 | PGlite, including browser use | Missing | Tests against the actual embedded engine and a browser build without Node-only imports. |

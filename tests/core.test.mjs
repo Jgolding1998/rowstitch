@@ -287,7 +287,7 @@ test('expression indexes never pretend to index a column named null, and generat
 test('SDK rejects unsupported runtime versions before opening any database', () => {
   const descriptor = Object.getOwnPropertyDescriptor(process.versions, 'node');
   try {
-    for (const version of ['24.13.0', '24.22.1', '22.22.0', '25.0.0']) {
+    for (const version of ['24.13.0', '24.22.1', '22.22.0', '25.0.0', '26.12.1', '26.13.0-rc.1', '27.0.0', '024.22.2']) {
       Object.defineProperty(process.versions, 'node', { ...descriptor, value: version });
       assert.throws(() => openDatabase(':memory:'), code('UNSUPPORTED_RUNTIME'));
     }

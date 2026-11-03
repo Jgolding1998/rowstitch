@@ -4,5 +4,5 @@
     "lib": ["ES2023"], "types": ["node"], "strict": true, "noEmit": true,
     "skipLibCheck": true, "exactOptionalPropertyTypes": true
   },
-  "include": ["contract.ts"]
+  "include": ["*.ts"]
 }

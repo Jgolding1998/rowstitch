@@ -2,6 +2,11 @@ import { test as base, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { column, defineTable, openDatabase } from '../dist/index.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -113,6 +118,128 @@ async function deferFileRead(page) {
     };
   });
 }
+
+test('write effects follow real nested rollbacks and match a reopened database', async ({ page, studioURL }) => {
+  const directory = mkdtempSync(join(tmpdir(), 'rowstitch-studio-outcomes-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const filename = join(directory, 'fictional.sqlite');
+  const items = defineTable('outcome_items', { id: column.integer().primaryKey(), label: column.text() });
+  const db = openDatabase(filename, { tables: [items], traceValues: true });
+  let document;
+  try {
+    db.ensureSchema();
+    db.clearTrace();
+    db.transaction(tx => {
+      tx.table(items).insert({ id: 1, label: 'kept' });
+      expect(() => tx.transaction(inner => {
+        inner.table(items).insert({ id: 2, label: 'inner rollback' });
+        throw new Error('Fictional inner failure');
+      })).toThrow('Fictional inner failure');
+    });
+    expect(() => db.transaction(tx => {
+      tx.table(items).insert({ id: 3, label: 'outer rollback' });
+      tx.transaction(inner => inner.table(items).insert({ id: 4, label: 'released then undone' }));
+      throw new Error('Fictional outer failure');
+    })).toThrow('Fictional outer failure');
+    document = db.exportTrace({ title: 'Independent persisted outcome check' });
+  } finally { db.close(); }
+  try {
+    const raw = new DatabaseSync(filename, { readOnly: true });
+    let persisted;
+    try { persisted = raw.prepare('SELECT id FROM outcome_items ORDER BY id').all().map(row => row.id); }
+    finally { raw.close(); }
+    expect(persisted).toEqual([1]);
+    await open(page, studioURL);
+    await importTrace(page, document);
+    for (const [index, query] of document.queries.entries()) {
+      if (query.operation !== 'insert' || query.status !== 'ok') continue;
+      await page.locator('#query-list .q-row').nth(index).click();
+      await expect(page.locator('.fact-effect')).toContainText(persisted.includes(query.parameters[0]) ? 'Committed in trace' : 'Undone');
+      await expect(page.locator('#detail-body')).toContainText('Succeeded');
+    }
+    await expect(page.locator('#counts')).toContainText('Undone writes');
+    await expect(page.locator('#counts')).toContainText('savepoints');
+    await page.locator('#tab-about').click();
+    await expect(page.locator('#view-about')).toContainText('1 committed, 3 undone');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+function outcomeTrace(queries) {
+  const document = trace('Independent transaction boundary check');
+  document.queries = queries.map((query, index) => ({
+    id: 'outcome-' + index, operation: 'transaction', table: null, sql: '', parameters: [],
+    durationMs: 0.1, rowCount: null, transactionId: 'tx-one', status: 'ok', plan: null, ...query,
+  }));
+  return document;
+}
+
+test('incomplete or malformed transaction controls never claim a committed write', async ({ page, studioURL }) => {
+  await open(page, studioURL);
+  const write = { operation: 'insert', table: 'posts', sql: 'INSERT INTO "posts" ("id") VALUES (?)', parameters: ['[redacted]'], rowCount: 1 };
+  const cases = [
+    [{ ...write }, { sql: 'COMMIT' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, write, { sql: 'COMMIT\n' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, write, { sql: 'COMMIT\r\n' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, write, { sql: 'COMMIT;' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, write, { sql: 'COMMIT', parameters: ['unexpected'] }],
+    [{ sql: 'BEGIN IMMEDIATE' }, write, { sql: 'COMMIT', table: 'posts' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, write, { sql: 'COMMIT', transactionId: 'wrong-id' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, write, { sql: 'COMMIT', status: 'error' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, write, { sql: 'COMMIT', operation: 'select' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, { sql: 'SAVEPOINT "rs_sp_one"', transactionId: 'tx-two' }, { ...write, transactionId: 'tx-two' }, { sql: 'RELEASE SAVEPOINT "other"', transactionId: 'tx-two' }, { sql: 'COMMIT' }],
+    [{ sql: 'BEGIN IMMEDIATE' }, { sql: 'SAVEPOINT "rs_sp_one\n"', transactionId: 'tx-two' }, { ...write, transactionId: 'tx-two' }, { sql: 'RELEASE SAVEPOINT "rs_sp_one\n"', transactionId: 'tx-two' }, { sql: 'COMMIT' }],
+  ];
+  for (const queries of cases) {
+    const document = outcomeTrace(queries);
+    await importTrace(page, document);
+    const index = queries.findIndex(query => query.operation === 'insert');
+    await page.locator('#query-list .q-row').nth(index).click();
+    await expect(page.locator('.fact-effect')).not.toContainText('Committed');
+    await expect(page.locator('.fact-effect')).toContainText(/Unknown|Not finished/);
+  }
+});
+
+test('a mid-transaction snapshot stays unfinished even after the real transaction commits', async ({ page, studioURL }) => {
+  const items = defineTable('snapshot_items', { id: column.integer().primaryKey() });
+  const db = openDatabase(':memory:', { tables: [items] });
+  let document;
+  try {
+    db.ensureSchema();
+    db.clearTrace();
+    db.transaction(tx => {
+      tx.table(items).insert({ id: 1 });
+      document = tx.exportTrace({ title: 'Snapshot before commit' });
+    });
+    expect(db.table(items).findMany()).toEqual([{ id: 1 }]);
+  } finally { db.close(); }
+  await open(page, studioURL);
+  await importTrace(page, document);
+  const index = document.queries.findIndex(query => query.operation === 'insert');
+  await page.locator('#query-list .q-row').nth(index).click();
+  await expect(page.locator('.fact-effect')).toContainText('Not finished in this trace');
+  await expect(page.locator('#outcome-note')).toBeVisible();
+  await expect(page.locator('#outcome-note')).toContainText('not finished');
+});
+
+test('failed commit followed by rollback links the undone write to the deciding statement', async ({ page, studioURL }) => {
+  await open(page, studioURL);
+  const document = outcomeTrace([
+    { sql: 'BEGIN IMMEDIATE' },
+    { operation: 'update', table: 'posts', sql: 'UPDATE "posts" SET "id" = ? WHERE "id" = ?', parameters: ['[redacted]', '[redacted]'], rowCount: 1 },
+    { sql: 'COMMIT', status: 'error' },
+    { sql: 'ROLLBACK' },
+  ]);
+  await importTrace(page, document);
+  await page.locator('#query-list .q-row').nth(1).click();
+  await expect(page.locator('.fact-effect')).toContainText('Undone by ROLLBACK');
+  const jump = page.getByRole('button', { name: 'Show statement outcome-3', exact: true });
+  await jump.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#detail-body .sql')).toHaveText('ROLLBACK');
+  await expect(page.locator('.fact-effect')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(page.locator('#outcome-note')).toBeHidden();
+});
 
 test('actual CLI demo matches the real ORM document and local security policy', async ({ page, studioURL }) => {
   await open(page, studioURL);

@@ -4,7 +4,7 @@
   "environment": {
     "node": "v24.22.2",
     "nodeSQLite": "3.53.4",
-    "rowstitch": "0.3.0",
+    "rowstitch": "0.3.1",
     "orange-orm": "5.5.1",
     "kysely": "0.29.8",
     "better-sqlite3": "12.6.2",

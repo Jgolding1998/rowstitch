@@ -113,6 +113,13 @@ export function compileSqlite(input: QueryModel): CompiledQuery {
     parameters: [...query.assignments.map(a => a.value), ...where.parameters],
   };
   if (query.kind === 'delete') return { sql: 'DELETE FROM ' + table + ' WHERE ' + where.sql + ' RETURNING *', parameters: where.parameters };
+  if (query.correlateKeys) return {
+    sql: 'WITH "__rs_keys"("__rs_key", "__rs_ordinal") AS (VALUES ' + query.keys.map((_, index) => '(?, ' + index + ')').join(', ') + ') '
+      + 'SELECT * FROM (SELECT ' + query.columns.map(identifier).join(', ') + ', "__rs_keys"."__rs_ordinal" AS "__rs_parent", ROW_NUMBER() OVER (PARTITION BY "__rs_keys"."__rs_ordinal"' + renderOrder(query.orderBy)
+      + ') AS "__rs_rank" FROM ' + table + ' JOIN "__rs_keys" ON ' + identifier(query.partitionBy) + ' = "__rs_keys"."__rs_key"'
+      + (where.sql ? ' WHERE ' + where.sql : '') + ') WHERE "__rs_rank" > ? AND "__rs_rank" <= ? ORDER BY "__rs_parent", "__rs_rank" LIMIT ?',
+    parameters: [...query.keys, ...where.parameters, query.offset, query.offset + query.limit, query.readLimit],
+  };
   return {
     sql: 'SELECT * FROM (SELECT ' + query.columns.map(identifier).join(', ') + ', ROW_NUMBER() OVER (PARTITION BY ' + identifier(query.partitionBy) + renderOrder(query.orderBy)
       + ') AS "__rs_rank" FROM ' + table + ' WHERE ' + identifier(query.partitionBy) + ' IN (' + query.keys.map(() => '?').join(', ') + ')'
