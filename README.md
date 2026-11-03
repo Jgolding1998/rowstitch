@@ -303,7 +303,7 @@ Studio separately shows a write's effect in the recorded transaction: committed,
 
 ## Scope and checks
 
-This release supports SQLite and synchronous callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, other database drivers, a migration history runner, nested graph writes, a remote database API or an authorization system. Identifiers use simple names of at most 63 characters. Use the dedicated bigint column for integers beyond JavaScript's safe range.
+This release supports SQLite through synchronous and async APIs. The async API executes SQLite operations in a background worker; its transactions await async callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, public drivers for other databases, a migration history runner, nested graph writes, a remote database API or an authorization system. Identifiers use simple names of at most 63 characters. Use the dedicated bigint column for integers beyond JavaScript's safe range.
 
 JSON reads and writes accept finite JSON data within the same depth and node limits. Stored JSON text is limited to 1,048,576 characters before parsing; oversized, invalid or out-of-domain stored values raise a `DATA` error. This also applies to existing databases populated by another tool.
 
@@ -317,6 +317,8 @@ npm run test:browser
 ```
 
 Tests use temporary or in-memory fictional databases. The [comparison harness](benchmarks/README.md) records correctness and relationship query counts against pinned public libraries. Different SQLite driver versions are disclosed; no blanket speed or security ranking is claimed. [Research notes](docs/research.md) explain which upstream discussions informed the tests. [SECURITY.md](SECURITY.md) defines the trust boundary and remaining limits.
+
+Contributors working on the internal PostgreSQL transaction boundary can also run the optional [live engine checks](tests/integration/README.md). Those tests do not make PostgreSQL or PGlite available through the public ORM.
 
 Claude Code leads the inspector's UI and UX. Codex coordinates the core implementation, independent reviews, testing and packaging. The source and branding are original; the project is inspired by public work, not affiliated with those maintainers. See [third-party notices](THIRD_PARTY_NOTICES.md).
 

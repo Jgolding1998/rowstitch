@@ -1,0 +1,17 @@
+{
+  "name": "rowstitch-engine-checks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Optional test dependencies for the internal PostgreSQL/PGlite transaction boundary.",
+  "engines": {
+    "node": "^24.22.2 || ^26.13.0"
+  },
+  "scripts": {
+    "test": "node --test protocol.test.mjs && node check.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.15",
+    "pg": "8.23.1"
+  }
+}

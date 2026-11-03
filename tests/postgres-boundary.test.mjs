@@ -9,17 +9,18 @@ import { isAcknowledgedRejection } from '../dist/core/executor.js';
 const code = expected => error => error?.code === expected;
 function fake() {
   const sent = [], errors = new WeakMap();
-  let state = 'I', closes = 0, response, fail;
+  let state = 'I', closes = 0, response, responseState, fail;
   return {
     sent, errors,
     get closes() { return closes; },
-    response(value) { response = value; },
+    setState(value) { state = value; },
+    response(value, after) { response = value; responseState = after; },
     fail(error) { fail = error; },
     transport: {
       async query(sql, parameters) {
         sent.push({ sql, parameters });
         if (fail) throw fail;
-        if (response) return response;
+        if (response) { if (responseState) state = responseState; return response; }
         if (sql.startsWith('BEGIN')) state = 'T';
         if (sql === 'COMMIT' || sql === 'ROLLBACK') state = 'I';
         return { rows: [], command: sql.startsWith('BEGIN') ? 'BEGIN' : sql.split(' ')[0] };
@@ -70,9 +71,11 @@ test('only engine-identified ErrorResponses are acknowledged and sanitized', asy
 
 test('COMMIT that returns ROLLBACK is a definite transaction failure, never success', async () => {
   const d = fake(), executor = createPostgresExecutor(d.transport);
-  d.response({ rows: [], command: 'ROLLBACK' });
+  d.setState('E');
+  d.response({ rows: [], command: 'ROLLBACK' }, 'I');
   await assert.rejects(executor.exec('COMMIT'), error => error.code === 'TRANSACTION_ABORTED' && isAcknowledgedRejection(error));
-  d.response({ rows: [], command: 'unexpected' });
+  d.setState('T');
+  d.response({ rows: [], command: 'unexpected' }, 'I');
   await assert.rejects(executor.exec('COMMIT'), error => !isAcknowledgedRejection(error));
   await executor.close();
 });

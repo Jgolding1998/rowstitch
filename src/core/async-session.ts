@@ -397,6 +397,10 @@ class Session {
     const text = captureSql(sql), values = captureParameters(parameters), signal = operationSignal(options);
     this.#rootGuard();
     if (signal?.aborted) throw failure('ABORTED');
+    // PostgreSQL READ ONLY is a transaction mode, not an executor-wide file flag as it is for SQLite. Enclose even
+    // one root statement in that mode, so the option cannot silently permit autocommit writes. This is not a role policy.
+    if (this.#dialect === 'postgresql' && this.#readOnly)
+      return this.#rootTransaction<ExecutorRows>((tx: AsyncTransaction) => tx.all(text, values), signal === undefined ? undefined : { signal });
     return new Promise<ExecutorRows>((resolve, reject) => {
       this.#admit(signal, () => {
         if (signal?.aborted) { reject(failure('ABORTED')); return; }
