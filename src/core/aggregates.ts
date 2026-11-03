@@ -2,7 +2,7 @@
 import { RowstitchError, fail } from './errors.js';
 import { Column, isColumnRef, isTable, type AnyTable, type ColumnRef, type Kind, type Row } from './schema.js';
 import { mappedTableModel } from './model-mapping.js';
-import type { Predicate, SelectedRow } from './predicates.js';
+import { filterRelationSnapshot, type FilterRelation, type Predicate, type SelectedRow } from './predicates.js';
 import { queryModel, type AggregateModel, type AggregateSelectModel, type GroupModel, type PredicateModel } from './query-model.js';
 export type { AggregateModel, AggregateSelectModel, GroupModel } from './query-model.js';
 
@@ -20,6 +20,57 @@ export interface AggregateSelector<R> {
   readonly [resultType]: R;
 }
 export type AnyAggregateSelector = AggregateSelector<unknown>;
+
+declare const relatedResultType: unique symbol;
+/**
+ * A per-row aggregate over a relation path, created only by agg.related. Separately branded: it is not an
+ * AggregateSelector, so root aggregate/groupBy reject it statically and at runtime in this release.
+ */
+export interface RelatedAggregate<R> {
+  readonly relation: FilterRelation;
+  readonly selector: AnyAggregateSelector | AnyRelatedAggregate;
+  readonly [relatedResultType]: R;
+}
+export type AnyRelatedAggregate = RelatedAggregate<unknown>;
+export type RelatedAggregates = Readonly<Record<string, AnyRelatedAggregate>>;
+const relatedAggregates = new WeakSet<object>();
+export function isRelatedAggregate(value: unknown): value is AnyRelatedAggregate {
+  return value !== null && typeof value === 'object' && relatedAggregates.has(value);
+}
+/** Internal: whether a value is a genuine agg selector (not a related aggregate). */
+export function isAggregateSelector(value: unknown): value is AnyAggregateSelector {
+  return isSelector(value);
+}
+type RelatedResultOf<D> = D extends RelatedAggregate<infer R> ? R : never;
+type SelectorResult<S> = S extends RelatedAggregate<infer R> ? R : S extends AggregateSelector<infer R> ? R : never;
+/** Literal aliases are certain; a broad string-indexed record promises no field. Distributes over unions. */
+export type ProjectedAggregateResult<A extends RelatedAggregates> = A extends unknown
+  ? string extends keyof A
+    ? { [alias: string]: RelatedResultOf<A[string]> | undefined }
+    : { -readonly [K in keyof A]: RelatedResultOf<A[K]> }
+  : never;
+type OmitEach<X, K extends PropertyKey> = X extends unknown ? Omit<X, K> : never;
+/** Every value a base row (selected fields and included relations) can hold under some key. */
+type BaseValue<Base> = Base extends unknown ? Base[keyof Base] : never;
+/**
+ * A findMany/findFirst row with per-row aggregates, merged per branch of BOTH the aggregate-selection union and the
+ * base row/include union (never a plain intersection):
+ * - known aliases replace same-named base fields, because at runtime an alias equal to a selected column or include is
+ *   rejected, so on a successful return that field is the aggregate (an uncertain selected text field cannot collapse it
+ *   to never);
+ * - a broad string-indexed aggregate record cannot name its aliases, so its index signature admits every possible base
+ *   value (selected fields and included rows/arrays), every aggregate result and undefined;
+ * - without aggregates the base row type is unchanged.
+ */
+// The emptiness test runs per aggregate branch: keyof a union such as {a} | {b} is never, which must not mean "no aggregates".
+export type ProjectedRow<Base, A extends RelatedAggregates> = A extends unknown
+  ? [keyof A] extends [never] ? Base
+    : Base extends unknown
+      ? string extends keyof A
+        ? Base & { [field: string]: BaseValue<Base> | RelatedResultOf<A[string]> | undefined }
+        : OmitEach<Base, keyof A> & { -readonly [K in keyof A]: RelatedResultOf<A[K]> }
+      : never
+  : never;
 
 const selectors = new WeakSet<object>();
 function isSelector(value: unknown): value is AnyAggregateSelector {
@@ -57,6 +108,13 @@ interface Agg {
   avg(ref: ColumnRef<unknown, 'bigint'>, options: { readonly approximate: true }): AggregateSelector<number | null>;
   min<T, K extends ExtremeKind>(ref: ColumnRef<T, K>): AggregateSelector<Exclude<T, null> | null>;
   max<T, K extends ExtremeKind>(ref: ColumnRef<T, K>): AggregateSelector<Exclude<T, null> | null>;
+  /**
+   * Per-row aggregate over a relation (and, nested, a path of up to four relations) for findMany/findFirst aggregates.
+   * The leaf selector's column must belong to the last relation's table (checked at runtime).
+   */
+  // The result is computed from the argument type, so a contextual type (for example `satisfies RelatedAggregates`)
+  // cannot widen it to unknown.
+  related<S extends AnyAggregateSelector | AnyRelatedAggregate>(relation: FilterRelation, selector: S): RelatedAggregate<SelectorResult<S>>;
 }
 /** Exact arity: an extra argument (for example a filter or distinct flag) must never be silently ignored. */
 function single(args: readonly unknown[], name: string): unknown {
@@ -79,6 +137,18 @@ export const agg: Readonly<Agg> = Object.freeze({
   },
   min: (...args: unknown[]) => selector('min', single(args, 'min'), ['integer', 'bigint', 'real', 'text']),
   max: (...args: unknown[]) => selector('max', single(args, 'max'), ['integer', 'bigint', 'real', 'text']),
+  related: (...args: unknown[]) => {
+    if (args.length !== 2) fail('QUERY', 'agg.related accepts exactly a relation and one aggregate selector.');
+    const [relation, inner] = args;
+    // Validates the genuine descriptor and refuses loading-only options now; lowering re-checks scope and registration.
+    filterRelationSnapshot(relation);
+    if (!isSelector(inner) && !isRelatedAggregate(inner)) fail('QUERY', 'agg.related needs an agg selector or a nested agg.related value.');
+    let depth = 1;
+    for (let item: unknown = inner; isRelatedAggregate(item); item = item.selector) if (++depth > 4) fail('QUERY', 'Related aggregates support at most four relationships in a path.');
+    const value = Object.freeze({ relation: relation as FilterRelation, selector: inner as AnyAggregateSelector | AnyRelatedAggregate });
+    relatedAggregates.add(value);
+    return value as unknown as AnyRelatedAggregate;
+  },
 }) as Readonly<Agg>;
 
 export type AggregateSelection = Readonly<Record<string, AnyAggregateSelector>>;
@@ -198,6 +268,7 @@ function selection(table: AnyTable, input: unknown): AggregateSelectModel[] {
     aliasName(alias);
     if (seen.has(alias.toLowerCase())) fail('QUERY', 'Aggregate aliases must be unique ignoring case.');
     seen.add(alias.toLowerCase());
+    if (isRelatedAggregate(value)) fail('QUERY', 'agg.related is supported only in findMany/findFirst aggregates in this release.');
     if (!isSelector(value)) fail('QUERY', 'Aggregate values must be created with agg.');
     const ref = value.ref;
     if (ref !== undefined && (ref.table !== table || !Object.hasOwn(table.columns, ref.name))) fail('QUERY', 'Aggregate columns must belong to the queried table.');

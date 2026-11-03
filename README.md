@@ -13,7 +13,7 @@ Use the library inside a Node app, such as a small inventory tool or a backend t
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.6.0/rowstitch-0.6.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.7.0/rowstitch-0.7.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -35,7 +35,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.6.0/rowstitch-0.6.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.7.0/rowstitch-0.7.0.tgz
 ```
 
 ```ts
@@ -158,7 +158,28 @@ Without an explicit `limit`, more than 10,000 groups raises `RESULT_LIMIT`; supp
 
 The same query checks the storage types of referenced columns, including grouped keys and counted columns. A returned group also carries a check across the other filtered groups before pagination. This catches cases where SQLite could otherwise turn malformed stored input into a plausible total. An empty page carries no such check; it is not evidence that the underlying data is valid. `count()` does not inspect unrelated columns. If the implicit group cap is exceeded, `RESULT_LIMIT` takes precedence over decoding the data-check flag.
 
-This slice supports root summaries and grouped summaries with one shared `where`, including relationship predicates. It does not yet support HAVING, DISTINCT, a separate filter per selector or aggregate fields on each fetched parent. Those options are refused. JSON is excluded from grouping and column aggregates; min/max accept numeric or text columns. A column from another table is rejected at runtime, since column-reference types do not encode table identity.
+This slice supports root summaries and grouped summaries with one shared `where`, including relationship predicates. It does not yet support HAVING, DISTINCT or a separate filter per selector. Those options are refused. Per-row related totals are available in `findMany`, as described below.
+
+### Related totals on each row
+
+`agg.related(relation, selector)` adds an aggregate over related records to every row that `findMany` or `findFirst` returns, without loading those records. Nest it to follow a path of up to four relations:
+
+```ts
+const orderLines = hasMany(lines, { localKey: orders.col('id'), foreignKey: lines.col('orderId') });
+const openOrders = hasMany(orders, { localKey: customers.col('id'), foreignKey: orders.col('customerId'), where: eq(orders.col('status'), 'open') });
+const rows = db.table(customers).findMany({ select: ['name'], aggregates: {
+  openOrders: agg.related(openOrders, agg.count()),                                        // 0 when there are none
+  openCents: agg.related(openOrders, agg.related(orderLines, agg.sum(lines.col('cents')))), // exact bigint, or null
+} });
+```
+
+- **Domains and loading options:** a relation's `where` limits which records count. Loading options (`orderBy`, `limit`, `offset`, `include`, `select`) are refused.
+- **Path semantics:** each selector aggregates every matching path through its relations. A record reached twice counts twice, and averages are taken over those leaf records rather than averaged per parent. Independent selectors are computed separately and never multiply each other.
+- **Result types:** counts, exact integer sums, approximate averages and nullable extrema follow the selector table above. Text keys and min/max follow the related column's declared collation.
+- **Aliases:** they must not repeat a selected column or include name, ignoring case.
+- **Dynamic aliases:** a broad (dynamically built) alias record does not promise any field. A dynamic lookup may return a selected column or an included array as well as an aggregate.
+- **Stored data check:** the same query checks the stored types of related keys and aggregated columns on matched rows, and fetches each correlation key internally, but only for the rows it returns.
+- **Where it works:** `agg.related` is accepted only by `findMany`/`findFirst` (plus `compileSelect`/`explain`). `aggregate` and `groupBy` refuse it in this release, and plain `agg` selectors are refused per row. Each selector is a correlated subquery per returned row, so index the related key columns and check `explain()`. See the [related totals example](examples/projected-aggregates.mjs). JSON is excluded from grouping and column aggregates; min/max accept numeric or text columns. A column from another table is rejected at runtime, since column-reference types do not encode table identity.
 
 ## Search text and ranges
 

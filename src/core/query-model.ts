@@ -27,9 +27,19 @@ export type PredicateModel =
   | { readonly kind: 'not'; readonly child: PredicateModel };
 export interface OrderModel { readonly column: string; readonly direction: 'ASC' | 'DESC' }
 interface HasTable { readonly table: TableModel }
+/** One correlated relationship hop. The foreign (related) key is the left operand, as in relation filters. */
+export interface RelationStepModel {
+  readonly table: TableModel; readonly localKey: string; readonly foreignKey: string; readonly where?: PredicateModel;
+}
+/** A per-row aggregate over every matching join path through `path`; the leaf column belongs to the last step. */
+export interface ProjectedAggregateModel {
+  readonly alias: string; readonly operation: 'count' | 'sum' | 'avg' | 'min' | 'max';
+  readonly column?: string; readonly approximate?: true; readonly path: readonly RelationStepModel[];
+}
 export interface SelectModel extends HasTable {
   readonly kind: 'select'; readonly columns: readonly string[]; readonly where?: PredicateModel;
   readonly orderBy: readonly OrderModel[]; readonly limit: number; readonly offset: number;
+  readonly aggregates?: readonly ProjectedAggregateModel[];
 }
 export interface CountModel extends HasTable { readonly kind: 'count'; readonly where?: PredicateModel }
 export interface AggregateSelectModel {
@@ -177,11 +187,14 @@ export function relationCountComparison(operator: unknown, threshold: unknown): 
   return Object.freeze({ operator: operator as ColumnComparisonOperator, threshold: number(threshold, 0, Number.MAX_SAFE_INTEGER) });
 }
 
-export function predicateModel(tableInput: TableModel, input: PredicateModel): PredicateModel {
+/** Logical limits shared by every predicate scope of one query (root where and all related domains). */
+export interface PredicateBudget { nodes: number; parameters: number }
+export const MAX_PREDICATE_NODES = 100, MAX_BOUND_PARAMETERS = 10_000;
+export function predicateModel(tableInput: TableModel, input: PredicateModel, budget: PredicateBudget = { nodes: 0, parameters: 0 }, startRelationDepth = 0): PredicateModel {
   const table = tableModel(tableInput);
-  let nodes = 0, parameters = 0;
-  function visit(source: unknown, depth: number, scope: TableModel = table, relationDepth = 0): PredicateModel {
-    if (++nodes > 100 || depth > 16) fail('QUERY', 'Predicates exceed their node or depth limit.');
+  if (!Number.isSafeInteger(startRelationDepth) || startRelationDepth < 0 || startRelationDepth > 4) fail('QUERY', 'Relation filters support at most four nested relationships.');
+  function visit(source: unknown, depth: number, scope: TableModel = table, relationDepth = startRelationDepth): PredicateModel {
+    if (++budget.nodes > MAX_PREDICATE_NODES || depth > 16) fail('QUERY', 'Predicates exceed their node or depth limit.');
     const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child', 'mode', 'case', 'literal', 'left', 'right', 'quantifier', 'table', 'localKey', 'foreignKey', 'where', 'predicate', 'threshold']);
     if (node.kind === 'relation-filter' || node.kind === 'relation-count') {
       if (relationDepth >= 4) fail('QUERY', 'Relation filters support at most four nested relationships.');
@@ -196,7 +209,7 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
         ...(node.predicate === undefined ? {} : { predicate: visit(node.predicate, depth + 1, target, relationDepth + 1) }) };
       if (node.kind === 'relation-count') {
         const comparison = relationCountComparison(node.operator, node.threshold);
-        if (++parameters > 10_000) fail('QUERY', 'Predicate parameters exceed their supported length.');
+        if (++budget.parameters > MAX_BOUND_PARAMETERS) fail('QUERY', 'Predicate parameters exceed their supported length.');
         return Object.freeze({ ...base, kind: 'relation-count', ...comparison });
       }
       return Object.freeze({ ...base, kind: 'relation-filter', quantifier: node.quantifier as RelationQuantifier });
@@ -217,16 +230,16 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
       if (node.case !== 'sensitive' && node.case !== 'ascii-insensitive') fail('QUERY', 'A text search case must be sensitive or ascii-insensitive.');
       const matchCase = node.case;
       const literal = textMatchLiteral(node.literal);
-      parameters += node.mode === 'ends-with' ? 3 : 1;
-      if (parameters > 10_000) fail('QUERY', 'Predicate parameters exceed their supported length.');
+      budget.parameters += node.mode === 'ends-with' ? 3 : 1;
+      if (budget.parameters > MAX_BOUND_PARAMETERS) fail('QUERY', 'Predicate parameters exceed their supported length.');
       return Object.freeze({ kind: 'text-match', column: field(scope, node.column), mode: node.mode, case: matchCase, literal });
     }
     if (node.kind === 'compare') {
       record(node, ['kind', 'column', 'operator', 'values']);
       if (typeof node.operator !== 'string' || !['=', '<>', '>', '>=', '<', '<=', 'IN'].includes(node.operator)) fail('QUERY', 'The comparison operator is not supported.');
       const values = list(node.values, 10_000).map(v => parameter(v));
-      parameters += values.filter(value => value !== null).length;
-      if (parameters > 10_000 || node.operator !== 'IN' && values.length !== 1) fail('QUERY', 'Predicate parameters exceed their supported length.');
+      budget.parameters += values.filter(value => value !== null).length;
+      if (budget.parameters > MAX_BOUND_PARAMETERS || node.operator !== 'IN' && values.length !== 1) fail('QUERY', 'Predicate parameters exceed their supported length.');
       if (values[0] === null && !['=', '<>', 'IN'].includes(node.operator)) fail('QUERY', 'NULL only supports equality or inequality comparisons.');
       return Object.freeze({ kind: 'compare', column: field(scope, node.column), operator: node.operator as ComparisonOperator, values: Object.freeze(values) });
     }
@@ -243,6 +256,19 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
     return fail('QUERY', 'The predicate model kind is not supported.');
   }
   return visit(input, 0);
+}
+/** Bound values the SQLite compiler emits for one rendering of a normalized predicate. */
+export function predicateParameterCount(predicate?: PredicateModel): number {
+  if (predicate === undefined) return 0;
+  switch (predicate.kind) {
+    case 'relation-filter': return predicateParameterCount(predicate.where) + predicateParameterCount(predicate.predicate);
+    case 'relation-count': return predicateParameterCount(predicate.where) + predicateParameterCount(predicate.predicate) + 1;
+    case 'column-compare': return 0;
+    case 'text-match': return predicate.mode === 'ends-with' ? 3 : 1;
+    case 'compare': return predicate.operator === 'IN' ? predicate.values.filter(value => value !== null).length : predicate.values[0] === null ? 0 : 1;
+    case 'not': return predicateParameterCount(predicate.child);
+    default: return predicate.children.reduce((total, child) => total + predicateParameterCount(child), 0);
+  }
 }
 export function predicateTruth(predicate?: PredicateModel): true | false | null {
   if (predicate === undefined) return true;
@@ -364,9 +390,55 @@ function aggregateOrdering(source: unknown, keys: readonly string[], selections:
   return Object.freeze(orders);
 }
 
+export const MAX_PROJECTED_AGGREGATES = 32, MAX_RELATION_PATH = 4;
+/** True when a projected aggregate is rendered as an exact split integer sum (two outputs). */
+export function projectedIntegerSum(aggregate: ProjectedAggregateModel): boolean {
+  const leaf = aggregate.path[aggregate.path.length - 1].table;
+  return aggregate.operation === 'sum' && ['integer', 'bigint'].includes(leaf.kinds![aggregate.column!]);
+}
+/** Physical copies of a path's domain values in the generated statement: value subquery (two for split integer sums) + guard. */
+export function projectedCopies(aggregate: ProjectedAggregateModel): number {
+  return (projectedIntegerSum(aggregate) ? 2 : 1) + 1;
+}
+function projectedAggregates(root: TableModel, source: unknown, budget: PredicateBudget): readonly ProjectedAggregateModel[] {
+  const occupied = new Set<string>();
+  return Object.freeze(list(source, MAX_PROJECTED_AGGREGATES, 1).map(item => {
+    const value = record(item, ['alias', 'operation', 'column', 'approximate', 'path']);
+    const alias = name(value.alias), operation = value.operation;
+    if (occupied.has(alias.toLowerCase())) fail('QUERY', 'Projected aggregate aliases must be unique ignoring case.');
+    occupied.add(alias.toLowerCase());
+    if (typeof operation !== 'string' || !['count', 'sum', 'avg', 'min', 'max'].includes(operation)) fail('QUERY', 'The aggregate operation is not supported.');
+    let scope = root;
+    const path = list(value.path, MAX_RELATION_PATH, 1).map((source, index) => {
+      const step = record(source, ['table', 'localKey', 'foreignKey', 'where']);
+      const target = tableModel(step.table as TableModel);
+      if (!scope.kinds || !target.kinds || !target.nullable) fail('QUERY', 'Projected aggregates require complete column kind and nullability metadata.');
+      const localKey = field(scope, step.localKey), foreignKey = field(target, step.foreignKey);
+      if (!relationKindsCompatible(scope.kinds[localKey], target.kinds[foreignKey])) fail('QUERY', 'Relation paths require compatible integer, bigint or text keys.');
+      const where = step.where === undefined ? undefined : predicateModel(target, step.where as PredicateModel, budget, index + 1);
+      scope = target;
+      return Object.freeze({ table: target, localKey, foreignKey, ...(where === undefined ? {} : { where }) });
+    });
+    const column = value.column === undefined ? undefined : field(scope, value.column);
+    if (column === undefined && operation !== 'count') fail('QUERY', 'This aggregate requires a mapped column.');
+    const kind = column === undefined ? undefined : scope.kinds![column];
+    if (kind === 'json' || (operation === 'sum' || operation === 'avg') && !['integer', 'bigint', 'real'].includes(kind!)
+        || (operation === 'min' || operation === 'max') && !['integer', 'bigint', 'real', 'text'].includes(kind!)) fail('QUERY', 'The aggregate does not support this column kind.');
+    if (Object.hasOwn(value, 'approximate') && (value.approximate !== true || operation !== 'avg')
+        || operation === 'avg' && kind === 'bigint' && value.approximate !== true) fail('QUERY', 'Bigint averages require approximate: true; only averages accept that option.');
+    return Object.freeze({ alias, operation: operation as ProjectedAggregateModel['operation'], ...(column === undefined ? {} : { column }),
+      ...(value.approximate === true ? { approximate: true as const } : {}), path: Object.freeze(path) });
+  }));
+}
+/** Bound values (excluding LIMIT/OFFSET) of a select statement, counting every physical copy of a repeated domain. */
+export function selectPhysicalParameters(query: SelectModel): number {
+  return predicateParameterCount(query.where) + (query.aggregates ?? []).reduce((total, aggregate) =>
+    total + projectedCopies(aggregate) * aggregate.path.reduce((sum, step) => sum + predicateParameterCount(step.where), 0), 0);
+}
+
 /** Revalidation is public to internal compilers: forged objects do not bypass constructors. */
 export function normalizeQueryModel(input: QueryModel): QueryModel {
-  const value = record(input, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'values', 'assignments', 'partitionBy', 'keys', 'correlateKeys', 'readLimit', 'definitions', 'name', 'action', 'query', 'select', 'by', 'overflow']);
+  const value = record(input, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'values', 'assignments', 'partitionBy', 'keys', 'correlateKeys', 'readLimit', 'definitions', 'name', 'action', 'query', 'select', 'by', 'overflow', 'aggregates']);
   const kind = value.kind;
   if (kind === 'transaction') {
     record(value, ['kind', 'action', 'name']);
@@ -378,7 +450,7 @@ export function normalizeQueryModel(input: QueryModel): QueryModel {
   }
   if (kind === 'explain') {
     record(value, ['kind', 'query']);
-    const select = record(value.query, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'select', 'by', 'overflow']);
+    const select = record(value.query, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'select', 'by', 'overflow', 'aggregates']);
     if (!['select', 'aggregate', 'group'].includes(select.kind as string)) fail('QUERY', 'Only generated row, aggregate or group reads can be explained.');
     const query = normalizeQueryModel(select as unknown as SelectModel | AggregateModel | GroupModel);
     if (query.kind !== 'select' && query.kind !== 'aggregate' && query.kind !== 'group') fail('QUERY', 'Only generated row, aggregate or group reads can be explained.');
@@ -401,9 +473,15 @@ export function normalizeQueryModel(input: QueryModel): QueryModel {
       orderBy: aggregateOrdering(value.orderBy, by, select), limit, offset: number(value.offset, 0, 1_000_000_000), overflow: value.overflow });
   }
   if (kind === 'select') {
-    record(value, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset']);
-    return Object.freeze({ kind, table, columns: names(value.columns, 100, 1, table), ...optionalWhere(table, value.where),
-      orderBy: orderingModel(table, value.orderBy as readonly OrderModel[]), limit: number(value.limit, 0, 10_000), offset: number(value.offset, 0, 1_000_000_000) });
+    record(value, ['kind', 'table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'aggregates']);
+    // One logical budget covers the root where and every related domain; no scope gets a fresh allowance.
+    const budget: PredicateBudget = { nodes: 0, parameters: 0 };
+    const where = value.where === undefined ? {} : { where: predicateModel(table, value.where as PredicateModel, budget) };
+    const aggregates = value.aggregates === undefined ? {} : { aggregates: projectedAggregates(table, value.aggregates, budget) };
+    const query = Object.freeze({ kind, table, columns: names(value.columns, 100, 1, table), ...where, ...aggregates,
+      orderBy: orderingModel(table, value.orderBy as readonly OrderModel[]), limit: number(value.limit, 0, 10_000), offset: number(value.offset, 0, 1_000_000_000) }) as SelectModel;
+    if (selectPhysicalParameters(query) > MAX_BOUND_PARAMETERS) fail('QUERY', 'A query has too many bound parameters once repeated relation domains are counted.');
+    return query;
   }
   if (kind === 'count') {
     record(value, ['kind', 'table', 'where']);
@@ -462,7 +540,7 @@ function build<M extends QueryModel>(kind: M['kind'], input: Input<M>, allowed: 
   return normalizeQueryModel({ ...snapshot, kind } as M) as M;
 }
 export const queryModel = Object.freeze({
-  select: (input: Input<SelectModel>): SelectModel => build('select', input, ['table', 'columns', 'where', 'orderBy', 'limit', 'offset']),
+  select: (input: Input<SelectModel>): SelectModel => build('select', input, ['table', 'columns', 'where', 'orderBy', 'limit', 'offset', 'aggregates']),
   count: (input: Input<CountModel>): CountModel => build('count', input, ['table', 'where']),
   aggregate: (input: Input<AggregateModel>): AggregateModel => build('aggregate', input, ['table', 'select', 'where']),
   group: (input: Input<GroupModel>): GroupModel => build('group', input, ['table', 'select', 'by', 'where', 'orderBy', 'limit', 'offset', 'overflow']),

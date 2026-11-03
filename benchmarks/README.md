@@ -59,7 +59,7 @@ node benchmarks/columns.mjs --reference-dir /path/to/reference-directory --outpu
 
 Without references, 216 Rowstitch/raw-SQL checks run. Native NOCASE, BINARY and RTRIM behavior remains observable, including the effect of reversing operands. Schema inspection currently does not report or certify these collations. Orange and Kysely already support column operands with broader SQL and relationship contracts; Rowstitch's narrower helpers are not evidence of a defect in either tool.
 
-To check all six local fixture sets without installing reference libraries:
+To check all seven local fixture sets without installing reference libraries:
 
 ```sh
 node benchmarks/check.mjs
@@ -125,3 +125,16 @@ The pinned [aggregate SQL construction](https://github.com/alfateam/orange-orm/b
 Exact integer totals beyond int64, intermediate cancellation, and grouped sum ordering are checked against a BigInt oracle **and a working raw SQLite split-SUM recipe**. Native integer SUM raises the same engine overflow in raw SQLite and Orange on these fixtures. It is an [SQLite arithmetic limit](https://www.sqlite.org/lang_aggfunc.html), not an Orange-specific defect. Rowstitch's split partials still retain SQLite limits. For a mapped real column containing safe INTEGER values, the raw comparison also uses an explicit REAL cast, matching the approximate contract. Both tools remain subject to floating-point rounding; Rowstitch rejects a nonfinite aggregate result.
 
 Additional Rowstitch cases check storage guards outside a requested group page and filtering invalid data out of the domain. An empty page has no guard-bearing row and makes no data-validity assertion. Related aggregate projections, HAVING, DISTINCT, per-selector filters and other database engines are outside this root-aggregate slice. None of these checks establishes overall superiority or complete Orange parity.
+
+## Per-row related summaries
+
+The [projected aggregate runner](projected.mjs) uses two deterministic fictional datasets, 32 parents in total and 18 query scenarios. It checks child counts, non-NULL counts, integer sums, averages, extrema, nested paths and two independent child collections. Expected results come from separately computed JavaScript arrays. Every operation must use one SELECT in each tool; query counts do not establish a speed ranking.
+
+```sh
+node benchmarks/projected.mjs
+node benchmarks/projected.mjs --reference-dir /path/to/reference-directory --output /path/to/projected-results.json
+```
+
+The [recorded run](projected-results.json) has 288 Rowstitch result checks and 230 Orange comparisons with the documented return-type and empty-value normalization. Those numbers count individual parent results, not hundreds of distinct use cases. Another 58 empty-value outcomes are classified separately: the tested Orange 5.5.1 path returns NaN for missing counts or extrema and zero for empty sums/averages, whereas Rowstitch returns zero for counts and NULL for the other aggregates. The two-collection scenario explicitly normalizes NULL and zero before comparing totals. Neither tool multiplies the independent collection totals on these per-row fixtures.
+
+Shared fixture integers stay within JavaScript's safe range. Exact large totals, malformed storage, text collation, domain filtering, shared query limits and transaction lifetimes are covered separately by Rowstitch's runtime tests. The comparison covers per-row SQLite queries only. It does not test related aggregates inside root/group summaries, other databases, timing or full Orange compatibility. Orange observations are tied to the pinned release and recorded engine versions, not every driver or release.

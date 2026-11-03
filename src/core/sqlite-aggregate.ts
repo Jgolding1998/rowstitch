@@ -8,7 +8,8 @@ const safeInteger = ' BETWEEN -9007199254740991 AND 9007199254740991';
 const finiteReal = ' BETWEEN -1.7976931348623157e308 AND 1.7976931348623157e308';
 const operations = { count: 'COUNT', sum: 'SUM', avg: 'AVG', min: 'MIN', max: 'MAX' } as const;
 
-function invalidInput(table: TableModel, column: string, ref: string): string {
+/** 1 when a referenced stored value does not satisfy the mapped codec's storage rules, else 0. Shared by projected aggregates. */
+export function invalidInput(table: TableModel, column: string, ref: string): string {
   const type = 'typeof(' + ref + ')';
   let valid: string;
   switch (table.kinds![column]) {

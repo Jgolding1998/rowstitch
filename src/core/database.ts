@@ -14,6 +14,9 @@ import { compileSqlite } from './sqlite-compiler.js';
 import { aggregateToModel, groupToModel, type AggregateSelection, type AggregateOptions, type AggregateResult,
   type GroupKey, type GroupOptions, type GroupResult } from './aggregates.js';
 import { decodeAggregateRow } from './aggregate-decode.js';
+import { assertProjectedGuard, decodeProjectedRow, projectedAggregatesToModel, type ProjectedPlan } from './projected-aggregates.js';
+import type { ProjectedRow, RelatedAggregates } from './aggregates.js';
+import type { LoweringBudget } from './predicates.js';
 import type { AggregateModel, GroupModel } from './query-model.js';
 
 export interface SchemaColumn { name: string; type: string; nullable: boolean; primaryKey: boolean; primaryKeyOrder: number; default: string | null; generated: boolean; hidden: boolean }
@@ -376,8 +379,8 @@ export interface WriteOptions { where: Predicate; maxRows?: number }
 export class Repository<T extends AnyTable> {
   #db: Database;
   constructor(db: Database, public readonly definition: T) { this.#db = db; }
-  #predicate(where?: Predicate): PredicateModel | undefined {
-    return predicateToModel(this.definition, where, table => ops(this.#db).mapped(table));
+  #predicate(where?: Predicate, budget?: LoweringBudget, relationDepth = 0): PredicateModel | undefined {
+    return predicateToModel(this.definition, where, table => ops(this.#db).mapped(table), budget, relationDepth);
   }
   #columns(): [string, Columns[string]][] { return Object.entries(this.definition.columns as Columns); }
   #decodeRow(row: Record<string, unknown>, fields = this.#columns().map(([name]) => name)): Row<T> {
@@ -460,35 +463,57 @@ export class Repository<T extends AnyTable> {
     if (!Array.isArray(rows) || rows.length > 1000) fail('VALIDATION', 'Insert at most 1,000 records in one batch.');
     return ops(this.#db).atomic(tx => rows.map(row => new Repository(tx, this.definition).#insertOne(row)));
   }
-  #selectModel(options: FindOptions<Includes, Selection<T> | undefined>): SelectModel {
+  #selectPlan(options: FindOptions<Includes, Selection<T> | undefined, RelatedAggregates>): { model: SelectModel; fields: string[]; plan?: ProjectedPlan } {
     ops(this.#db).mapped(this.definition);
-    assertOptions(options, ['where', 'orderBy', 'limit', 'offset', 'include', 'select']);
+    assertOptions(options, ['where', 'orderBy', 'limit', 'offset', 'include', 'select', 'aggregates']);
     const fields = this.#fetchFields(options.select, options.include);
     const limit = integer(options.limit, 1000, 0, 10_000);
     const offset = integer(options.offset, 0, 0, 1_000_000_000);
-    const where = this.#predicate(options.where);
-    return queryModel.select({ table: mappedTableModel(this.definition), columns: fields, ...(where === undefined ? {} : { where }),
-      orderBy: orderToModel(this.definition, options.orderBy, true), limit, offset });
+    // One lowering budget covers the root where and every related aggregate domain.
+    const budget: LoweringBudget = { nodes: 0, bound: 0 };
+    const where = this.#predicate(options.where, budget);
+    let plan: ProjectedPlan | undefined;
+    if (options.aggregates !== undefined) {
+      const reserved = [...selectionFields(this.definition, options.select), ...Object.keys(options.include ?? {})];
+      plan = projectedAggregatesToModel(this.definition, options.aggregates, {
+        mapped: table => ops(this.#db).mapped(table), reserved,
+        where: (table, domain, shared, depth) => new Repository(this.#db, table).#predicate(domain, shared, depth),
+      }, budget);
+      // Like include keys, every root correlation key is fetched (hidden unless selected) so the strict row decoder
+      // validates its stored value before any aggregate built on it is exposed.
+      for (const model of plan.models) if (!fields.includes(model.path[0].localKey)) fields.push(model.path[0].localKey);
+    }
+    const model = queryModel.select({ table: mappedTableModel(this.definition), columns: fields, ...(where === undefined ? {} : { where }),
+      ...(plan === undefined ? {} : { aggregates: plan.models }), orderBy: orderToModel(this.definition, options.orderBy, true), limit, offset });
+    return plan === undefined ? { model, fields } : { model, fields, plan };
   }
-  compileSelect(options: FindOptions<Includes, Selection<T> | undefined> = {}): CompiledQuery {
-    return compileSqlite(this.#selectModel(options));
+  compileSelect(options: FindOptions<Includes, Selection<T> | undefined, RelatedAggregates> = {}): CompiledQuery {
+    return compileSqlite(this.#selectPlan(options).model);
   }
-  explain(options: FindOptions<Includes, Selection<T> | undefined> = {}): QueryPlan[] {
-    const query = compileSqlite(queryModel.explain({ query: this.#selectModel(options) }));
+  explain(options: FindOptions<Includes, Selection<T> | undefined, RelatedAggregates> = {}): QueryPlan[] {
+    const query = compileSqlite(queryModel.explain({ query: this.#selectPlan(options).model }));
     return ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name, true)
       .map(r => ({ id: Number(r.id), parent: Number(r.parent), detail: String(r.detail) }));
   }
-  findMany<I extends Includes = {}, const S extends Selection<T> | undefined = undefined>(options: FindOptions<I, S> = {}): WithIncludes<T, I, NoInfer<S>>[] {
-    const query = this.compileSelect(options);
-    const fields = this.#fetchFields(options.select, options.include);
-    const rows = ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name).map(row => this.#decodeRow(row, fields));
+  findMany<I extends Includes = {}, const S extends Selection<T> | undefined = undefined, const A extends RelatedAggregates = {}>(options: FindOptions<I, S, A> = {}): ProjectedRow<WithIncludes<T, I, NoInfer<S>>, A>[] {
+    const { model, fields, plan } = this.#selectPlan(options);
+    const query = compileSqlite(model);
+    const raw = ops(this.#db).all(query.sql, query.parameters, 'select', this.definition.name);
+    // The same-query storage guard covers every returned row; fail before decoding, loading includes or exposing rows.
+    if (plan) assertProjectedGuard(raw);
+    const rows = raw.map(row => this.#decodeRow(row, fields));
+    const projected = plan ? raw.map(row => decodeProjectedRow(plan, row)) : undefined;
     this.#loadIncludes(rows, options.include, { remaining: 10_000 }, 0);
     const budget = { remaining: 10_000 };
-    return rows.map(row => this.#materialize(row, options.include, options.select, budget)) as WithIncludes<T, I, S>[];
+    return rows.map((row, index) => {
+      const result = this.#materialize(row, options.include, options.select, budget);
+      if (projected) Object.assign(result, projected[index]);
+      return result;
+    }) as ProjectedRow<WithIncludes<T, I, S>, A>[];
   }
-  findFirst<I extends Includes = {}, const S extends Selection<T> | undefined = undefined>(options: FindOptions<I, S> = {}): WithIncludes<T, I, NoInfer<S>> | null {
-    assertOptions(options, ['where', 'orderBy', 'limit', 'offset', 'include', 'select']);
-    return this.findMany<I, S>({ ...options, limit: 1 })[0] ?? null;
+  findFirst<I extends Includes = {}, const S extends Selection<T> | undefined = undefined, const A extends RelatedAggregates = {}>(options: FindOptions<I, S, A> = {}): ProjectedRow<WithIncludes<T, I, NoInfer<S>>, A> | null {
+    assertOptions(options, ['where', 'orderBy', 'limit', 'offset', 'include', 'select', 'aggregates']);
+    return this.findMany<I, S, A>({ ...options, limit: 1 })[0] ?? null;
   }
   count(where?: Predicate): number {
     ops(this.#db).mapped(this.definition);

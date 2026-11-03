@@ -1,0 +1,610 @@
+{
+  "format": "rowstitch-projected-aggregate-comparison",
+  "version": 1,
+  "environment": {
+    "node": "v24.22.2",
+    "rowstitch": "0.7.0"
+  },
+  "reference": "orange-orm@5.5.1",
+  "scope": "Per-row related aggregates on two fixed SQLite fixtures; checks count parent results, not independently authored test cases. No speed or general superiority ranking.",
+  "limitations": [
+    "Empty NULL/zero/NaN results are reported separately. Numeric fixture totals stay within the safe integer range for the shared comparison.",
+    "The independent runtime tests cover exact large integers, invalid storage, collation and domain filters separately.",
+    "Root/group related aggregates, other engines, DISTINCT, HAVING and per-selector filters are outside this comparison."
+  ],
+  "fixtures": [
+    {
+      "name": "small",
+      "parents": 9,
+      "children": 33,
+      "lines": 49,
+      "payments": 13,
+      "sqlite": {
+        "raw": "3.53.4",
+        "orange": "3.53.4"
+      },
+      "cases": [
+        {
+          "name": "count children",
+          "passed": true,
+          "equalContract": 8,
+          "differences": [
+            {
+              "parent": 8,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",count(\"x1\".\"id\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "count nonnull",
+          "passed": true,
+          "equalContract": 8,
+          "differences": [
+            {
+              "parent": 8,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",count(\"x1\".\"amount\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "sum integers",
+          "passed": true,
+          "equalContract": 7,
+          "differences": [
+            {
+              "parent": 5,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",COALESCE(\"y0\".amount, 0) as \"value\" from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",sum(\"x1\".\"amount\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "average leaves",
+          "passed": true,
+          "equalContract": 7,
+          "differences": [
+            {
+              "parent": 5,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",COALESCE(\"y0\".amount, 0) as \"value\" from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",avg(\"x1\".\"score\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "minimum",
+          "passed": true,
+          "equalContract": 7,
+          "differences": [
+            {
+              "parent": 5,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",min(\"x1\".\"score\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "maximum",
+          "passed": true,
+          "equalContract": 7,
+          "differences": [
+            {
+              "parent": 5,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",max(\"x1\".\"score\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "nested count",
+          "passed": true,
+          "equalContract": 8,
+          "differences": [
+            {
+              "parent": 8,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",count(\"x2\".\"id\") as amount FROM \"cl\" \"x2\"  INNER JOIN \"cc\" \"x1\" ON (\"x2\".\"childId\"=\"x1\".\"id\") GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "nested average",
+          "passed": true,
+          "equalContract": 8,
+          "differences": [
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",COALESCE(\"y0\".amount, 0) as \"value\" from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",avg(\"x2\".\"score\") as amount FROM \"cl\" \"x2\"  INNER JOIN \"cc\" \"x1\" ON (\"x2\".\"childId\"=\"x1\".\"id\") GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "independent child totals; deliberate null/zero normalization",
+          "passed": true,
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",COALESCE(\"y0\".amount, 0) as \"a\",COALESCE(\"y1\".amount, 0) as \"b\" from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",sum(\"x1\".\"amount\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") LEFT JOIN (SELECT \"x1\".\"parentId\",sum(\"x1\".\"amount\") as amount FROM \"cm\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y1\" ON (\"cp\".\"id\"=\"y1\".\"parentId\") order by \"cp\".\"id\""
+        }
+      ]
+    },
+    {
+      "name": "uneven",
+      "parents": 23,
+      "children": 84,
+      "lines": 126,
+      "payments": 36,
+      "sqlite": {
+        "raw": "3.53.4",
+        "orange": "3.53.4"
+      },
+      "cases": [
+        {
+          "name": "count children",
+          "passed": true,
+          "equalContract": 21,
+          "differences": [
+            {
+              "parent": 8,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            },
+            {
+              "parent": 16,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",count(\"x1\".\"id\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "count nonnull",
+          "passed": true,
+          "equalContract": 21,
+          "differences": [
+            {
+              "parent": 8,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            },
+            {
+              "parent": 16,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",count(\"x1\".\"amount\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "sum integers",
+          "passed": true,
+          "equalContract": 15,
+          "differences": [
+            {
+              "parent": 5,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            },
+            {
+              "parent": 7,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            },
+            {
+              "parent": 10,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            },
+            {
+              "parent": 15,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            },
+            {
+              "parent": 16,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            },
+            {
+              "parent": 20,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            },
+            {
+              "parent": 23,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroSum"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",COALESCE(\"y0\".amount, 0) as \"value\" from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",sum(\"x1\".\"amount\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "average leaves",
+          "passed": true,
+          "equalContract": 15,
+          "differences": [
+            {
+              "parent": 5,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 7,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 10,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 15,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 16,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 20,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 23,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",COALESCE(\"y0\".amount, 0) as \"value\" from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",avg(\"x1\".\"score\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "minimum",
+          "passed": true,
+          "equalContract": 15,
+          "differences": [
+            {
+              "parent": 5,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 7,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 10,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 15,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 16,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 20,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 23,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",min(\"x1\".\"score\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "maximum",
+          "passed": true,
+          "equalContract": 15,
+          "differences": [
+            {
+              "parent": 5,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 7,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 10,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 15,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 16,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 20,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            },
+            {
+              "parent": 23,
+              "rowstitch": null,
+              "orange": "NaN",
+              "kind": "nullExtreme"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",max(\"x1\".\"score\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "nested count",
+          "passed": true,
+          "equalContract": 18,
+          "differences": [
+            {
+              "parent": 7,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            },
+            {
+              "parent": 8,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            },
+            {
+              "parent": 15,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            },
+            {
+              "parent": 16,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            },
+            {
+              "parent": 23,
+              "rowstitch": 0,
+              "orange": "NaN",
+              "kind": "emptyCount"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",\"y0\".amount as value from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",count(\"x2\".\"id\") as amount FROM \"cl\" \"x2\"  INNER JOIN \"cc\" \"x1\" ON (\"x2\".\"childId\"=\"x1\".\"id\") GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "nested average",
+          "passed": true,
+          "equalContract": 18,
+          "differences": [
+            {
+              "parent": 7,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 8,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 15,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 16,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            },
+            {
+              "parent": 23,
+              "rowstitch": null,
+              "orange": 0,
+              "kind": "zeroAverage"
+            }
+          ],
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",COALESCE(\"y0\".amount, 0) as \"value\" from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",avg(\"x2\".\"score\") as amount FROM \"cl\" \"x2\"  INNER JOIN \"cc\" \"x1\" ON (\"x2\".\"childId\"=\"x1\".\"id\") GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") order by \"cp\".\"id\""
+        },
+        {
+          "name": "independent child totals; deliberate null/zero normalization",
+          "passed": true,
+          "selects": {
+            "rowstitch": 1,
+            "orange": 1
+          },
+          "orangeSql": "select \"cp\".\"id\" as \"scp0\",\"cp\".\"label\" as \"scp1\",COALESCE(\"y0\".amount, 0) as \"a\",COALESCE(\"y1\".amount, 0) as \"b\" from \"cp\" \"cp\" LEFT JOIN (SELECT \"x1\".\"parentId\",sum(\"x1\".\"amount\") as amount FROM \"cc\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y0\" ON (\"cp\".\"id\"=\"y0\".\"parentId\") LEFT JOIN (SELECT \"x1\".\"parentId\",sum(\"x1\".\"amount\") as amount FROM \"cm\" \"x1\"  GROUP BY \"x1\".\"parentId\") \"y1\" ON (\"cp\".\"id\"=\"y1\".\"parentId\") order by \"cp\".\"id\""
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "equalContractChecks": 230,
+    "documentedDifferences": 58,
+    "rowstitchOracleChecks": 288,
+    "unexpectedFailures": 0,
+    "passed": 518,
+    "failed": 0,
+    "contractDifferences": 58
+  }
+}

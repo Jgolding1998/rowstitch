@@ -1,4 +1,5 @@
 import { fail } from './errors.js';
+import type { RelatedAggregates } from './aggregates.js';
 import { ColumnRef, encode, identifier, isColumnRef, isTable, plainRecord, type AnyTable, type Kind, type Parameter, type Row } from './schema.js';
 import { mappedTableModel } from './model-mapping.js';
 import { columnKindsCompatible, relationKindsCompatible, relationCountComparison, orderingModel, predicateModel, textMatchLiteral, textMatchOptions, type ColumnComparisonOperator, type ComparisonOperator, type OrderModel, type PredicateModel, type RelationQuantifier, type TextMatchCase, type TextMatchMode } from './query-model.js';
@@ -85,11 +86,13 @@ export const lteColumns: OrderedColumnComparison = (left, right) => columnCompar
 export interface CompiledQuery { sql: string; parameters: Parameter[] }
 export interface CompiledPredicate extends CompiledQuery { truth: true | false | null }
 /** Lower public helpers only after exact mapped-table identity validation. */
-export function predicateToModel(table: AnyTable, predicate?: Predicate, mapped?: (table: AnyTable) => void): PredicateModel | undefined {
+/** Public-lowering limits shared by every predicate scope of one query (root where and all related domains). */
+export interface LoweringBudget { nodes: number; bound: number }
+export function predicateToModel(table: AnyTable, predicate?: Predicate, mapped?: (table: AnyTable) => void,
+    budget: LoweringBudget = { nodes: 0, bound: 0 }, startRelationDepth = 0): PredicateModel | undefined {
   if (predicate === undefined) return undefined;
-  let count = 0, bound = 0;
-  function visit(p: Predicate, depth: number, scope: AnyTable = table, relationDepth = 0): PredicateModel {
-    if (!(p instanceof Predicate) || ++count > 100 || depth > 16) fail('QUERY', 'Predicates must be bounded expressions built with Rowstitch helpers.');
+  function visit(p: Predicate, depth: number, scope: AnyTable = table, relationDepth = startRelationDepth): PredicateModel {
+    if (!(p instanceof Predicate) || ++budget.nodes > 100 || depth > 16) fail('QUERY', 'Predicates must be bounded expressions built with Rowstitch helpers.');
     const n = p.node;
     if (n.kind === 'relation-filter' || n.kind === 'relation-count') {
       if (relationDepth >= 4) fail('QUERY', 'Relation filters support at most four nested relationships.');
@@ -102,7 +105,7 @@ export function predicateToModel(table: AnyTable, predicate?: Predicate, mapped?
         ...(where === undefined ? {} : { where: visit(where, depth + 1, relation.table, relationDepth + 1) }),
         ...(n.predicate === undefined ? {} : { predicate: visit(n.predicate, depth + 1, relation.table, relationDepth + 1) }) };
       if (n.kind === 'relation-count') {
-        bound++;
+        budget.bound++;
         return { ...base, kind: 'relation-count', ...relationCountComparison(n.operator, n.threshold) };
       }
       return { ...base, kind: 'relation-filter', quantifier: n.quantifier };
@@ -117,7 +120,7 @@ export function predicateToModel(table: AnyTable, predicate?: Predicate, mapped?
       const ref = n.ref;
       if (!isColumnRef(ref) || ref.table !== scope || !Object.hasOwn(scope.columns, ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
       checkRef(ref, ['text']);
-      bound += n.mode === 'ends-with' ? 3 : 1;
+      budget.bound += n.mode === 'ends-with' ? 3 : 1;
       return { kind: 'text-match', column: ref.name, mode: n.mode, case: n.case, literal: n.literal };
     }
     if (n.kind === 'comparison') {
@@ -127,7 +130,7 @@ export function predicateToModel(table: AnyTable, predicate?: Predicate, mapped?
       if (!['=', '<>', '>', '>=', '<', '<=', 'IN'].includes(n.operator)) fail('QUERY', 'The predicate operator is not supported.');
       if (n.operator !== 'IN' && n.values.length !== 1) fail('QUERY', 'A comparison requires one value.');
       if (n.operator !== 'IN' && n.values[0] === null && n.operator !== '=' && n.operator !== '<>') fail('QUERY', 'NULL only supports equality or inequality comparisons.');
-      bound += n.values.filter(v => v !== null).length;
+      budget.bound += n.values.filter(v => v !== null).length;
       return { kind: 'compare', column: ref.name, operator: n.operator as ComparisonOperator, values: [...n.values] };
     }
     if (n.kind === 'not') return { kind: 'not', child: visit(n.child, depth + 1, scope, relationDepth) };
@@ -135,8 +138,8 @@ export function predicateToModel(table: AnyTable, predicate?: Predicate, mapped?
     return { kind: 'logic', operator: n.operator, children: n.children.map(child => visit(child, depth + 1, scope, relationDepth)) };
   }
   const result = visit(predicate, 0);
-  if (bound > 10_000) fail('QUERY', 'A query has too many bound parameters.');
-  return predicateModel(mappedTableModel(table), result);
+  if (budget.bound > 10_000) fail('QUERY', 'A query has too many bound parameters.');
+  return predicateModel(mappedTableModel(table), result, undefined, startRelationDepth);
 }
 export function compilePredicate(table: AnyTable, predicate?: Predicate): CompiledPredicate {
   return compileSqlitePredicate(mappedTableModel(table), predicateToModel(table, predicate));
@@ -201,6 +204,10 @@ export type Includes = Record<string, ManyRelation<AnyTable, any, any> | Singula
 export type FilterRelation = ManyRelation<AnyTable, any, any> | SingularRelation<AnyTable, any, any>;
 export function isRelation(value: unknown): value is FilterRelation {
   return typeof value === 'object' && value !== null && relationDescriptors.has(value);
+}
+/** Snapshot of a genuine relation without loading-only options (shared by relation filters and projected aggregates). */
+export function filterRelationSnapshot(relation: unknown): { table: AnyTable; options: RelationOptions<Includes, readonly string[] | undefined> } {
+  return validateFilterRelation(relation as FilterRelation);
 }
 function validateFilterRelation(relation: FilterRelation): { table: AnyTable; options: RelationOptions<Includes, readonly string[] | undefined> } {
   if (!isRelation(relation) || !isTable(relation.table)) fail('QUERY', 'A relation filter needs a mapped Rowstitch relationship.');
@@ -297,11 +304,13 @@ export type WithIncludes<T extends AnyTable, I extends Includes, S extends reado
   [K in keyof I]: I[K] extends ManyRelation<infer Child, infer Nested, infer ChildSelect> ? WithIncludes<Child, Nested, ChildSelect>[]
     : I[K] extends SingularRelation<infer Child, infer Nested, infer ChildSelect> ? WithIncludes<Child, Nested, ChildSelect> | null : never
 };
-export interface FindOptions<I extends Includes = Includes, S extends readonly string[] | undefined = undefined> {
+export interface FindOptions<I extends Includes = Includes, S extends readonly string[] | undefined = undefined, A extends RelatedAggregates = {}> {
   where?: Predicate;
   orderBy?: readonly Ordering[];
   limit?: number;
   offset?: number;
   include?: I;
   select?: S;
+  /** Per-row related aggregates built with agg.related (findMany/findFirst only). */
+  aggregates?: A;
 }

@@ -1,8 +1,10 @@
 /** Pure SQLite rendering from validated structured plans. Never opens a connection. */
+import { fail } from './errors.js';
 import { identifier, literal, type Parameter } from './schema.js';
-import { compileSqliteAggregate } from './sqlite-aggregate.js';
-import { hasRelationFilter, normalizeQueryModel, orderingModel, predicateModel, predicateTruth, tableModel,
-  type ColumnDefinitionModel, type OrderModel, type PredicateModel, type QueryModel, type TableModel } from './query-model.js';
+import { compileSqliteAggregate, invalidInput } from './sqlite-aggregate.js';
+import { projectedLayout } from './projected-layout.js';
+import { MAX_BOUND_PARAMETERS, hasRelationFilter, normalizeQueryModel, orderingModel, predicateModel, predicateTruth, selectPhysicalParameters, tableModel,
+  type ColumnDefinitionModel, type OrderModel, type PredicateModel, type ProjectedAggregateModel, type QueryModel, type SelectModel, type TableModel } from './query-model.js';
 
 export interface CompiledQuery { sql: string; parameters: Parameter[] }
 export interface CompiledPredicate extends CompiledQuery { truth: true | false | null }
@@ -66,6 +68,60 @@ function renderPredicate(predicate?: PredicateModel, scope?: string, aliases = {
   return { sql: children.length ? '(' + children.map(c => c.sql).join(' ' + logical[predicate.operator] + ' ') + ')'
     : predicate.operator === 'AND' ? '1' : '0', parameters: children.flatMap(c => c.parameters) };
 }
+/**
+ * Correlated per-row aggregates. Each selector is its own scalar subquery over its whole join path (no cross-joining of
+ * independent selectors, no implicit DISTINCT). The related key is the left operand of every hop, so its column collation
+ * decides text matches, as in relation filters. MIN/MAX run inside the subquery directly over the leaf column, keeping
+ * that column's declared collation.
+ */
+function renderProjected(query: SelectModel, root: string, aliases: { next: number }): CompiledQuery {
+  const layout = projectedLayout(query.aggregates ?? []);
+  const selections: string[] = [], guards: string[] = [], parameters: Parameter[] = [];
+  for (const output of layout.outputs) {
+    const aggregate: ProjectedAggregateModel = output.aggregate;
+    // Each physical copy re-renders the path so every copy has its own fresh inner aliases and bound values.
+    const path = (): { from: string; where: string; parameters: Parameter[]; leaf: string; checked: string[] } => {
+      let scope = root, from = '', leaf = '';
+      const conditions: string[] = [], values: Parameter[] = [], checked: string[] = [];
+      aggregate.path.forEach((step, index) => {
+        const alias = '"__rs_filter_' + aliases.next++ + '"';
+        const join = alias + '.' + identifier(step.foreignKey) + ' = ' + scope + '.' + identifier(step.localKey);
+        if (index === 0) { from = identifier(step.table.name) + ' AS ' + alias; conditions.push(join); }
+        else from += ' JOIN ' + identifier(step.table.name) + ' AS ' + alias + ' ON ' + join;
+        const domain = renderPredicate(step.where, alias, aliases);
+        if (domain.sql) { conditions.push('(' + domain.sql + ')'); values.push(...domain.parameters); }
+        checked.push(invalidInput(step.table, step.foreignKey, alias + '.' + identifier(step.foreignKey)));
+        const next = aggregate.path[index + 1];
+        if (next) checked.push(invalidInput(step.table, next.localKey, alias + '.' + identifier(next.localKey)));
+        scope = alias; leaf = alias;
+      });
+      const table = aggregate.path[aggregate.path.length - 1].table;
+      if (aggregate.column !== undefined) checked.push(invalidInput(table, aggregate.column, leaf + '.' + identifier(aggregate.column)));
+      return { from, where: conditions.join(' AND '), parameters: values, leaf, checked };
+    };
+    const subquery = (expression: (leaf: string) => string): string => {
+      const rendered = path();
+      parameters.push(...rendered.parameters);
+      return '(SELECT ' + expression(rendered.leaf) + ' FROM ' + rendered.from + ' WHERE ' + rendered.where + ')';
+    };
+    const column = (leaf: string): string => leaf + '.' + identifier(aggregate.column!);
+    if (output.kind === 'integer-sum') {
+      selections.push(subquery(leaf => 'SUM((' + column(leaf) + ' >> 32)) + (SUM((' + column(leaf) + ' & 4294967295)) >> 32)') + ' AS "' + output.high + '"');
+      selections.push(subquery(leaf => '(SUM((' + column(leaf) + ' & 4294967295)) & 4294967295)') + ' AS "' + output.low + '"');
+    } else {
+      const leafKind = aggregate.path[aggregate.path.length - 1].table.kinds![aggregate.column ?? ''];
+      const expression = (leaf: string): string => aggregate.operation === 'count' ? (aggregate.column === undefined ? 'COUNT(*)' : 'COUNT(' + column(leaf) + ')')
+        : aggregate.operation === 'sum' && leafKind === 'real' ? 'SUM(CAST(' + column(leaf) + ' AS REAL))'
+        : { sum: 'SUM', avg: 'AVG', min: 'MIN', max: 'MAX' }[aggregate.operation] + '(' + column(leaf) + ')';
+      selections.push(subquery(expression) + ' AS "' + output.name + '"');
+    }
+    const rendered = path();
+    parameters.push(...rendered.parameters);
+    guards.push('EXISTS (SELECT 1 FROM ' + rendered.from + ' WHERE ' + rendered.where + ' AND (' + rendered.checked.join(' OR ') + '))');
+  }
+  selections.push('(CASE WHEN ' + guards.join(' OR ') + ' THEN 1 ELSE 0 END) AS "' + layout.guard + '"');
+  return { sql: selections.join(', '), parameters };
+}
 function renderOrder(order: readonly OrderModel[]): string {
   return order.length ? ' ORDER BY ' + order.map(value => identifier(value.column) + ' ' + directions[value.direction]).join(', ') : '';
 }
@@ -119,6 +175,20 @@ export function compileSqlite(input: QueryModel): CompiledQuery {
     parameters: [...query.values],
   };
   if (query.kind === 'aggregate' || query.kind === 'group') return compileSqliteAggregate(query, renderPredicate(query.where, table));
+  if (query.kind === 'select' && query.aggregates?.length) {
+    // Select-list subqueries precede WHERE in the statement text, so their values are bound first.
+    const aliases = { next: 0 };
+    const projected = renderProjected(query, table, aliases);
+    const where = renderPredicate(query.where, table, aliases);
+    const parameters = [...projected.parameters, ...where.parameters];
+    // The normalizer budgets physical copies; the rendered statement must agree exactly with that count.
+    if (parameters.length !== selectPhysicalParameters(query)) fail('QUERY', 'Generated related-aggregate bindings do not match the validated plan.');
+    if (parameters.length > MAX_BOUND_PARAMETERS) fail('QUERY', 'A query has too many bound parameters once repeated relation domains are counted.');
+    return {
+      sql: 'SELECT ' + query.columns.map(identifier).join(', ') + ', ' + projected.sql + ' FROM ' + table + (where.sql ? ' WHERE ' + where.sql : '') + renderOrder(query.orderBy) + ' LIMIT ? OFFSET ?',
+      parameters: [...parameters, query.limit, query.offset],
+    };
+  }
   const where = renderPredicate(query.where, hasRelationFilter(query.where) ? table : undefined);
   if (query.kind === 'count') return { sql: 'SELECT count(*) AS n FROM ' + table + (where.sql ? ' WHERE ' + where.sql : ''), parameters: where.parameters };
   if (query.kind === 'select') return {
