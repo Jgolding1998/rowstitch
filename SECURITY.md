@@ -6,6 +6,8 @@ Rowstitch is new software. Report a reproducible issue with the affected version
 
 SQL values are bound parameters. Model identifiers are validated and quoted; arbitrary raw SQL is not part of the public API. Missing or provably unrestricted write predicates are rejected. Affected-row checks and version checks run within the mutation transaction. Row limits refer to directly matched rows, not every change a trusted database trigger or foreign-key cascade can perform.
 
+Relation filters are read-only. Updates and deletes reject them, including inside logical expressions. Every target table must be registered on the connection, and related predicates share the expression limits (100 nodes, 16 levels and 10,000 bound values) with at most four nested relationships. These bounds do not guarantee a fast query: index foreign keys and inspect plans against realistic data. Genuine table definitions, relationship descriptors and validated option snapshots prevent forged objects from switching the checked target before compilation; they do not turn application JavaScript into an untrusted-code sandbox.
+
 Foreign keys and SQLite defensive mode are enabled; extension loading is disabled. WAL is not enabled automatically. Keep the supported Node runtime updated: npm audits do not assess every vulnerability in its embedded SQLite engine. Release checks record the Node and SQLite versions separately.
 
 Model definitions, application code, the chosen database path and existing schema are trusted inputs. This library is not a sandbox for hostile JavaScript, a substitute for application authorization or a promise that every existing database file is safe. A read-only schema report can still reveal names, constraints and default values.

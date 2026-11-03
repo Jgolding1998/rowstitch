@@ -1,6 +1,6 @@
 /** Pure SQLite rendering from validated structured plans. Never opens a connection. */
 import { identifier, literal, type Parameter } from './schema.js';
-import { normalizeQueryModel, orderingModel, predicateModel, predicateTruth, tableModel,
+import { hasRelationFilter, normalizeQueryModel, orderingModel, predicateModel, predicateTruth, tableModel,
   type ColumnDefinitionModel, type OrderModel, type PredicateModel, type QueryModel, type TableModel } from './query-model.js';
 
 export interface CompiledQuery { sql: string; parameters: Parameter[] }
@@ -10,13 +10,25 @@ const logical = { AND: 'AND', OR: 'OR' } as const;
 const directions = { ASC: 'ASC', DESC: 'DESC' } as const;
 const deleteActions = { cascade: 'CASCADE', restrict: 'RESTRICT', 'set null': 'SET NULL', 'no action': 'NO ACTION' } as const;
 
-function renderPredicate(predicate?: PredicateModel): CompiledQuery {
+function renderPredicate(predicate?: PredicateModel, scope?: string, aliases = { next: 0 }): CompiledQuery {
   if (predicate === undefined) return { sql: '', parameters: [] };
+  const field = (name: string): string => (scope ? scope + '.' : '') + identifier(name);
+  if (predicate.kind === 'relation-filter') {
+    // Reserved names are generated only here. User mappings cannot shadow them.
+    const alias = '"__rs_filter_' + aliases.next++ + '"';
+    const domain = renderPredicate(predicate.where, alias, aliases);
+    const test = renderPredicate(predicate.predicate, alias, aliases);
+    const join = alias + '.' + identifier(predicate.foreignKey) + ' = ' + field(predicate.localKey);
+    const condition = test.sql ? ' AND (' + test.sql + ')' + (predicate.quantifier === 'every' ? ' IS NOT TRUE' : '') : '';
+    const sql = (predicate.quantifier === 'some' ? '' : 'NOT ') + 'EXISTS (SELECT 1 FROM ' + identifier(predicate.table.name) + ' AS ' + alias
+      + ' WHERE ' + join + (domain.sql ? ' AND (' + domain.sql + ')' : '') + condition + ')';
+    return { sql, parameters: [...domain.parameters, ...test.parameters] };
+  }
   if (predicate.kind === 'column-compare') return {
-    sql: identifier(predicate.left) + ' ' + comparisons[predicate.operator] + ' ' + identifier(predicate.right), parameters: [],
+    sql: field(predicate.left) + ' ' + comparisons[predicate.operator] + ' ' + field(predicate.right), parameters: [],
   };
   if (predicate.kind === 'text-match') {
-    const column = identifier(predicate.column);
+    const column = field(predicate.column);
     const fold = (sql: string): string => predicate.case === 'ascii-insensitive' ? 'lower(' + sql + ')' : sql;
     const expression = fold(column), value = fold('?');
     if (predicate.mode !== 'ends-with') return {
@@ -28,7 +40,7 @@ function renderPredicate(predicate?: PredicateModel): CompiledQuery {
       + ' = ' + bytes(value) + ')', parameters: [predicate.literal, predicate.literal, predicate.literal] };
   }
   if (predicate.kind === 'compare') {
-    const column = identifier(predicate.column);
+    const column = field(predicate.column);
     if (predicate.operator === 'IN') {
       if (!predicate.values.length) return { sql: '0', parameters: [] };
       const parameters = predicate.values.filter(value => value !== null);
@@ -41,10 +53,10 @@ function renderPredicate(predicate?: PredicateModel): CompiledQuery {
     return { sql: column + ' ' + comparisons[predicate.operator] + ' ?', parameters: [predicate.values[0]] };
   }
   if (predicate.kind === 'not') {
-    const child = renderPredicate(predicate.child);
+    const child = renderPredicate(predicate.child, scope, aliases);
     return { sql: 'NOT (' + child.sql + ')', parameters: child.parameters };
   }
-  const children = predicate.children.map(renderPredicate);
+  const children = predicate.children.map(child => renderPredicate(child, scope, aliases));
   return { sql: children.length ? '(' + children.map(c => c.sql).join(' ' + logical[predicate.operator] + ' ') + ')'
     : predicate.operator === 'AND' ? '1' : '0', parameters: children.flatMap(c => c.parameters) };
 }
@@ -69,7 +81,7 @@ function renderColumn(column: ColumnDefinitionModel): string {
 export function compileSqlitePredicate(tableInput: TableModel, predicate?: PredicateModel): CompiledPredicate {
   const table = tableModel(tableInput);
   const validated = predicate === undefined ? undefined : predicateModel(table, predicate);
-  return { ...renderPredicate(validated), truth: predicateTruth(validated) };
+  return { ...renderPredicate(validated, hasRelationFilter(validated) ? identifier(table.name) : undefined), truth: predicateTruth(validated) };
 }
 export function compileSqliteOrder(tableInput: TableModel, order: readonly OrderModel[]): string {
   const table = tableModel(tableInput);
@@ -100,7 +112,7 @@ export function compileSqlite(input: QueryModel): CompiledQuery {
     sql: 'INSERT INTO ' + table + (query.columns.length ? ' (' + query.columns.map(identifier).join(', ') + ') VALUES (' + query.columns.map(() => '?').join(', ') + ')' : ' DEFAULT VALUES') + ' RETURNING *',
     parameters: [...query.values],
   };
-  const where = renderPredicate(query.where);
+  const where = renderPredicate(query.where, hasRelationFilter(query.where) ? table : undefined);
   if (query.kind === 'count') return { sql: 'SELECT count(*) AS n FROM ' + table + (where.sql ? ' WHERE ' + where.sql : ''), parameters: where.parameters };
   if (query.kind === 'select') return {
     sql: 'SELECT ' + query.columns.map(identifier).join(', ') + ' FROM ' + table + (where.sql ? ' WHERE ' + where.sql : '') + renderOrder(query.orderBy) + ' LIMIT ? OFFSET ?',

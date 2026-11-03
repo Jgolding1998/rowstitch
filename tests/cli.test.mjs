@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const cli = join(root, 'dist', 'cli.js');
+const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 const run = args => spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: 'utf8', timeout: 10000 });
 const cleanup = directory => {
   assert.equal(resolve(dirname(directory)), resolve(tmpdir()));
@@ -20,7 +21,7 @@ test('CLI help and version work without starting the inspector', () => {
   for (const args of [[], ['--help'], ['--version']]) {
     const result = run(args);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /0\.3\.1/);
+    assert.equal(result.stdout.trim().split('\n')[0], args[0] === '--version' ? version : 'Rowstitch ' + version);
     assert.doesNotMatch(result.stdout, /http:\/\/127\.0\.0\.1:/);
   }
 });

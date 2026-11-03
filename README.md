@@ -13,7 +13,7 @@ Use the library inside a Node app, such as a small inventory tool or a backend t
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.3.1/rowstitch-0.3.1.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.4.0/rowstitch-0.4.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -35,7 +35,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.3.1/rowstitch-0.3.1.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.4.0/rowstitch-0.4.0.tgz
 ```
 
 ```ts
@@ -70,6 +70,37 @@ Use `hasMany` for a list, `hasOne` for a single owned record, and `belongsTo` to
 Literal selection tuples infer exactly those fields. When the selection is a dynamic array or a tuple slot can name different fields, TypeScript marks uncertain fields optional. Check those fields before using them; a field listed in the array's type is not necessarily present in its value.
 
 Text-key relationships retain SQLite's comparison rules, including existing `NOCASE` and `RTRIM` collations. Matching and per-parent pagination happen in SQL; hidden correlation keys are removed from returned records. One child can match multiple parent keys under a collation, and each returned match counts toward the related-row limits.
+
+## Filter by related records
+
+`some`, `none` and `every` filter rows by their related records without loading them. They reuse a `hasMany`, `hasOne` or `belongsTo` descriptor and compile to a correlated `EXISTS` subquery:
+
+```ts
+import { and, eq, every, hasMany, none, some } from 'rowstitch';
+
+const openTasks = hasMany(tasks, {
+  localKey: projects.col('id'), foreignKey: tasks.col('projectId'),
+  where: eq(tasks.col('archived'), false),
+});
+
+const active = db.table(projects).findMany({ where: some(openTasks) });
+const idle = db.table(projects).count(none(openTasks));
+const finished = db.table(projects).findMany({
+  where: and(some(openTasks), every(openTasks, eq(tasks.col('done'), true))),
+});
+```
+
+- `some(relation, test?)` is true when at least one related row passes `test`. Without a test it means "has a related row".
+- `none(relation, test?)` is exactly `not(some(relation, test))`.
+- `every(relation, test)` requires a test. A related row must make it TRUE; a NULL (unknown) result counts as a failure. A row with **no** related rows passes `every`, including a row whose local key is NULL. Combine it with `some(relation)` when at least one related row is required, as above.
+
+The descriptor's `where` defines which related rows are considered. Descriptor options that only make sense for loading (`orderBy`, `limit`, `offset`, `include`, `select`) are rejected rather than ignored. Test predicates must reference the related table. Filters can be nested up to four relationships deep and combined with `and`, `or` and `not`; they work in `findMany`, `findFirst`, `count`, `compileSelect`, `explain` and in a relation's own `where`.
+
+On a `hasOne` or `belongsTo` descriptor, `some` and `none` only check existence; they do not detect several matching rows. Loading the same descriptor with `include` still raises `RELATION_CARDINALITY` for duplicates.
+
+Relation filters are read-only for now. `update` and `delete` refuse them with `UNSAFE_WRITE`. If you need a read-then-write operation, select explicit keys and perform the key-filtered write with `maxRows` inside the same synchronous transaction. Every table used by a filter must be registered with `openDatabase`. Keys must be integer/bigint or text/text pairs; text keys follow the related column's collation, the same rule eager loading uses.
+
+These subqueries can require a lookup for each parent row, so index the related key. `ensureSchema()` creates an index for a column declared with `.references(...)`. A relation descriptor alone does not create one, so add your own index for relations on undeclared keys, then check `explain()`. Try the complete [relation-filter example](examples/relation-filters.mjs), or reproduce the [Orange comparison](benchmarks/README.md#relation-predicates).
 
 ## Search text and ranges
 

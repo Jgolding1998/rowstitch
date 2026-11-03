@@ -1,9 +1,11 @@
 /** Mapping-to-plan translation; no SQL construction or driver operations. */
-import { type AnyTable, type Columns } from './schema.js';
+import { isTable, type AnyTable, type Columns } from './schema.js';
+import { fail } from './errors.js';
 import { queryModel, tableModel, type CreateTableModel, type TableModel } from './query-model.js';
 
 const mappedTables = new WeakMap<AnyTable, TableModel>();
 export function mappedTableModel(table: AnyTable): TableModel {
+  if (!isTable(table)) fail('SCHEMA', 'A query model requires a genuine mapped table.');
   let model = mappedTables.get(table);
   if (!model) {
     const columns = Object.entries(table.columns as Columns);

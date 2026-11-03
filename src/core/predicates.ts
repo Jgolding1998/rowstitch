@@ -1,10 +1,11 @@
 import { fail } from './errors.js';
-import { ColumnRef, Table, encode, identifier, isColumnRef, plainRecord, type AnyTable, type Kind, type Parameter, type Row } from './schema.js';
+import { ColumnRef, encode, identifier, isColumnRef, isTable, plainRecord, type AnyTable, type Kind, type Parameter, type Row } from './schema.js';
 import { mappedTableModel } from './model-mapping.js';
-import { columnKindsCompatible, orderingModel, predicateModel, textMatchLiteral, textMatchOptions, type ColumnComparisonOperator, type ComparisonOperator, type OrderModel, type PredicateModel, type TextMatchCase, type TextMatchMode } from './query-model.js';
+import { columnKindsCompatible, relationKindsCompatible, orderingModel, predicateModel, textMatchLiteral, textMatchOptions, type ColumnComparisonOperator, type ComparisonOperator, type OrderModel, type PredicateModel, type RelationQuantifier, type TextMatchCase, type TextMatchMode } from './query-model.js';
 import { compileSqliteOrder, compileSqlitePredicate } from './sqlite-compiler.js';
 
 type Node = { kind: 'column-compare'; left: ColumnRef; right: ColumnRef; operator: ColumnComparisonOperator }
+  | { kind: 'relation-filter'; relation: FilterRelation; quantifier: RelationQuantifier; predicate?: Predicate }
   | { kind: 'text-match'; ref: ColumnRef; mode: TextMatchMode; case: TextMatchCase; literal: string }
   | { kind: 'comparison'; ref: ColumnRef; operator: string; values: readonly Parameter[] }
   | { kind: 'logic'; operator: 'AND' | 'OR'; children: readonly Predicate[] }
@@ -40,7 +41,7 @@ export interface TextMatchOptions { case?: TextMatchCase }
 type TextRef = ColumnRef<string | null, 'text'>;
 type RangeKind = Extract<Kind, 'integer' | 'bigint' | 'real' | 'text'>;
 function checkRef(ref: ColumnRef, allowed: readonly Kind[]): void {
-  if (!isColumnRef(ref) || !(ref.table instanceof Table) || typeof ref.name !== 'string' || !Object.hasOwn(ref.table.columns, ref.name)
+  if (!isColumnRef(ref) || !isTable(ref.table) || typeof ref.name !== 'string' || !Object.hasOwn(ref.table.columns, ref.name)
       || !allowed.includes(ref.table.columns[ref.name].config.kind)) fail('QUERY', 'This predicate requires a mapped column of a supported scalar kind.');
 }
 function textMatch(ref: TextRef, literal: string, options: TextMatchOptions | undefined, mode: TextMatchMode): Predicate {
@@ -83,28 +84,39 @@ export const lteColumns: OrderedColumnComparison = (left, right) => columnCompar
 export interface CompiledQuery { sql: string; parameters: Parameter[] }
 export interface CompiledPredicate extends CompiledQuery { truth: true | false | null }
 /** Lower public helpers only after exact mapped-table identity validation. */
-export function predicateToModel(table: AnyTable, predicate?: Predicate): PredicateModel | undefined {
+export function predicateToModel(table: AnyTable, predicate?: Predicate, mapped?: (table: AnyTable) => void): PredicateModel | undefined {
   if (predicate === undefined) return undefined;
   let count = 0, bound = 0;
-  function visit(p: Predicate, depth: number): PredicateModel {
+  function visit(p: Predicate, depth: number, scope: AnyTable = table, relationDepth = 0): PredicateModel {
     if (!(p instanceof Predicate) || ++count > 100 || depth > 16) fail('QUERY', 'Predicates must be bounded expressions built with Rowstitch helpers.');
     const n = p.node;
+    if (n.kind === 'relation-filter') {
+      if (relationDepth >= 4) fail('QUERY', 'Relation filters support at most four nested relationships.');
+      const relation = validateFilterRelation(n.relation);
+      if (!['some', 'none', 'every'].includes(n.quantifier) || n.quantifier === 'every' && n.predicate === undefined) fail('QUERY', 'A relation filter needs a supported quantifier and every requires a predicate.');
+      const { localKey, foreignKey, where } = relation.options;
+      if (localKey.table !== scope) fail('QUERY', 'A relation filter local key must reference the current table.');
+      mapped?.(relation.table);
+      return { kind: 'relation-filter', quantifier: n.quantifier, table: mappedTableModel(relation.table), localKey: localKey.name, foreignKey: foreignKey.name,
+        ...(where === undefined ? {} : { where: visit(where, depth + 1, relation.table, relationDepth + 1) }),
+        ...(n.predicate === undefined ? {} : { predicate: visit(n.predicate, depth + 1, relation.table, relationDepth + 1) }) };
+    }
     if (n.kind === 'column-compare') {
       const left = n.left, right = n.right, operator = n.operator;
       validateColumnRefs(left, right, operator);
-      if (left.table !== table || right.table !== table) fail('QUERY', 'A predicate must reference the queried table.');
+      if (left.table !== scope || right.table !== scope) fail('QUERY', 'A predicate must reference the queried table.');
       return { kind: 'column-compare', left: left.name, right: right.name, operator };
     }
     if (n.kind === 'text-match') {
       const ref = n.ref;
-      if (!isColumnRef(ref) || ref.table !== table || !Object.hasOwn(table.columns, ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
+      if (!isColumnRef(ref) || ref.table !== scope || !Object.hasOwn(scope.columns, ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
       checkRef(ref, ['text']);
       bound += n.mode === 'ends-with' ? 3 : 1;
       return { kind: 'text-match', column: ref.name, mode: n.mode, case: n.case, literal: n.literal };
     }
     if (n.kind === 'comparison') {
       const ref = n.ref;
-      if (!isColumnRef(ref) || ref.table !== table || !Object.hasOwn(table.columns, ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
+      if (!isColumnRef(ref) || ref.table !== scope || !Object.hasOwn(scope.columns, ref.name)) fail('QUERY', 'A predicate must reference the queried table.');
       identifier(ref.name);
       if (!['=', '<>', '>', '>=', '<', '<=', 'IN'].includes(n.operator)) fail('QUERY', 'The predicate operator is not supported.');
       if (n.operator !== 'IN' && n.values.length !== 1) fail('QUERY', 'A comparison requires one value.');
@@ -112,9 +124,9 @@ export function predicateToModel(table: AnyTable, predicate?: Predicate): Predic
       bound += n.values.filter(v => v !== null).length;
       return { kind: 'compare', column: ref.name, operator: n.operator as ComparisonOperator, values: [...n.values] };
     }
-    if (n.kind === 'not') return { kind: 'not', child: visit(n.child, depth + 1) };
+    if (n.kind === 'not') return { kind: 'not', child: visit(n.child, depth + 1, scope, relationDepth) };
     if (n.kind !== 'logic' || !['AND', 'OR'].includes(n.operator) || !Array.isArray(n.children)) fail('QUERY', 'The predicate expression is not supported.');
-    return { kind: 'logic', operator: n.operator, children: n.children.map(child => visit(child, depth + 1)) };
+    return { kind: 'logic', operator: n.operator, children: n.children.map(child => visit(child, depth + 1, scope, relationDepth)) };
   }
   const result = visit(predicate, 0);
   if (bound > 10_000) fail('QUERY', 'A query has too many bound parameters.');
@@ -168,17 +180,55 @@ export interface RelationOptions<I extends Includes = Includes, S extends readon
   select?: S;
 }
 export type SingularOptions<I extends Includes = Includes, S extends readonly string[] | undefined = undefined> = Omit<RelationOptions<I, S>, 'limit' | 'offset'>;
+const relationDescriptors = new WeakSet<object>();
 export class ManyRelation<T extends AnyTable = AnyTable, I extends Includes = {}, S extends readonly string[] | undefined = undefined> {
   readonly kind = 'many';
-  constructor(public readonly table: T, public readonly options: Readonly<RelationOptions<I, S>>) { Object.freeze(this); }
+  constructor(public readonly table: T, public readonly options: Readonly<RelationOptions<I, S>>) { relationDescriptors.add(this); Object.freeze(this); }
 }
 export class SingularRelation<T extends AnyTable = AnyTable, I extends Includes = {}, S extends readonly string[] | undefined = undefined> {
   readonly kind = 'one';
-  constructor(public readonly table: T, public readonly options: Readonly<SingularOptions<I, S>>, public readonly direction: 'hasOne' | 'belongsTo') { Object.freeze(this); }
+  constructor(public readonly table: T, public readonly options: Readonly<SingularOptions<I, S>>, public readonly direction: 'hasOne' | 'belongsTo') { relationDescriptors.add(this); Object.freeze(this); }
 }
 export type Includes = Record<string, ManyRelation<AnyTable, any, any> | SingularRelation<AnyTable, any, any>>;
 
+/** Filtering reuses unpaginated relations; eager-only options must not change the set silently. */
+export type FilterRelation = ManyRelation<AnyTable, any, any> | SingularRelation<AnyTable, any, any>;
+export function isRelation(value: unknown): value is FilterRelation {
+  return typeof value === 'object' && value !== null && relationDescriptors.has(value);
+}
+function validateFilterRelation(relation: FilterRelation): { table: AnyTable; options: RelationOptions<Includes, readonly string[] | undefined> } {
+  if (!isRelation(relation) || !isTable(relation.table)) fail('QUERY', 'A relation filter needs a mapped Rowstitch relationship.');
+  const table = relation.table, input = relation.options;
+  plainRecord(input);
+  const descriptors = Object.getOwnPropertyDescriptors(input);
+  const snapshot: Record<string, unknown> = Object.create(null);
+  for (const key of Reflect.ownKeys(descriptors)) {
+    const descriptor = (descriptors as Record<PropertyKey, PropertyDescriptor>)[key];
+    if (typeof key !== 'string' || !('value' in descriptor)) fail('QUERY', 'A relation filter needs plain options without accessors.');
+    snapshot[key] = descriptor.value;
+  }
+  assertOptions(snapshot, ['localKey', 'foreignKey', 'where', 'orderBy', 'limit', 'offset', 'include', 'select']);
+  const options = snapshot as unknown as RelationOptions<Includes, readonly string[] | undefined>;
+  for (const option of ['orderBy', 'limit', 'offset', 'include', 'select'] as const) {
+    if (options[option] !== undefined) fail('QUERY', 'Relation filters do not accept ordering, pagination, includes or selected columns. Use an unpaginated relation.');
+  }
+  const { localKey, foreignKey } = options;
+  if (!isColumnRef(localKey) || !isColumnRef(foreignKey) || foreignKey.table !== table
+      || !relationKindsCompatible(localKey.table.columns[localKey.name].config.kind, table.columns[foreignKey.name].config.kind)) fail('QUERY', 'Relation filters require compatible mapped integer, bigint or text keys.');
+  return { table, options };
+}
+function relationFilter(quantifier: RelationQuantifier, relation: FilterRelation, predicate?: Predicate): Predicate {
+  validateFilterRelation(relation);
+  if (predicate !== undefined && !(predicate instanceof Predicate) || quantifier === 'every' && predicate === undefined) fail('QUERY', 'Every requires a predicate for the related rows.');
+  return new Predicate({ kind: 'relation-filter', quantifier, relation, ...(predicate === undefined ? {} : { predicate }) });
+}
+export const some = (relation: FilterRelation, predicate?: Predicate): Predicate => relationFilter('some', relation, predicate);
+export const none = (relation: FilterRelation, predicate?: Predicate): Predicate => relationFilter('none', relation, predicate);
+/** Empty domains pass; a related row must evaluate to TRUE, not NULL, to pass. */
+export const every = (relation: FilterRelation, predicate: Predicate): Predicate => relationFilter('every', relation, predicate);
+
 export function validateRelation(table: AnyTable, options: RelationOptions<Includes, readonly string[] | undefined>, singular: boolean): void {
+  if (!isTable(table)) fail('QUERY', 'A relation requires a genuine mapped target table.');
   assertOptions(options, ['localKey', 'foreignKey', 'where', 'orderBy', 'include', 'select', ...(singular ? [] : ['limit', 'offset'])]);
   const localKey = options?.localKey, foreignKey = options?.foreignKey;
   if (!isColumnRef(localKey) || !isColumnRef(foreignKey)

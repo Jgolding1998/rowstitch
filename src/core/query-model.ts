@@ -13,7 +13,10 @@ export type ComparisonOperator = '=' | '<>' | '>' | '>=' | '<' | '<=' | 'IN';
 export type ColumnComparisonOperator = Exclude<ComparisonOperator, 'IN'>;
 export type TextMatchMode = 'contains' | 'starts-with' | 'ends-with';
 export type TextMatchCase = 'sensitive' | 'ascii-insensitive';
+export type RelationQuantifier = 'some' | 'none' | 'every';
 export type PredicateModel =
+  | { readonly kind: 'relation-filter'; readonly quantifier: RelationQuantifier; readonly table: TableModel;
+      readonly localKey: string; readonly foreignKey: string; readonly where?: PredicateModel; readonly predicate?: PredicateModel }
   | { readonly kind: 'column-compare'; readonly left: string; readonly right: string; readonly operator: ColumnComparisonOperator }
   | { readonly kind: 'text-match'; readonly column: string; readonly mode: TextMatchMode; readonly case: TextMatchCase; readonly literal: string }
   | { readonly kind: 'compare'; readonly column: string; readonly operator: ComparisonOperator; readonly values: readonly Parameter[] }
@@ -142,20 +145,37 @@ export function columnKindsCompatible(left: Kind, right: Kind, operator: ColumnC
     || left === 'boolean' && right === 'boolean' && (operator === '=' || operator === '<>');
 }
 
+/** Relationship equality follows the foreign column's native SQLite collation. */
+export function relationKindsCompatible(left: Kind, right: Kind): boolean {
+  return ['integer', 'bigint'].includes(left) && ['integer', 'bigint'].includes(right) || left === 'text' && right === 'text';
+}
+
 export function predicateModel(tableInput: TableModel, input: PredicateModel): PredicateModel {
   const table = tableModel(tableInput);
   let nodes = 0, parameters = 0;
-  function visit(source: unknown, depth: number): PredicateModel {
+  function visit(source: unknown, depth: number, scope: TableModel = table, relationDepth = 0): PredicateModel {
     if (++nodes > 100 || depth > 16) fail('QUERY', 'Predicates exceed their node or depth limit.');
-    const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child', 'mode', 'case', 'literal', 'left', 'right']);
+    const node = record(source, ['kind', 'column', 'operator', 'values', 'children', 'child', 'mode', 'case', 'literal', 'left', 'right', 'quantifier', 'table', 'localKey', 'foreignKey', 'where', 'predicate']);
+    if (node.kind === 'relation-filter') {
+      if (relationDepth >= 4) fail('QUERY', 'Relation filters support at most four nested relationships.');
+      record(node, ['kind', 'quantifier', 'table', 'localKey', 'foreignKey', 'where', 'predicate']);
+      if (node.quantifier !== 'some' && node.quantifier !== 'none' && node.quantifier !== 'every') fail('QUERY', 'The relation quantifier is not supported.');
+      const target = tableModel(node.table as TableModel);
+      const localKey = field(scope, node.localKey), foreignKey = field(target, node.foreignKey);
+      if (!scope.kinds || !target.kinds || !relationKindsCompatible(scope.kinds[localKey], target.kinds[foreignKey])) fail('QUERY', 'Relation filters require compatible integer, bigint or text keys.');
+      if (node.quantifier === 'every' && node.predicate === undefined) fail('QUERY', 'Every requires a predicate for the related rows.');
+      return Object.freeze({ kind: 'relation-filter', quantifier: node.quantifier, table: target, localKey, foreignKey,
+        ...(node.where === undefined ? {} : { where: visit(node.where, depth + 1, target, relationDepth + 1) }),
+        ...(node.predicate === undefined ? {} : { predicate: visit(node.predicate, depth + 1, target, relationDepth + 1) }) });
+    }
     if (node.kind === 'column-compare') {
       record(node, ['kind', 'left', 'right', 'operator']);
       if (typeof node.operator !== 'string' || !['=', '<>', '>', '>=', '<', '<='].includes(node.operator)) fail('QUERY', 'The column comparison operator is not supported.');
-      const left = field(table, node.left), right = field(table, node.right);
+      const left = field(scope, node.left), right = field(scope, node.right);
       if (left === right) fail('QUERY', 'Compare two distinct mapped columns. Use an explicit NULL predicate for a self check.');
-      if (!table.kinds) fail('QUERY', 'Column comparisons require mapped column kind metadata.');
+      if (!scope.kinds) fail('QUERY', 'Column comparisons require mapped column kind metadata.');
       const operator = node.operator as ColumnComparisonOperator;
-      if (!columnKindsCompatible(table.kinds[left], table.kinds[right], operator)) fail('QUERY', 'Column comparison operands must have compatible scalar kinds.');
+      if (!columnKindsCompatible(scope.kinds[left], scope.kinds[right], operator)) fail('QUERY', 'Column comparison operands must have compatible scalar kinds.');
       return Object.freeze({ kind: 'column-compare', left, right, operator });
     }
     if (node.kind === 'text-match') {
@@ -166,7 +186,7 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
       const literal = textMatchLiteral(node.literal);
       parameters += node.mode === 'ends-with' ? 3 : 1;
       if (parameters > 10_000) fail('QUERY', 'Predicate parameters exceed their supported length.');
-      return Object.freeze({ kind: 'text-match', column: field(table, node.column), mode: node.mode, case: matchCase, literal });
+      return Object.freeze({ kind: 'text-match', column: field(scope, node.column), mode: node.mode, case: matchCase, literal });
     }
     if (node.kind === 'compare') {
       record(node, ['kind', 'column', 'operator', 'values']);
@@ -175,17 +195,17 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
       parameters += values.filter(value => value !== null).length;
       if (parameters > 10_000 || node.operator !== 'IN' && values.length !== 1) fail('QUERY', 'Predicate parameters exceed their supported length.');
       if (values[0] === null && !['=', '<>', 'IN'].includes(node.operator)) fail('QUERY', 'NULL only supports equality or inequality comparisons.');
-      return Object.freeze({ kind: 'compare', column: field(table, node.column), operator: node.operator as ComparisonOperator, values: Object.freeze(values) });
+      return Object.freeze({ kind: 'compare', column: field(scope, node.column), operator: node.operator as ComparisonOperator, values: Object.freeze(values) });
     }
     if (node.kind === 'logic') {
       record(node, ['kind', 'operator', 'children']);
       if (node.operator !== 'AND' && node.operator !== 'OR') fail('QUERY', 'The logical operator is not supported.');
-      const children = list(node.children, 100).map(child => visit(child, depth + 1));
+      const children = list(node.children, 100).map(child => visit(child, depth + 1, scope, relationDepth));
       return Object.freeze({ kind: 'logic', operator: node.operator, children: Object.freeze(children) });
     }
     if (node.kind === 'not') {
       record(node, ['kind', 'child']);
-      return Object.freeze({ kind: 'not', child: visit(node.child, depth + 1) });
+      return Object.freeze({ kind: 'not', child: visit(node.child, depth + 1, scope, relationDepth) });
     }
     return fail('QUERY', 'The predicate model kind is not supported.');
   }
@@ -193,6 +213,11 @@ export function predicateModel(tableInput: TableModel, input: PredicateModel): P
 }
 export function predicateTruth(predicate?: PredicateModel): true | false | null {
   if (predicate === undefined) return true;
+  if (predicate.kind === 'relation-filter') {
+    const domain = predicateTruth(predicate.where), test = predicateTruth(predicate.predicate);
+    if (predicate.quantifier === 'every') return domain === false || test === true ? true : null;
+    return domain === false || test === false ? predicate.quantifier === 'none' : null;
+  }
   if (predicate.kind === 'text-match' || predicate.kind === 'column-compare') return null;
   if (predicate.kind === 'compare') return predicate.operator === 'IN' && predicate.values.length === 0 ? false : null;
   if (predicate.kind === 'not') {
@@ -203,6 +228,12 @@ export function predicateTruth(predicate?: PredicateModel): true | false | null 
   return predicate.operator === 'AND'
     ? children.some(v => v === false) ? false : children.every(v => v === true) ? true : null
     : children.some(v => v === true) ? true : children.every(v => v === false) ? false : null;
+}
+export function hasRelationFilter(predicate?: PredicateModel): boolean {
+  if (predicate === undefined) return false;
+  if (predicate.kind === 'relation-filter') return true;
+  if (predicate.kind === 'not') return hasRelationFilter(predicate.child);
+  return predicate.kind === 'logic' && predicate.children.some(hasRelationFilter);
 }
 export function orderingModel(tableInput: TableModel, input: readonly OrderModel[]): readonly OrderModel[] {
   const table = tableModel(tableInput);
@@ -219,6 +250,7 @@ function optionalWhere(table: TableModel, value: unknown): { where?: PredicateMo
 function guardedWhere(table: TableModel, value: unknown): PredicateModel {
   if (value === undefined) fail('UNSAFE_WRITE', 'Updates and deletes require a meaningful filter.');
   const where = predicateModel(table, value as PredicateModel);
+  if (hasRelationFilter(where)) fail('UNSAFE_WRITE', 'Relation filters currently support reads only. Use explicit key filters for guarded writes.');
   if (predicateTruth(where) === true) fail('UNSAFE_WRITE', 'Updates and deletes require a meaningful filter.');
   return where;
 }

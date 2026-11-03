@@ -59,10 +59,30 @@ node benchmarks/columns.mjs --reference-dir /path/to/reference-directory --outpu
 
 Without references, 216 Rowstitch/raw-SQL checks run. Native NOCASE, BINARY and RTRIM behavior remains observable, including the effect of reversing operands. Schema inspection currently does not report or certify these collations. Orange and Kysely already support column operands with broader SQL and relationship contracts; Rowstitch's narrower helpers are not evidence of a defect in either tool.
 
-To check all three local fixture sets without installing reference libraries:
+To check all four local fixture sets without installing reference libraries:
 
 ```sh
 node benchmarks/check.mjs
 ```
 
 This command fails if any exercised case fails. CI runs it alongside the runtime and type tests on Linux, Windows and macOS. These are correctness checks, not a representative performance or production workload benchmark.
+
+## Relation predicates
+
+The [relation comparison](relations-results.json) checks `some`, `none` and `every` with empty relations, nullable values, nested child scopes, a filtered relation domain and bound text containing SQL punctuation. It runs 42 checks against Rowstitch and raw SQLite without reference packages, or 64 checks with Orange 5.5.1. The JavaScript expectations are calculated independently of the ORM queries.
+
+```sh
+node benchmarks/relations.mjs
+node benchmarks/relations.mjs --reference-dir /path/to/reference-directory --output /path/to/relations-results.json
+```
+
+The optional `--entry /path/to/installed/rowstitch/dist/index.js` flag selects a built installed package. The local relation checks are also included in `node benchmarks/check.mjs`; a failed assertion makes the command fail. No reference package becomes a Rowstitch dependency.
+
+The larger fixture has 5,000 parents and 20,000 children, with an index on `(parent_id, score)`. For the three tested predicates, Rowstitch and Orange each use one SELECT and an indexed child lookup. The reports include actual SQL and query plans. This demonstrates correct indexed queries on this fixture, without making a latency or general performance claim.
+
+Measured contract differences remain explicit:
+
+- Rowstitch `every` includes empty relations and treats a NULL predicate result as a failure. Orange's native `all` requires at least one matching child, and its negated test does not treat NULL as a failing child. For example, `[1, NULL]` passes Orange `all(score = 1)` and fails Rowstitch `every(score = 1)`. The shared comparison expresses strict `every` in Orange using `none(score != 1 OR score IS NULL)`, then checks native `all` separately.
+- With a NOCASE parent key and BINARY foreign key, Orange's relation filter uses the parent collation and Rowstitch uses the foreign collation. Reversing those declared collations reverses the result. Both directions are measured. Rowstitch's eager loader and new relation filters agree on the foreign-column rule.
+
+These differences are documented behavior, not upstream defects. Orange's filtered relation count is exercised separately as a capability Rowstitch has not implemented yet. The pinned sources for these contracts are Orange's [all predicate](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/all.js), [relation count](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/relatedTable/count.js) and [correlation equality](https://github.com/alfateam/orange-orm/blob/52fdb48880dee4d6bfaf3dd59e5b5150c76bcca1/src/table/query/singleQuery/joinSql/newShallowJoinSqlCore.js).

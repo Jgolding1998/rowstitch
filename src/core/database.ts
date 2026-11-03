@@ -4,12 +4,12 @@ import { performance } from 'node:perf_hooks';
 import { DatabaseSync } from 'node:sqlite';
 import { NODE_REQUIREMENT, supportedNode } from '../runtime.js';
 import { ConflictError, RowstitchError, databaseError, fail } from './errors.js';
-import { decode, encode, identifier, isColumnRef, literal, plainRecord, sqlType,
+import { decode, encode, identifier, isColumnRef, isTable, literal, plainRecord, sqlType,
   type AnyTable, type Columns, type InsertRow, type KeyRow, type Parameter, type Row, type UpdateRow } from './schema.js';
-import { ManyRelation, SingularRelation, and, assertOptions, eq, orderToModel, predicateToModel, selectionFields, validateRelation,
+import { ManyRelation, SingularRelation, and, assertOptions, eq, isRelation, orderToModel, predicateToModel, selectionFields, validateRelation,
   type CompiledQuery, type FindOptions, type Includes, type Predicate, type Selection, type WithIncludes } from './predicates.js';
 import { mappedCreateTableModel, mappedTableModel } from './model-mapping.js';
-import { predicateTruth, queryModel, type CreateIndexModel, type CreateTableModel, type PredicateModel, type SelectModel, type TransactionAction, type TransactionModel } from './query-model.js';
+import { hasRelationFilter, predicateTruth, queryModel, relationKindsCompatible, type CreateIndexModel, type CreateTableModel, type PredicateModel, type SelectModel, type TransactionAction, type TransactionModel } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
 
 export interface SchemaColumn { name: string; type: string; nullable: boolean; primaryKey: boolean; primaryKeyOrder: number; default: string | null; generated: boolean; hidden: boolean }
@@ -98,7 +98,7 @@ export class Database {
   }
   #mapped(table: AnyTable): void {
     this.#check();
-    if (this.#state.tables.get(table.name) !== table) fail('SCHEMA', 'Register this exact table definition when opening the database.');
+    if (!isTable(table) || this.#state.tables.get(table.name) !== table) fail('SCHEMA', 'Register this exact table definition when opening the database.');
   }
   table<T extends AnyTable>(table: T): Repository<T> {
     this.#mapped(table);
@@ -347,7 +347,7 @@ export function openDatabase(filename = ':memory:', options: DatabaseOptions = {
   const names = new Set<string>();
   if (!Array.isArray(options.tables ?? []) || (options.tables?.length ?? 0) > 100) fail('SCHEMA', 'Register at most 100 mapped tables.');
   for (const table of options.tables ?? []) {
-    if (!table || typeof table.col !== 'function' || names.has(table.name.toLowerCase())) fail('SCHEMA', 'Mapped table names must be unique.');
+    if (!isTable(table) || names.has(table.name.toLowerCase())) fail('SCHEMA', 'Register genuine mapped tables with unique names.');
     identifier(table.name);
     names.add(table.name.toLowerCase()); tables.set(table.name, table);
   }
@@ -372,6 +372,9 @@ export interface WriteOptions { where: Predicate; maxRows?: number }
 export class Repository<T extends AnyTable> {
   #db: Database;
   constructor(db: Database, public readonly definition: T) { this.#db = db; }
+  #predicate(where?: Predicate): PredicateModel | undefined {
+    return predicateToModel(this.definition, where, table => ops(this.#db).mapped(table));
+  }
   #columns(): [string, Columns[string]][] { return Object.entries(this.definition.columns as Columns); }
   #decodeRow(row: Record<string, unknown>, fields = this.#columns().map(([name]) => name)): Row<T> {
     const result: Record<string, unknown> = {};
@@ -386,14 +389,15 @@ export class Repository<T extends AnyTable> {
     if (entries.length > 8 || entries.length && depth >= 4) fail('QUERY', 'Eager relationships support at most four levels and eight includes per level.');
     for (const [name, relation] of entries) {
       identifier(name);
-      if (Object.hasOwn(this.definition.columns, name) || !(relation instanceof ManyRelation || relation instanceof SingularRelation)) fail('QUERY', 'An include needs a distinct alias and a Rowstitch relationship descriptor.');
+      if (Object.hasOwn(this.definition.columns, name) || !isRelation(relation)) fail('QUERY', 'An include needs a distinct alias and a Rowstitch relationship descriptor.');
       ops(this.#db).mapped(relation.table);
       validateRelation(relation.table, relation.options, relation instanceof SingularRelation);
+      new Repository(this.#db, relation.table).#predicate(relation.options.where);
       const { localKey, foreignKey } = relation.options;
       if (!isColumnRef(localKey) || !isColumnRef(foreignKey) || localKey.table !== this.definition || foreignKey.table !== relation.table) fail('QUERY', 'Relationship keys must reference their respective mapped tables.');
       const source = this.definition.columns[localKey.name].config;
       const target = relation.table.columns[foreignKey.name].config;
-      if (!['integer', 'bigint', 'text'].includes(source.kind) || sqlType(source) !== sqlType(target)) fail('QUERY', 'Relationship keys must be compatible scalar columns.');
+      if (!relationKindsCompatible(source.kind, target.kind)) fail('QUERY', 'Relationship keys must be compatible scalar columns.');
       fields.add(localKey.name);
       new Repository(this.#db, relation.table).#fetchFields(relation.options.select, relation.options.include, [foreignKey.name], depth + 1);
     }
@@ -458,7 +462,7 @@ export class Repository<T extends AnyTable> {
     const fields = this.#fetchFields(options.select, options.include);
     const limit = integer(options.limit, 1000, 0, 10_000);
     const offset = integer(options.offset, 0, 0, 1_000_000_000);
-    const where = predicateToModel(this.definition, options.where);
+    const where = this.#predicate(options.where);
     return queryModel.select({ table: mappedTableModel(this.definition), columns: fields, ...(where === undefined ? {} : { where }),
       orderBy: orderToModel(this.definition, options.orderBy, true), limit, offset });
   }
@@ -484,7 +488,7 @@ export class Repository<T extends AnyTable> {
   }
   count(where?: Predicate): number {
     ops(this.#db).mapped(this.definition);
-    return this.#countModel(predicateToModel(this.definition, where));
+    return this.#countModel(this.#predicate(where));
   }
   #countModel(where: PredicateModel | undefined): number {
     const query = compileSqlite(queryModel.count({ table: mappedTableModel(this.definition), ...(where === undefined ? {} : { where }) }));
@@ -499,12 +503,12 @@ export class Repository<T extends AnyTable> {
     if (entries.length && depth >= 4 || entries.length > 8) fail('QUERY', 'Eager relationships support at most four levels and eight includes per level.');
     for (const [name, relation] of entries) {
       identifier(name);
-      if (Object.hasOwn(this.definition.columns, name) || !(relation instanceof ManyRelation || relation instanceof SingularRelation)) fail('QUERY', 'An include must have a unique name and be built with a Rowstitch relationship helper.');
+      if (Object.hasOwn(this.definition.columns, name) || !isRelation(relation)) fail('QUERY', 'An include must have a unique name and be built with a Rowstitch relationship helper.');
       ops(this.#db).mapped(relation.table);
       const { localKey, foreignKey } = relation.options;
       if (!isColumnRef(localKey) || !isColumnRef(foreignKey) || localKey.table !== this.definition || foreignKey.table !== relation.table) fail('QUERY', 'Relationship keys must reference their respective mapped tables.');
       const localKind = this.definition.columns[localKey.name].config.kind;
-      if (!['integer', 'bigint', 'text'].includes(localKind) || sqlType(this.definition.columns[localKey.name].config) !== sqlType(relation.table.columns[foreignKey.name].config)) fail('QUERY', 'Relationship keys must be compatible scalar columns.');
+      if (!relationKindsCompatible(localKind, relation.table.columns[foreignKey.name].config.kind)) fail('QUERY', 'Relationship keys must be compatible scalar columns.');
       const key = (value: unknown): string => localKind === 'text' ? 's:' + String(value) : 'i:' + String(value);
       const correlateKeys = localKind === 'text' && relation.table.columns[foreignKey.name].config.kind === 'text';
       const values = [...new Map(rows.filter(row => row[localKey.name] !== null).map(row => [key(row[localKey.name]), row[localKey.name]])).values()];
@@ -515,7 +519,7 @@ export class Repository<T extends AnyTable> {
       const fields = repository.#fetchFields(relation.options.select, relation.options.include, [foreignKey.name], depth + 1);
       const children: Row<AnyTable>[] = [];
       const sourceKeys = new WeakMap<object, string>();
-      const where = predicateToModel(relation.table, relation.options.where);
+      const where = repository.#predicate(relation.options.where);
       const ordering = orderToModel(relation.table, relation.options.orderBy, true);
       for (let index = 0; index < values.length && limit > 0; index += 400) {
         const chunk = values.slice(index, index + 400);
@@ -554,7 +558,8 @@ export class Repository<T extends AnyTable> {
   #write(data: UpdateRow<T> | null, options: WriteOptions, conflict = false): Row<T>[] {
     ops(this.#db).mapped(this.definition); ops(this.#db).writeCheck();
     assertOptions(options, ['where', 'maxRows']);
-    const predicate = predicateToModel(this.definition, options.where);
+    const predicate = this.#predicate(options.where);
+    if (hasRelationFilter(predicate)) fail('UNSAFE_WRITE', 'Relation filters currently support reads only. Use explicit key filters for guarded writes.');
     if (predicate === undefined || predicateTruth(predicate) === true) fail('UNSAFE_WRITE', 'Updates and deletes require a meaningful filter. Whole-table writes have no implicit opt-in.');
     const max = integer(options.maxRows, 100, 0, 10_000);
     const [fields, values] = data === null ? [[], []] : this.#data(data, false);

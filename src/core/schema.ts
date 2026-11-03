@@ -164,6 +164,7 @@ export class Column<T, Optional extends boolean = false, Primary extends boolean
     return new Column({ ...this.config, unique: true });
   }
   references<U extends AnyTable, RefKey extends keyof U['columns'] & string>(table: U, key: RefKey, options: { onDelete?: DeleteAction } = {}): Column<T, Optional, Primary, K> {
+    if (!isTable(table)) fail('SCHEMA', 'Foreign keys require a genuine mapped table.');
     const target = table.columns[key];
     if (!target || !['integer', 'bigint', 'text'].includes(this.config.kind)
       || sqlType(target.config) !== sqlType(this.config) || !(target.config.primary || target.config.unique)) fail('SCHEMA', 'Foreign keys must reference a compatible primary or unique column.');
@@ -195,6 +196,10 @@ export type UpdateRow<T extends AnyTable> = Partial<Omit<Row<T>, KeyNames<T> | N
 
 export type ColumnKind<C> = C extends Column<any, boolean, boolean, infer K> ? K : Kind;
 const columnReferences = new WeakSet<object>();
+const tableDefinitions = new WeakSet<object>();
+export function isTable(value: unknown): value is AnyTable {
+  return value !== null && typeof value === 'object' && tableDefinitions.has(value);
+}
 /** Internal authenticity check; prototype forgeries and Proxy wrappers are not references. */
 export function isColumnRef(value: unknown): value is ColumnRef {
   return value !== null && typeof value === 'object' && columnReferences.has(value);
@@ -203,7 +208,7 @@ export class ColumnRef<T = unknown, K extends Kind = Kind> {
   declare readonly _value: T;
   declare readonly _kind: K;
   constructor(public readonly table: AnyTable, public readonly name: string) {
-    if (typeof name !== 'string' || !(table instanceof Table) || !Object.hasOwn(table.columns, name)) fail('QUERY', 'A column reference needs a mapped table and column name.');
+    if (typeof name !== 'string' || !isTable(table) || !Object.hasOwn(table.columns, name)) fail('QUERY', 'A column reference needs a mapped table and column name.');
     columnReferences.add(this); Object.freeze(this);
   }
 }
@@ -230,10 +235,10 @@ export class Table<C extends Columns = Columns, V extends keyof C & string | und
       this.version = options.version;
     }
     this.columns = Object.freeze({ ...columns });
-    Object.freeze(this);
+    tableDefinitions.add(this); Object.freeze(this);
   }
   col<K extends keyof C & string>(key: K): ColumnRef<Value<C[K]>, ColumnKind<C[K]>> {
-    if (typeof key !== 'string' || !Object.hasOwn(this.columns, key)) fail('SCHEMA', 'The mapped column does not exist.');
+    if (!isTable(this) || typeof key !== 'string' || !Object.hasOwn(this.columns, key)) fail('SCHEMA', 'The mapped column does not exist.');
     return new ColumnRef(this, key);
   }
 }
