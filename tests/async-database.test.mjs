@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, unlinkSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import * as sdk from '../dist/index.js';
 import { openAsyncDatabaseWithExecutor } from '../dist/core/async-database.js';
 import { openSqliteExecutor } from '../dist/core/sqlite-executor.js';
-import { acknowledgedRejection } from '../dist/core/executor.js';
+import { acknowledgedRejection, inlineAsyncExecutor } from '../dist/core/executor.js';
 
 const { column, defineTable, openDatabase, openAsyncDatabase, AsyncDatabase, AsyncRepository, agg, hasMany, belongsTo, eq, gt, asc, desc, some, countRelated, inArray } = sdk;
 const code = expected => error => error?.code === expected;
@@ -390,4 +391,208 @@ test('expired transaction contexts refuse even pure planning on the root handle,
   assert.deepEqual(await asyncLate, await syncLate);
   assert.ok(activeAsync.ok, 'pure planning on the root handle is allowed while the callback is active');
   assert.ok(asyncDb.table(owners).compileSelect().sql.startsWith('SELECT'), 'outside any expired context the root handle still plans');
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Forgotten awaits under Node's DEFAULT unhandled-rejection policy. Each scenario is its own child process, with no
+// .catch on the forgotten call and no process.on('unhandledRejection'). Not --input-type: workers would inherit it.
+const CHILD = body => `(async () => {
+  const sdk = await import(process.env.RS_INDEX);
+  const { column, defineTable, hasMany, eq } = sdk;
+  const owners = defineTable('adb_owners', { id: column.integer().primaryKey(), name: column.text(), region: column.text().nullable(), version: column.integer().default(0), settings: column.json().nullable(), active: column.boolean().default(true) }, { version: 'version' });
+  const items = defineTable('adb_items', { id: column.integer().primaryKey(), ownerId: column.integer().references(owners, 'id'), amount: column.bigint(), label: column.text(), qty: column.integer().nullable() });
+  const rel = hasMany(items, { localKey: owners.col('id'), foreignKey: items.col('ownerId') });
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const db = await sdk.openAsyncDatabase(process.env.RS_FILE, { tables: [owners, items] });
+  const report = {};
+  ${body}
+  await pause(40); // Any late rejection has every chance to surface before the report.
+  report.listeners = process.listenerCount('unhandledRejection');
+  report.owners = await db.table(owners).count();
+  await db.close();
+  console.log(JSON.stringify(report));
+})();`;
+function childScenario(t, f, name, body) {
+  const file = f.file(name);
+  const setup = openDatabase(file, { tables });
+  setup.ensureSchema();
+  setup.table(owners).insertMany([{ id: 1, name: 'Ada' }, { id: 2, name: 'Bo' }]);
+  setup.table(items).insertMany([{ id: 1, ownerId: 1, amount: 5n, label: 'a', qty: 1 }]);
+  setup.close();
+  const script = CHILD(body);
+  assert.ok(!script.includes('.catch(') && !script.includes('process.on('), 'the child must not handle the forgotten rejection');
+  const env = { ...process.env, RS_INDEX: new URL('../dist/index.js', import.meta.url).href, RS_FILE: file };
+  delete env.NODE_OPTIONS;
+  const run = spawnSync(process.execPath, ['-e', script], { env, encoding: 'utf8', timeout: 60_000 });
+  const reader = openDatabase(file, { tables, readOnly: true });
+  try {
+    return { status: run.status, stderr: run.stderr, report: run.status === 0 ? JSON.parse(run.stdout.trim().split('\n').at(-1)) : null,
+      names: reader.table(owners).findMany({ select: ['name'], orderBy: [asc(owners.col('id'))] }).map(row => row.name) };
+  } finally { reader.close(); }
+}
+const OUTER = callback => `try { await db.transaction(${callback}); report.outer = 'resolved'; } catch (error) { report.outer = error.code ?? error.message; }`;
+const FORGOTTEN = {
+  'insert, sync callback': `tx => { tx.table(owners).insert({ id: 10, name: 'forgotten' }); }`,
+  'insert, async callback': `async tx => { tx.table(owners).insert({ id: 10, name: 'forgotten' }); }`,
+  'insertMany': `tx => { tx.table(owners).insertMany([{ id: 10, name: 'forgotten' }, { id: 11, name: 'forgotten' }]); }`,
+  'update': `tx => { tx.table(owners).update({ name: 'forgotten' }, { where: eq(owners.col('id'), 1) }); }`,
+  'delete': `tx => { tx.table(items).delete({ where: eq(items.col('id'), 1) }); }`,
+  'updateVersion': `tx => { tx.table(owners).updateVersion({ id: 1 }, 0, { name: 'forgotten' }); }`,
+  'nested transaction': `tx => { tx.transaction(async inner => { await inner.table(owners).insert({ id: 10, name: 'forgotten' }); }); }`,
+  'a write forgotten inside a forgotten nested transaction': `tx => { tx.transaction(inner => { inner.table(owners).insert({ id: 10, name: 'forgotten' }); return pause(1000); }); }`,
+  'multi-step read with an include': `tx => { tx.table(owners).findMany({ include: { items: rel } }); }`,
+  'findFirst with an include': `tx => { tx.table(owners).findFirst({ include: { items: rel } }); }`,
+  'ensureSchema': `tx => { tx.ensureSchema(); }`,
+};
+for (const [name, callback] of Object.entries(FORGOTTEN)) {
+  test('default policy: forgotten ' + name + ' gives a catchable TRANSACTION_PENDING and no commit', async t => {
+    const f = files(t), result = childScenario(t, f, 'forgotten', OUTER(callback));
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.report, { outer: 'TRANSACTION_PENDING', listeners: 0, owners: 2 });
+    assert.deepEqual(result.names, ['Ada', 'Bo'], 'nothing from the forgotten work is durable');
+  });
+}
+
+test('default policy: a child that forgets a write rejects alone; its parent stays usable and commits its own work', async t => {
+  const f = files(t), result = childScenario(t, f, 'child-forgot', `
+    await db.transaction(async tx => {
+      await tx.table(owners).insert({ id: 20, name: 'parent before' });
+      try { await tx.transaction(inner => { inner.table(owners).insert({ id: 21, name: 'forgotten' }); }); report.child = 'resolved'; } catch (error) { report.child = error.code; }
+      await tx.table(owners).insert({ id: 22, name: 'parent after' });
+    });`);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.report, { child: 'TRANSACTION_PENDING', listeners: 0, owners: 4 });
+  assert.deepEqual(result.names, ['Ada', 'Bo', 'parent before', 'parent after']);
+});
+
+test('default policy: abort and callback failure with a forgotten write keep their own outcome and survive', async t => {
+  const f = files(t);
+  const aborted = childScenario(t, f, 'abort', `
+    const controller = new AbortController();
+    try { await db.transaction(tx => { tx.table(owners).insert({ id: 10, name: 'forgotten' }); controller.abort(); return pause(1000); }, { signal: controller.signal }); report.outer = 'resolved'; }
+    catch (error) { report.outer = error.code; }`);
+  assert.equal(aborted.status, 0, aborted.stderr);
+  assert.deepEqual(aborted.report, { outer: 'ABORTED', listeners: 0, owners: 2 });
+  const failed = childScenario(t, f, 'callback-error', OUTER(`tx => { tx.table(owners).insert({ id: 10, name: 'forgotten' }); throw new Error('callback failed'); }`));
+  assert.equal(failed.status, 0, failed.stderr);
+  assert.deepEqual(failed.report, { outer: 'callback failed', listeners: 0, owners: 2 });
+  assert.deepEqual([aborted.names, failed.names], [['Ada', 'Bo'], ['Ada', 'Bo']]);
+});
+
+test('default policy: awaited and returned operations are unaffected', async t => {
+  const f = files(t), result = childScenario(t, f, 'awaited', `
+    report.value = (await db.transaction(tx => tx.table(owners).insert({ id: 10, name: 'returned' }))).name;
+    report.reads = await db.transaction(tx => Promise.all([tx.table(owners).count(), tx.table(items).count()]));
+    report.nested = await db.transaction(async tx => { await tx.table(owners).insert({ id: 11, name: 'awaited' }); return tx.transaction(inner => inner.table(owners).count()); });
+    try { await db.transaction(async tx => { await tx.table(owners).insert({ id: 1, name: 'duplicate' }); }); } catch (error) { report.awaitedFailure = error.code; }`);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.report, { value: 'returned', reads: [3, 1], nested: 4, awaitedFailure: 'CONSTRAINT', listeners: 0, owners: 4 });
+  assert.deepEqual(result.names, ['Ada', 'Bo', 'returned', 'awaited']);
+});
+
+test('default policy: a forgotten failure that already settled is still reported by Node, not swallowed', async t => {
+  const f = files(t);
+  // The write fails while the callback is still running, so nothing was invalidated when it rejected.
+  const insideTransaction = childScenario(t, f, 'settled-constraint', `
+    await db.transaction(async tx => { tx.table(owners).insert({ id: 1, name: 'duplicate' }); await pause(200); });
+    report.survived = true;`);
+  assert.notEqual(insideTransaction.status, 0);
+  assert.match(insideTransaction.stderr, /CONSTRAINT/);
+  assert.deepEqual(insideTransaction.names, ['Ada', 'Bo']);
+  // A forgotten validation failure rejects before the synchronous callback settles.
+  const validation = childScenario(t, f, 'settled-validation', `
+    await db.transaction(tx => { tx.table(owners).update({}, { where: eq(owners.col('id'), 1) }); });
+    await pause(50);
+    report.survived = true;`);
+  assert.notEqual(validation.status, 0);
+  assert.match(validation.stderr, /VALIDATION/);
+  // Root-handle promises are never wrapped or observed.
+  const root = childScenario(t, f, 'settled-root', `
+    db.table(owners).insert({ id: 1, name: 'duplicate' });
+    await pause(200);
+    report.survived = true;`);
+  assert.notEqual(root.status, 0);
+  assert.match(root.stderr, /CONSTRAINT/);
+  // An escaped handle used after its transaction finished is ordinary misuse, reported normally.
+  const escaped = childScenario(t, f, 'settled-escaped', `
+    let kept;
+    await db.transaction(tx => { kept = tx.table(owners); });
+    kept.findMany();
+    await pause(50);
+    report.survived = true;`);
+  assert.notEqual(escaped.status, 0);
+  assert.match(escaped.stderr, /TRANSACTION_CLOSED/);
+});
+
+test('public operations return plain promises and the root handle keeps its unwrapped promise chain', async t => {
+  const f = files(t), db = f.own(await openAsyncDatabase(f.file('shape'), { tables }));
+  await db.ensureSchema();
+  for (const call of [() => db.table(owners).count(), () => db.table(owners).findMany(), () => db.inspectSchema(), () => db.planSchema(), () => db.transaction(() => 1)]) {
+    const pending = call();
+    assert.ok(pending instanceof Promise);
+    await pending;
+  }
+  await db.transaction(async tx => { for (const p of [tx.table(owners).count(), tx.inspectSchema()]) { assert.ok(p instanceof Promise); await p; } });
+  await assert.rejects(db.table(owners).insert({ id: 1 }), code('VALIDATION'));
+  assert.deepEqual(db.exportTrace().queries.slice(-2).map(q => q.sql), ['BEGIN IMMEDIATE', 'ROLLBACK'], 'a captured validation error still replays inside its transaction');
+});
+
+test('a transaction never commits while a forgotten multi-step read sits between its database steps (timing sweep)', async t => {
+  const f = files(t), file = f.file('between-steps');
+  { const setup = openDatabase(file, { tables }); setup.ensureSchema(); setup.table(owners).insert({ id: 1, name: 'Ada' }); setup.close(); }
+  const inner = inlineAsyncExecutor(openSqliteExecutor(file));
+  let arm = null;
+  const executor = { ...inner, async all(sql, parameters) {
+    const rows = await inner.all(sql, parameters);
+    if (arm && sql.startsWith('SELECT') && sql.includes('adb_owners')) { const fire = arm; arm = null; fire(); }
+    return rows;
+  } };
+  const db = f.own(await openAsyncDatabaseWithExecutor(executor, { tables }));
+  const seen = new Set();
+  // Settle the callback at every microtask offset around the end of the read's first step.
+  for (let ticks = 0; ticks <= 40; ticks++) {
+    const gate = deferred();
+    let read = 'pending';
+    const outcomeOf = await outcome(() => db.transaction(async tx => {
+      tx.table(owners).findMany({ include: { items: ownerItems } }).then(() => { read = 'fulfilled'; }, error => { read = error.code; });
+      arm = () => { void (async () => { for (let i = 0; i < ticks; i++) await null; gate.resolve(); })(); };
+      await gate.promise;
+    }));
+    await turn();
+    const result = outcomeOf.code ?? 'committed';
+    seen.add(result);
+    // Committing is only acceptable when the read really finished first; an unfinished read must mean TRANSACTION_PENDING.
+    assert.ok(result === 'TRANSACTION_PENDING' || result === 'committed' && read === 'fulfilled', JSON.stringify({ ticks, result, read }));
+  }
+  assert.ok(seen.has('TRANSACTION_PENDING'));
+});
+
+test('default policy: forgotten work caught by an unknown outcome is reported by the transaction, in parent and child frames', async t => {
+  const f = files(t), file = f.file('poison');
+  { const setup = openDatabase(file, { tables }); setup.ensureSchema(); setup.close(); }
+  const script = `(async () => {
+    const base = process.env.RS_BASE;
+    const sdk = await import(base + 'index.js');
+    const { openAsyncDatabaseWithExecutor } = await import(base + 'core/async-database.js');
+    const { inlineAsyncExecutor } = await import(base + 'core/executor.js');
+    const { openSqliteExecutor } = await import(base + 'core/sqlite-executor.js');
+    const owners = sdk.defineTable('adb_owners', { id: sdk.column.integer().primaryKey(), name: sdk.column.text(), region: sdk.column.text().nullable(), version: sdk.column.integer().default(0), settings: sdk.column.json().nullable(), active: sdk.column.boolean().default(true) }, { version: 'version' });
+    const report = {};
+    for (const nested of [false, true]) {
+      const inner = inlineAsyncExecutor(openSqliteExecutor(process.env.RS_FILE));
+      let lose = false;
+      const db = await openAsyncDatabaseWithExecutor({ ...inner, async all(sql, parameters) { if (lose) { lose = false; throw new Error('synthetic lost response'); } return inner.all(sql, parameters); } }, { tables: [owners] });
+      const work = async tx => { lose = true; const lost = tx.table(owners).count(); tx.table(owners).findMany(); try { await lost; } catch { /* the caller saw the unknown outcome */ } };
+      try { await db.transaction(nested ? tx => tx.transaction(work) : work); report[nested] = 'resolved'; } catch (error) { report[nested] = error.code; }
+      await new Promise(resolve => setTimeout(resolve, 30));
+      await db.close();
+    }
+    report.listeners = process.listenerCount('unhandledRejection');
+    console.log(JSON.stringify(report));
+  })();`;
+  const env = { ...process.env, RS_BASE: new URL('../dist/', import.meta.url).href, RS_FILE: file };
+  delete env.NODE_OPTIONS;
+  const run = spawnSync(process.execPath, ['-e', script], { env, encoding: 'utf8', timeout: 60_000 });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout.trim().split('\n').at(-1)), { false: 'EXECUTION_UNCONFIRMED', true: 'EXECUTION_UNCONFIRMED', listeners: 0 });
 });

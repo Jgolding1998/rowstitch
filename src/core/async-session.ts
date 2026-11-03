@@ -108,8 +108,37 @@ interface Frame {
   readonly issued: Set<Promise<void>>;
   /** User-visible statement promises still pending, so a TRANSACTION_PENDING drain does not add unhandled rejections. */
   readonly userPending: Set<Promise<unknown>>;
+  /** Public wrapper promises still pending; see trackTransactionPromise. */
+  readonly publicPending: Set<Promise<unknown>>;
+  /** Set once this frame's work is being invalidated; its outcome is reported by the transaction's own rejection. */
+  publicInvalidated: boolean;
   readonly interrupt: Deferred<'abort' | 'doom'>;
   handle: AsyncTransaction;
+}
+
+const frames = new WeakMap<AsyncTransaction, Frame>();
+
+/**
+ * Internal, for the public async database. Returns the promise handed to the caller of a transaction-scoped operation
+ * and records it on the genuine session frame until it settles. Nothing observes the returned promise here, because
+ * attaching any handler would mark it handled and hide an ordinary forgotten failure from Node's default reporting.
+ *
+ * Only when the frame is invalidated (callback settled with unfinished work, abort, ancestor end or poison) does the
+ * session attach a no-op rejection observer to promises that are STILL pending: the transaction's own rejection then
+ * reports that failure. A forgotten operation that already failed stays unobserved and is reported normally.
+ * Handles that are not session frames (the root database) get `work` back unchanged.
+ */
+export function trackTransactionPromise<T>(handle: AsyncTransaction, work: Promise<T>): Promise<T> {
+  const frame = frames.get(handle);
+  if (!frame) return work;
+  let visible!: Promise<T>;
+  visible = new Promise<T>((resolve, reject) => {
+    work.then(value => { frame.publicPending.delete(visible); resolve(value); }, error => { frame.publicPending.delete(visible); reject(error); });
+  });
+  frame.publicPending.add(visible);
+  // Started while the frame is being invalidated (for example, a callback still running after abort): reported the same way.
+  if (frame.publicInvalidated && frame.phase !== 'done') visible.catch(noop);
+  return visible;
 }
 
 interface QueueEntry { start(): void; fail(error: unknown): void }
@@ -291,6 +320,8 @@ class Session {
   #poisonWith(code: string): RowstitchError {
     if (this.#poison === null) {
       this.#poison = code;
+      // The transaction reports this unknown outcome itself, so its still-pending public promises must not also go unhandled.
+      if (this.#current) this.#observePublic(this.#current);
       for (const entry of this.#queue.splice(0)) entry.fail(failure('CONNECTION_UNUSABLE'));
       this.#closeConnection(true);
     }
@@ -427,16 +458,25 @@ class Session {
     const frame: Frame = {
       parent, depth: parent ? parent.depth + 1 : 1, savepoint: parent ? 'rs_async_sp_' + ++this.#savepoints : null,
       active: true, closedCode: 'TRANSACTION_CLOSED', phase: 'starting', child: null, doomed: false, abortRequested: false,
-      issued: new Set(), userPending: new Set(), interrupt: deferred(), handle: undefined as unknown as AsyncTransaction,
+      issued: new Set(), userPending: new Set(), publicPending: new Set(), publicInvalidated: false, interrupt: deferred(), handle: undefined as unknown as AsyncTransaction,
     };
     frame.handle = Object.freeze({
       all: (sql: string, parameters?: readonly Parameter[], options?: AsyncOperationOptions) => this.#txAll(frame, sql, parameters, options),
       transaction: <R>(callback: (tx: AsyncTransaction) => R | PromiseLike<R>, options?: AsyncOperationOptions) => this.#txTransaction<R>(frame, callback, options),
     });
+    frames.set(frame.handle, frame);
     return frame;
   }
 
   // ---------------------------------------------------------------- transaction lifecycle
+
+  /** The transaction's rejection reports these outcomes; still-pending public promises must not also become unhandled. */
+  #observePublic(frame: Frame): void {
+    for (let current: Frame | null = frame; current; current = current.child) {
+      current.publicInvalidated = true;
+      for (const promise of current.publicPending) promise.catch(noop);
+    }
+  }
 
   #abortFrame(frame: Frame): void {
     if (frame.phase === 'starting' || frame.phase === 'running') {
@@ -545,6 +585,7 @@ class Session {
       const reason = settled.kind === 'interrupt' ? settled.reason : 'abort';
       frame.closedCode = reason === 'abort' ? 'ABORTED' : 'TRANSACTION_CLOSED';
       this.#doomDescendants(frame);
+      this.#observePublic(frame);
       for (const pending of frame.userPending) pending.catch(noop);
       await this.#drain(frame);
       if (reason === 'doom' || frame.doomed) { finish(false, failure('TRANSACTION_CLOSED'), true); return; }
@@ -555,9 +596,11 @@ class Session {
 
     // 3b. Callback settled. A poisoned session never reports success or an inferred rollback.
     if (this.#poison !== null) { finish(false, failure(this.#poison)); return; }
-    const pending = frame.issued.size > 0 || frame.child !== null;
+    // A public operation between its database steps has nothing issued yet, but it is still unfinished work.
+    const pending = frame.issued.size > 0 || frame.child !== null || frame.publicPending.size > 0;
     if (pending || !settled.ok) {
       this.#doomDescendants(frame);
+      this.#observePublic(frame);
       for (const statement of frame.userPending) statement.catch(noop);
       await this.#drain(frame);
       if (frame.doomed) { finish(false, failure('TRANSACTION_CLOSED'), true); return; }

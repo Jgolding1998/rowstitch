@@ -16,7 +16,7 @@ import type { AggregateSelection, AggregateOptions, AggregateResult, GroupKey, G
 import { RepositoryCore, ensureSchemaWork, inspectSchemaWork, integer, openConfig, publicPlans, runAsync, schemaPlansWork,
   type CoreContext, type OpenConfig, type QueryPlan, type Rows, type SchemaPlan, type SchemaTable, type Step, type Work, type WriteOptions } from './repository-core.js';
 import { clearTraceState, recordTrace, traceDocument, type TraceDocument, type TraceState } from './trace-log.js';
-import { ASYNC_SESSION_LIMITS, createAsyncSession, type AsyncControlEvent, type AsyncSession, type AsyncTransaction } from './async-session.js';
+import { ASYNC_SESSION_LIMITS, createAsyncSession, trackTransactionPromise, type AsyncControlEvent, type AsyncSession, type AsyncTransaction } from './async-session.js';
 import { isAcknowledgedRejection, type AsyncExecutor } from './executor.js';
 import { openWorkerSqliteExecutor } from './worker-executor.js';
 import type { DatabaseOptions } from './database.js';
@@ -42,6 +42,8 @@ interface Lease { active: boolean }
 interface AsyncInternal extends CoreContext {
   run<R>(work: Work<R>): Promise<R>;
   atomic<R>(callback: (tx: AsyncDatabase) => R | PromiseLike<R>): Promise<Awaited<R>>;
+  /** Every public async operation starts here, synchronously, so its promise is owned by this handle's session frame. */
+  scoped<T>(work: () => Promise<T>): Promise<T>;
 }
 const internal = new WeakMap<object, AsyncInternal>();
 function ops(db: AsyncDatabase): AsyncInternal {
@@ -69,7 +71,8 @@ export class AsyncDatabase {
     internal.set(this, {
       check: () => this.#check(), writeCheck: () => this.#writeCheck(), mapped: table => this.#mapped(table), tables: state.tables,
       run: work => runAsync(work, step => this.#perform(step)),
-      atomic: callback => this.transaction(callback),
+      atomic: callback => this.#transaction(callback),
+      scoped: work => trackTransactionPromise(this.#handle, work()),
     });
   }
 
@@ -128,7 +131,10 @@ export class AsyncDatabase {
    * synchronous or async; every statement it starts must finish before it settles, or the work is rolled back with
    * TRANSACTION_PENDING. Statement results inside a transaction are provisional until this promise resolves.
    */
-  async transaction<R>(callback: (tx: AsyncDatabase) => R | PromiseLike<R>, options?: AsyncTransactionOptions): Promise<Awaited<R>> {
+  transaction<R>(callback: (tx: AsyncDatabase) => R | PromiseLike<R>, options?: AsyncTransactionOptions): Promise<Awaited<R>> {
+    return trackTransactionPromise(this.#handle, this.#transaction<R>(callback, options));
+  }
+  async #transaction<R>(callback: (tx: AsyncDatabase) => R | PromiseLike<R>, options?: AsyncTransactionOptions): Promise<Awaited<R>> {
     this.#check();
     if (typeof callback !== 'function') fail('VALIDATION', 'A transaction requires a callback.');
     const lease: Lease = { active: true };
@@ -145,19 +151,24 @@ export class AsyncDatabase {
     finally { lease.active = false; }
   }
 
-  async inspectSchema(): Promise<SchemaTable[]> {
+  inspectSchema(): Promise<SchemaTable[]> {
+    return ops(this).scoped(() => this.#inspect());
+  }
+  async #inspect(): Promise<SchemaTable[]> {
     const schema = await ops(this).run(inspectSchemaWork());
     this.#snapshot(schema);
     return schema;
   }
-  async planSchema(): Promise<SchemaPlan[]> {
-    return publicPlans(await ops(this).run(schemaPlansWork(ops(this))));
+  planSchema(): Promise<SchemaPlan[]> {
+    return ops(this).scoped(async () => publicPlans(await ops(this).run(schemaPlansWork(ops(this)))));
   }
-  async ensureSchema(): Promise<SchemaPlan[]> {
-    this.#writeCheck();
-    const plans = await this.transaction(tx => ops(tx).run(ensureSchemaWork(ops(tx))));
-    await this.inspectSchema();
-    return plans;
+  ensureSchema(): Promise<SchemaPlan[]> {
+    return ops(this).scoped(async () => {
+      this.#writeCheck();
+      const plans = await this.#transaction(tx => ops(tx).run(ensureSchemaWork(ops(tx))));
+      await this.#inspect();
+      return plans;
+    });
   }
   #snapshot(schema: SchemaTable[]): void {
     this.#state.schema = structuredClone(schema);
@@ -207,19 +218,23 @@ export class AsyncRepository<T extends AnyTable> {
   #in(tx: AsyncDatabase): RepositoryCore<T> { return new RepositoryCore(ops(tx), this.definition); }
 
   /** Validates and encodes the record at call time; later caller mutation cannot change what is written. */
-  async insert(data: InsertRow<T>): Promise<Row<T>> {
-    this.#core.prepareInsert();
-    const captured = this.#core.captureInsert(data);
-    return ops(this.#db).atomic(tx => ops(tx).run(this.#in(tx).insertCaptured(captured)));
+  insert(data: InsertRow<T>): Promise<Row<T>> {
+    return ops(this.#db).scoped(async () => {
+      this.#core.prepareInsert();
+      const captured = this.#core.captureInsert(data);
+      return ops(this.#db).atomic(tx => ops(tx).run(this.#in(tx).insertCaptured(captured)));
+    });
   }
   /** The row list and every row are captured at call time; the first invalid row fails at its position, as in sync. */
-  async insertMany(rows: readonly InsertRow<T>[]): Promise<Row<T>[]> {
-    this.#core.prepareInsertMany(rows);
-    const captured = Array.from(rows, row => this.#core.captureInsert(row));
-    return ops(this.#db).atomic(async tx => {
-      const result: Row<T>[] = [];
-      for (const row of captured) result.push(await ops(tx).run(this.#in(tx).insertCaptured(row)));
-      return result;
+  insertMany(rows: readonly InsertRow<T>[]): Promise<Row<T>[]> {
+    return ops(this.#db).scoped(async () => {
+      this.#core.prepareInsertMany(rows);
+      const captured = Array.from(rows, row => this.#core.captureInsert(row));
+      return ops(this.#db).atomic(async tx => {
+        const result: Row<T>[] = [];
+        for (const row of captured) result.push(await ops(tx).run(this.#in(tx).insertCaptured(row)));
+        return result;
+      });
     });
   }
   /** Pure and synchronous: never executes or traces. */
@@ -232,39 +247,41 @@ export class AsyncRepository<T extends AnyTable> {
   compileGroupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): CompiledQuery {
     return compileSqlite(this.#core.groupPlan(options).model);
   }
-  async explain(options: FindOptions<Includes, Selection<T> | undefined, RelatedAggregates> = {}): Promise<QueryPlan[]> {
-    return ops(this.#db).run(this.#core.explainWork(this.#core.selectPlan(options).model));
+  explain(options: FindOptions<Includes, Selection<T> | undefined, RelatedAggregates> = {}): Promise<QueryPlan[]> {
+    return ops(this.#db).scoped(async () => ops(this.#db).run(this.#core.explainWork(this.#core.selectPlan(options).model)));
   }
-  async explainAggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): Promise<QueryPlan[]> {
-    return ops(this.#db).run(this.#core.explainWork(this.#core.aggregatePlan(options).model));
+  explainAggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): Promise<QueryPlan[]> {
+    return ops(this.#db).scoped(async () => ops(this.#db).run(this.#core.explainWork(this.#core.aggregatePlan(options).model)));
   }
-  async explainGroupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): Promise<QueryPlan[]> {
-    return ops(this.#db).run(this.#core.explainWork(this.#core.groupPlan(options).model));
+  explainGroupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): Promise<QueryPlan[]> {
+    return ops(this.#db).scoped(async () => ops(this.#db).run(this.#core.explainWork(this.#core.groupPlan(options).model)));
   }
-  async findMany<I extends Includes = {}, const S extends Selection<T> | undefined = undefined, const A extends RelatedAggregates = {}>(options: FindOptions<I, S, A> = {}): Promise<ProjectedRow<WithIncludes<T, I, NoInfer<S>>, A>[]> {
-    return await ops(this.#db).run(this.#core.findMany(options)) as ProjectedRow<WithIncludes<T, I, S>, A>[];
+  findMany<I extends Includes = {}, const S extends Selection<T> | undefined = undefined, const A extends RelatedAggregates = {}>(options: FindOptions<I, S, A> = {}): Promise<ProjectedRow<WithIncludes<T, I, NoInfer<S>>, A>[]> {
+    return ops(this.#db).scoped(async () => await ops(this.#db).run(this.#core.findMany(options)) as ProjectedRow<WithIncludes<T, I, S>, A>[]);
   }
-  async findFirst<I extends Includes = {}, const S extends Selection<T> | undefined = undefined, const A extends RelatedAggregates = {}>(options: FindOptions<I, S, A> = {}): Promise<ProjectedRow<WithIncludes<T, I, NoInfer<S>>, A> | null> {
-    assertOptions(options, ['where', 'orderBy', 'limit', 'offset', 'include', 'select', 'aggregates']);
-    return (await this.findMany<I, S, A>({ ...options, limit: 1 }))[0] ?? null;
+  findFirst<I extends Includes = {}, const S extends Selection<T> | undefined = undefined, const A extends RelatedAggregates = {}>(options: FindOptions<I, S, A> = {}): Promise<ProjectedRow<WithIncludes<T, I, NoInfer<S>>, A> | null> {
+    return ops(this.#db).scoped(async () => {
+      assertOptions(options, ['where', 'orderBy', 'limit', 'offset', 'include', 'select', 'aggregates']);
+      return (await this.findMany<I, S, A>({ ...options, limit: 1 }))[0] ?? null;
+    });
   }
-  async count(where?: Predicate): Promise<number> {
-    return ops(this.#db).run(this.#core.countWork(this.#core.countPrepare(where)));
+  count(where?: Predicate): Promise<number> {
+    return ops(this.#db).scoped(async () => ops(this.#db).run(this.#core.countWork(this.#core.countPrepare(where))));
   }
-  async aggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): Promise<AggregateResult<S>> {
-    return await ops(this.#db).run(this.#core.aggregateWork(this.#core.aggregatePlan(options))) as AggregateResult<S>;
+  aggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): Promise<AggregateResult<S>> {
+    return ops(this.#db).scoped(async () => await ops(this.#db).run(this.#core.aggregateWork(this.#core.aggregatePlan(options))) as AggregateResult<S>);
   }
-  async groupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): Promise<GroupResult<T, B, S>[]> {
-    return await ops(this.#db).run(this.#core.groupWork(this.#core.groupPlan(options))) as GroupResult<T, B, S>[];
+  groupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): Promise<GroupResult<T, B, S>[]> {
+    return ops(this.#db).scoped(async () => await ops(this.#db).run(this.#core.groupWork(this.#core.groupPlan(options))) as GroupResult<T, B, S>[]);
   }
   async #write(data: UpdateRow<T> | null, options: WriteOptions, conflict = false): Promise<Row<T>[]> {
     const prepared = this.#core.prepareWrite(data, options, conflict);
     return ops(this.#db).atomic(tx => ops(tx).run(this.#in(tx).writeWork(prepared)));
   }
-  async update(data: UpdateRow<T>, options: WriteOptions): Promise<Row<T>[]> { return this.#write(data, options); }
-  async delete(options: WriteOptions): Promise<Row<T>[]> { return this.#write(null, options); }
-  async updateVersion(key: KeyRow<T>, expectedVersion: number, data: UpdateRow<T>): Promise<Row<T>> {
-    return (await this.#write(data, { where: this.#core.versionFilter(key, expectedVersion), maxRows: 1 }, true))[0];
+  update(data: UpdateRow<T>, options: WriteOptions): Promise<Row<T>[]> { return ops(this.#db).scoped(() => this.#write(data, options)); }
+  delete(options: WriteOptions): Promise<Row<T>[]> { return ops(this.#db).scoped(() => this.#write(null, options)); }
+  updateVersion(key: KeyRow<T>, expectedVersion: number, data: UpdateRow<T>): Promise<Row<T>> {
+    return ops(this.#db).scoped(async () => (await this.#write(data, { where: this.#core.versionFilter(key, expectedVersion), maxRows: 1 }, true))[0]);
   }
 }
 
