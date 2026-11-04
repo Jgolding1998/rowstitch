@@ -44,7 +44,7 @@ test('key selection binds all composite components and its duplicate-detection l
 
 test('counts qualify the aggregate and require no caller SQL or values',()=>{
   const compiled=compilePostgresRoot(planPostgresCount(table));
-  assert.equal(compiled.sql,'SELECT "pg_catalog"."count"(*) AS "__rs_pg_count" FROM "public"."root_samples"');
+  assert.equal(compiled.sql,'SELECT "pg_catalog"."count"(*) AS "__rs_pg_count" FROM ONLY "public"."root_samples"');
   assert.deepEqual(compiled.parameters,[]);
   assert.equal(decodePostgresRoot(compiled,raw(compiled,[['9']])),9);
   assert.equal(decodePostgresRoot(compiled,raw(compiled,[['0']])),0);

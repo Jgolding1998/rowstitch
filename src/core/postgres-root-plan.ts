@@ -94,9 +94,9 @@ export function compilePostgresRoot(input: PostgresRootPlan): CompiledPostgresRo
     sql = 'INSERT INTO ' + qualified + ' (' + names + ') VALUES (' + values + ') RETURNING ' + projection;
   } else if (operation === 'by-key') {
     const where = input.values.map(value => identifier(value.column) + ' OPERATOR("pg_catalog".=) ' + bind(value.kind, value.value, value.nullable)).join(' AND ');
-    sql = 'SELECT ' + projection + ' FROM ' + qualified + ' WHERE ' + where + ' LIMIT ' + bind('integer', 2);
+    sql = 'SELECT ' + projection + ' FROM ONLY ' + qualified + ' WHERE ' + where + ' LIMIT ' + bind('integer', 2);
   } else {
-    sql = 'SELECT "pg_catalog"."count"(*) AS "__rs_pg_count" FROM ' + qualified;
+    sql = 'SELECT "pg_catalog"."count"(*) AS "__rs_pg_count" FROM ONLY ' + qualified;
   }
   const result = Object.freeze({ operation, sql, parameters:Object.freeze(parameters), outputs:Object.freeze(outputs.map(field => Object.freeze(field))) });
   statements.add(result);

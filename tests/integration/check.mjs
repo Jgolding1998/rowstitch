@@ -11,13 +11,22 @@ import { connectPgTransport, connectPgliteTransport } from './glue.mjs';
 const distBase = new URL('../../dist/', import.meta.url).href;
 const hashFile = url => createHash('sha256').update(readFileSync(url)).digest('hex');
 const harnessSha256 = hashFile(new URL(import.meta.url)), glueSha256 = hashFile(new URL('./glue.mjs',import.meta.url)), mappedSha256 = hashFile(new URL('./mapped.mjs',import.meta.url));
+const inheritanceSha256 = hashFile(new URL('./inheritance.mjs',import.meta.url));
+const verifiedSha256 = hashFile(new URL('./verified-roots.mjs',import.meta.url));
+const schemaSha256 = hashFile(new URL('./schema.mjs',import.meta.url));
 const compiledHashes = () => Object.fromEntries(readdirSync(new URL(distBase), { recursive: true }).filter(name => name.endsWith('.js')).sort().map(name => {
   const file = join(fileURLToPath(distBase), name);
   assert.ok(lstatSync(file).isFile() && !lstatSync(file).isSymbolicLink(), 'Compiled files must be ordinary files');
   return [name.replaceAll('\\', '/'), createHash('sha256').update(readFileSync(file)).digest('hex')];
 }));
 const executedBuildHashes = compiledHashes();
+const sourceNames=['async-session.ts','executor.ts','postgres-control.ts','postgres-executor.ts','postgres-result.ts','postgres-root-plan.ts','postgres-root-execution.ts','postgres-physical.ts','postgres-catalog.ts','postgres-roots.ts'];
+const currentSourceHashes=()=>Object.fromEntries(sourceNames.map(name=>[name,hashFile(new URL('../../src/core/'+name,import.meta.url))]));
+const sourceHashes=currentSourceHashes();
 const { checkMappedRoots } = await import('./mapped.mjs');
+const { checkInheritanceRoots } = await import('./inheritance.mjs');
+const { checkVerifiedRoots } = await import('./verified-roots.mjs');
+const { checkSchemaPolicy,checkPostgresSchemaLocks } = await import('./schema.mjs');
 const { createPostgresExecutor } = await import(distBase + 'core/postgres-executor.js');
 const { createAsyncSession } = await import(distBase + 'core/async-session.js');
 const { isPostgresRawResult } = await import(distBase + 'core/postgres-result.js');
@@ -50,7 +59,7 @@ const deferred = () => { let resolve; const promise = new Promise(ok => { resolv
 // A failed transaction must also wake a test waiting for one of its callback's gates.
 const reachedBeforeSettlement = (gate, outcome) => Promise.race([gate.promise, outcome.then(() => { throw new Error('Transaction settled before its expected test gate'); })]);
 const report = { format: 'rowstitch-postgres-session-integration', runLabel, node: process.version, packages: { pg: '8.23.1', pglite: '0.5.15' }, imageDigest, executedBuildHashes,
-  scope: 'Internal Rowstitch executor/session and narrow mapped-root compiler on fixed schemas; not public SDK, schema/settings verification, pool or complete engine support.', engines: {}, cleanup: {},
+  scope: 'Internal positional session, root compiler and strict structural/settings context on fixed schemas; not public SDK, full schema/role/pool verification or complete engine support.', engines: {}, cleanup: {},
   credentials: 'Generated per run and not saved in proof files or the repository. Passed to docker through a per-spawn environment, not process arguments. Docker itself may hold it in container metadata until the owned container is removed.' };
 let network, container, daemonEndpoint, resourcesAttempted = false, phase = 'initializing', config, original;
 const open = new Set();
@@ -352,6 +361,27 @@ try {
   report.engines.pglite.mappedCases = await checkMappedRoots('pglite', connectPglite);
   assert.equal(report.engines.postgresql.mappedCases.cases.length, 8);
   assert.equal(report.engines.pglite.mappedCases.cases.length, 8);
+  phase = 'postgresql: inherited-row isolation';
+  report.engines.postgresql.inheritanceCases = await checkInheritanceRoots(connectPg);
+  phase = 'pglite: inherited-row isolation';
+  report.engines.pglite.inheritanceCases = await checkInheritanceRoots(connectPglite);
+  assert.equal(report.engines.postgresql.inheritanceCases.cases.length, 3);
+  assert.equal(report.engines.pglite.inheritanceCases.cases.length, 3);
+  phase = 'postgresql: structurally verified roots';
+  report.engines.postgresql.verifiedCases = await checkVerifiedRoots(connectPg);
+  phase = 'pglite: structurally verified roots';
+  report.engines.pglite.verifiedCases = await checkVerifiedRoots(connectPglite);
+  assert.equal(report.engines.postgresql.verifiedCases.cases.length, 8);
+  assert.equal(report.engines.pglite.verifiedCases.cases.length, 8);
+  phase = 'postgresql: structural policy refusals and repairs';
+  report.engines.postgresql.schemaPolicyCases = await checkSchemaPolicy('postgresql',connectPg);
+  phase = 'pglite: structural policy refusals and repairs';
+  report.engines.pglite.schemaPolicyCases = await checkSchemaPolicy('pglite',connectPglite);
+  assert.equal(report.engines.postgresql.schemaPolicyCases.cases.length, 18);
+  assert.equal(report.engines.pglite.schemaPolicyCases.cases.length, 18);
+  phase = 'postgresql: actual schema lock waits and deadline';
+  report.engines.postgresql.schemaLockCases = await checkPostgresSchemaLocks(connectPg);
+  assert.equal(report.engines.postgresql.schemaLockCases.cases.length, 6);
 } catch (error) { original = error; }
 finally {
   for (const resource of open) {
@@ -397,14 +427,21 @@ try {
   assert.equal(hashFile(new URL(import.meta.url)), harnessSha256, 'Harness changed during checks');
   assert.equal(hashFile(new URL('./glue.mjs',import.meta.url)), glueSha256, 'Test transport changed during checks');
   assert.equal(hashFile(new URL('./mapped.mjs',import.meta.url)), mappedSha256, 'Mapped tests changed during checks');
+  assert.equal(hashFile(new URL('./inheritance.mjs',import.meta.url)), inheritanceSha256, 'Inheritance tests changed during checks');
+  assert.equal(hashFile(new URL('./verified-roots.mjs',import.meta.url)), verifiedSha256, 'Verified-root tests changed during checks');
+  assert.equal(hashFile(new URL('./schema.mjs',import.meta.url)), schemaSha256, 'Schema tests changed during checks');
+  assert.deepEqual(currentSourceHashes(),sourceHashes,'Driver/context source changed during checks');
 } catch (error) { original ??= error; }
-report.sourceHashes = Object.fromEntries(['async-session.ts','executor.ts','postgres-control.ts','postgres-executor.ts','postgres-result.ts','postgres-root-plan.ts','postgres-root-execution.ts'].map(name => [name,createHash('sha256').update(readFileSync(new URL('../../src/core/'+name,import.meta.url))).digest('hex')]));
+report.sourceHashes = sourceHashes;
 report.harnessSha256 = harnessSha256;
 report.glueSha256 = glueSha256;
 report.mappedSha256 = mappedSha256;
+report.inheritanceSha256 = inheritanceSha256;
+report.verifiedSha256 = verifiedSha256;
+report.schemaSha256 = schemaSha256;
 // Preserve the finite fictional-data report in CI logs without uploading database files or generated credentials.
 const outcome = { ...report, failed:!!original, ...(original ? { phase, error:{code:original.code??'ASSERTION',message:String(original.message).replaceAll(password,'[redacted]').slice(0,1000)} } : {}) };
 if (process.env.CI) console.log(JSON.stringify(outcome));
 writeFileSync(resultUrl,JSON.stringify(outcome,null,2)+'\n');
 if(original) { console.error('Engine checks failed at '+phase+'; report: '+fileURLToPath(resultUrl)); process.exitCode=1; }
-else console.log(JSON.stringify({postgresql:report.engines.postgresql.cases.length,pglite:report.engines.pglite.cases.length,positional:report.engines.postgresql.positionalCases.length+'+'+report.engines.pglite.positionalCases.length,errorRecovery:report.engines.postgresql.errorRecoveryCases.length+'+'+report.engines.pglite.errorRecoveryCases.length,mapped:report.engines.postgresql.mappedCases.cases.length+'+'+report.engines.pglite.mappedCases.cases.length,cleanup:report.cleanup,scope:report.scope,report:fileURLToPath(resultUrl)}));
+else console.log(JSON.stringify({postgresql:report.engines.postgresql.cases.length,pglite:report.engines.pglite.cases.length,positional:report.engines.postgresql.positionalCases.length+'+'+report.engines.pglite.positionalCases.length,errorRecovery:report.engines.postgresql.errorRecoveryCases.length+'+'+report.engines.pglite.errorRecoveryCases.length,mapped:report.engines.postgresql.mappedCases.cases.length+'+'+report.engines.pglite.mappedCases.cases.length,inheritance:report.engines.postgresql.inheritanceCases.cases.length+'+'+report.engines.pglite.inheritanceCases.cases.length,verified:report.engines.postgresql.verifiedCases.cases.length+'+'+report.engines.pglite.verifiedCases.cases.length,cleanup:report.cleanup,scope:report.scope,report:fileURLToPath(resultUrl)}));

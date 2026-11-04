@@ -25,8 +25,8 @@ Status meanings:
 | --- | --- | --- |
 | SQLite on current Node | Implemented | Real file and in-memory CRUD, constraints, rollback, precision and packaged-consumer tests. Node 24.22.2+ or 26.13.0+ is required within those LTS lines. |
 | SQLite on older supported Node through a native driver | Missing | A versioned adapter and actual runtime tests; do not silently disable defensive features on an older Node release. |
-| PostgreSQL | In progress | Internal dedicated-connection transaction boundary and a root insert/key/count compiler with six-kind, OID-checked decoding have live engine checks. Physical schema/session-setting verification, full query features, public adapter, pools and roles remain missing. |
-| PGlite, including browser use | In progress | The internal root prototype and transaction checks use actual protocol responses from the embedded engine. Full query/codec support, public adapter, worker isolation and a browser build without Node-only imports remain missing. |
+| PostgreSQL | In progress | Internal dedicated-connection transaction boundary, root insert/key/count compiler and a strict structural/settings context have live engine checks. The context covers six native kinds and a subset of physical constraints. Full query features, general schema/role verification, public adapter and pools remain missing. |
+| PGlite, including browser use | In progress | Internal root queries, strict structural/settings context and transaction checks use actual protocol responses from the embedded engine. Full query/codec support, public adapter, worker isolation and a browser build without Node-only imports remain missing. |
 | MySQL | Missing | Live MySQL tests, parameter/identifier syntax, JSON, precision and conflict behavior. |
 | MariaDB | Missing | Its own live integration cases; MySQL results do not prove MariaDB compatibility. |
 | SQL Server through tedious and the native provider | Missing | Both intended adapters tested, including affected-row results, parameter limits and locking semantics. |
