@@ -29,28 +29,34 @@ import type { Parameter } from './schema.js';
  * continues. `handle` identifies the frame. 'rejected' is an acknowledged engine rejection; 'unconfirmed' means the
  * statement's effect is unknown (never evidence of rollback). Observer exceptions are ignored.
  */
-export interface AsyncControlEvent {
-  readonly handle: AsyncTransaction; readonly action: TransactionAction; readonly sql: string;
+export interface AsyncControlEvent<R = ExecutorRows> {
+  readonly handle: AsyncTransaction<R>; readonly action: TransactionAction; readonly sql: string;
   readonly outcome: 'ok' | 'rejected' | 'unconfirmed'; readonly startedAt: number;
 }
-export interface AsyncSessionObserver { control(event: AsyncControlEvent): void }
-export interface AsyncSessionOptions {
+export interface AsyncSessionObserver<R = ExecutorRows> { control(event: AsyncControlEvent<R>): void }
+export interface AsyncSessionOptions<R = ExecutorRows> {
   /** Trusted internal engine selection; not a public database option or raw-SQL hook. */
   readonly dialect?: 'sqlite' | 'postgresql';
-  readonly observer?: AsyncSessionObserver;
+  readonly observer?: AsyncSessionObserver<R>;
   readonly readOnly?: boolean;
   readonly maxQueue?: number;
   readonly maxPending?: number;
   readonly queueTimeoutMs?: number;
 }
 export interface AsyncOperationOptions { readonly signal?: AbortSignal }
-export interface AsyncTransaction {
-  all(sql: string, parameters?: readonly Parameter[], options?: AsyncOperationOptions): Promise<ExecutorRows>;
-  transaction<R>(callback: (tx: AsyncTransaction) => R | PromiseLike<R>, options?: AsyncOperationOptions): Promise<Awaited<R>>;
+export interface AsyncTransaction<R = ExecutorRows> {
+  all(sql: string, parameters?: readonly Parameter[], options?: AsyncOperationOptions): Promise<R>;
+  transaction<T>(callback: (tx: AsyncTransaction<R>) => T | PromiseLike<T>, options?: AsyncOperationOptions): Promise<Awaited<T>>;
 }
-export interface AsyncSession extends AsyncTransaction {
+export interface AsyncSession<R = ExecutorRows> extends AsyncTransaction<R> {
   close(): Promise<void>;
 }
+/**
+ * Recognizes one complete result of type R. A false answer or a throw means the driver's answer is malformed, so the
+ * statement's outcome is unknown: the session poisons, exactly as it does for a non-array row result by default.
+ * Trusted internal code only; this is not a driver extension point.
+ */
+export type AsyncResultGuard<R> = (value: unknown) => value is R;
 
 export const ASYNC_SESSION_LIMITS = Object.freeze({
   maxDepth: 32, defaultQueue: 64, defaultPending: 256, defaultQueueTimeoutMs: 10_000,
@@ -94,29 +100,32 @@ function deferred<T>(): Deferred<T> {
 }
 
 type Phase = 'starting' | 'running' | 'settling' | 'done';
-interface Frame {
-  readonly parent: Frame | null;
+/** The part of a frame that does not depend on its result type. */
+interface FramePublicTracking {
+  phase: Phase;
+  /** Public wrapper promises still pending; see trackTransactionPromise. */
+  readonly publicPending: Set<Promise<unknown>>;
+  /** Set once this frame's work is being invalidated; its outcome is reported by the transaction's own rejection. */
+  publicInvalidated: boolean;
+}
+interface Frame<R> extends FramePublicTracking {
+  readonly parent: Frame<R> | null;
   readonly depth: number;
   readonly savepoint: string | null;
   active: boolean;
   closedCode: string;
-  phase: Phase;
-  child: Frame | null;
+  child: Frame<R> | null;
   doomed: boolean;
   abortRequested: boolean;
   /** Settle-only markers for every executor operation issued on behalf of this frame. */
   readonly issued: Set<Promise<void>>;
   /** User-visible statement promises still pending, so a TRANSACTION_PENDING drain does not add unhandled rejections. */
   readonly userPending: Set<Promise<unknown>>;
-  /** Public wrapper promises still pending; see trackTransactionPromise. */
-  readonly publicPending: Set<Promise<unknown>>;
-  /** Set once this frame's work is being invalidated; its outcome is reported by the transaction's own rejection. */
-  publicInvalidated: boolean;
   readonly interrupt: Deferred<'abort' | 'doom'>;
-  handle: AsyncTransaction;
+  handle: AsyncTransaction<R>;
 }
 
-const frames = new WeakMap<AsyncTransaction, Frame>();
+const frames = new WeakMap<object, FramePublicTracking>();
 
 /**
  * Internal, for the public async database. Returns the promise handed to the caller of a transaction-scoped operation
@@ -128,7 +137,7 @@ const frames = new WeakMap<AsyncTransaction, Frame>();
  * reports that failure. A forgotten operation that already failed stays unobserved and is reported normally.
  * Handles that are not session frames (the root database) get `work` back unchanged.
  */
-export function trackTransactionPromise<T>(handle: AsyncTransaction, work: Promise<T>): Promise<T> {
+export function trackTransactionPromise<T, R = ExecutorRows>(handle: AsyncTransaction<R>, work: Promise<T>): Promise<T> {
   const frame = frames.get(handle);
   if (!frame) return work;
   let visible!: Promise<T>;
@@ -143,7 +152,7 @@ export function trackTransactionPromise<T>(handle: AsyncTransaction, work: Promi
 
 interface QueueEntry { start(): void; fail(error: unknown): void }
 
-const OPTION_KEYS = new Set(['readOnly', 'maxQueue', 'maxPending', 'queueTimeoutMs', 'observer', 'dialect']);
+const OPTION_KEYS = new Set(['readOnly', 'maxQueue', 'maxPending', 'queueTimeoutMs', 'observer', 'dialect', 'isResult']);
 
 function plainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -193,18 +202,22 @@ function withCleanup(error: unknown, code: string): unknown {
   return error;
 }
 
-class Session {
-  readonly #executor: Readonly<{ all: AsyncExecutor['all']; exec: AsyncExecutor['exec']; inTransaction: AsyncExecutor['inTransaction']; close: AsyncExecutor['close'] }>;
+/** What the session constructor receives. Only the second factory overload can supply a guard for a non-default result. */
+type AsyncSessionConstruction<R> = AsyncSessionOptions<R> & { readonly isResult?: AsyncResultGuard<R> };
+
+class Session<R> {
+  readonly #executor: Readonly<{ all: AsyncExecutor<R>['all']; exec: AsyncExecutor<R>['exec']; inTransaction: AsyncExecutor<R>['inTransaction']; close: AsyncExecutor<R>['close'] }>;
+  readonly #isResult: AsyncResultGuard<R>;
   readonly #readOnly: boolean;
   readonly #dialect: 'sqlite' | 'postgresql';
   readonly #maxQueue: number;
   readonly #maxPending: number;
   readonly #queueTimeoutMs: number;
-  readonly #observer: ((event: AsyncControlEvent) => void) | undefined;
-  readonly #context = new AsyncLocalStorage<Frame>();
+  readonly #observer: ((event: AsyncControlEvent<R>) => void) | undefined;
+  readonly #context = new AsyncLocalStorage<Frame<R>>();
   readonly #queue: QueueEntry[] = [];
   #tail: Promise<void> = Promise.resolve();
-  #current: Frame | null = null;
+  #current: Frame<R> | null = null;
   #inflight = 0;
   #savepoints = 0;
   #poison: string | null = null;
@@ -212,7 +225,7 @@ class Session {
   #connectionClosed: Promise<void> | null = null;
   #closeResult: Promise<void> | null = null;
 
-  constructor(executor: AsyncExecutor, options: AsyncSessionOptions | undefined) {
+  constructor(executor: AsyncExecutor<R>, options: AsyncSessionConstruction<R> | undefined) {
     if (executor === null || typeof executor !== 'object') throw failure('VALIDATION');
     const all = executor.all, exec = executor.exec, inTransaction = executor.inTransaction, close = executor.close;
     if (typeof all !== 'function' || typeof exec !== 'function' || typeof inTransaction !== 'function' || typeof close !== 'function') throw failure('VALIDATION');
@@ -226,16 +239,19 @@ class Session {
     this.#maxQueue = integerOption(raw, 'maxQueue', ASYNC_SESSION_LIMITS.defaultQueue, ASYNC_SESSION_LIMITS.queue);
     this.#maxPending = integerOption(raw, 'maxPending', ASYNC_SESSION_LIMITS.defaultPending, ASYNC_SESSION_LIMITS.pending);
     this.#queueTimeoutMs = integerOption(raw, 'queueTimeoutMs', ASYNC_SESSION_LIMITS.defaultQueueTimeoutMs, ASYNC_SESSION_LIMITS.queueTimeoutMs);
+    const isResult = options?.isResult;
+    if (isResult !== undefined && typeof isResult !== 'function') throw failure('VALIDATION');
+    this.#isResult = isResult ?? ((value: unknown): value is R => Array.isArray(value));
     const observer = raw.observer;
     if (observer !== undefined && (observer === null || typeof observer !== 'object' || typeof (observer as { control?: unknown }).control !== 'function')) throw failure('VALIDATION');
-    const notify = observer === undefined ? undefined : (observer as AsyncSessionObserver).control.bind(observer);
+    const notify = observer === undefined ? undefined : (observer as AsyncSessionObserver<R>).control.bind(observer);
     this.#observer = notify === undefined ? undefined : event => { try { notify(event); } catch { /* A trace hook can never change a transaction outcome. */ } };
   }
 
-  facade(): AsyncSession {
+  facade(): AsyncSession<R> {
     return Object.freeze({
       all: (sql: string, parameters?: readonly Parameter[], options?: AsyncOperationOptions) => this.#rootAll(sql, parameters, options),
-      transaction: <R>(callback: (tx: AsyncTransaction) => R | PromiseLike<R>, options?: AsyncOperationOptions) => this.#rootTransaction<R>(callback, options),
+      transaction: <T>(callback: (tx: AsyncTransaction<R>) => T | PromiseLike<T>, options?: AsyncOperationOptions) => this.#rootTransaction<T>(callback, options),
       close: () => this.#close(),
     });
   }
@@ -256,7 +272,7 @@ class Session {
    * kind 'commit': acknowledged passes through; anything else poisons with COMMIT_UNCONFIRMED.
    * kind 'state': any failure or non-boolean answer poisons with EXECUTION_UNCONFIRMED.
    */
-  #execute<T>(frame: Frame | null, kind: 'statement' | 'control' | 'commit' | 'state', operation: () => Promise<T>, beforeSend?: () => void): Promise<T> {
+  #execute<T>(frame: Frame<R> | null, kind: 'statement' | 'control' | 'commit' | 'state', operation: () => Promise<T>, beforeSend?: () => void): Promise<T> {
     const run = this.#serial(async () => {
       // A local rejection before the driver is invoked establishes that nothing was sent.
       beforeSend?.();
@@ -276,14 +292,14 @@ class Session {
     return run;
   }
 
-  #statement(frame: Frame | null, sql: string, parameters: readonly Parameter[], signal?: AbortSignal): Promise<ExecutorRows> {
+  #statement(frame: Frame<R> | null, sql: string, parameters: readonly Parameter[], signal?: AbortSignal): Promise<R> {
     this.#inflight++;
     const onAbort = (): void => { if (frame) this.#abortFrame(frame); };
     if (frame) signal?.addEventListener('abort', onAbort, { once: true });
     const run = this.#execute(frame, 'statement', async () => {
       const rows: unknown = await this.#executor.all(sql, parameters);
-      if (!Array.isArray(rows)) throw new Error('malformed executor result');
-      return rows as ExecutorRows;
+      if (!this.#isResult(rows)) throw new Error('malformed executor result');
+      return rows;
     }, () => { if (signal?.aborted) { onAbort(); throw failure('ABORTED'); } });
     const release = (): void => { this.#inflight--; if (frame) signal?.removeEventListener('abort', onAbort); };
     run.then(release, release);
@@ -295,7 +311,7 @@ class Session {
     return run;
   }
 
-  #control(frame: Frame, action: TransactionAction, name?: string): Promise<void> {
+  #control(frame: Frame<R>, action: TransactionAction, name?: string): Promise<void> {
     const sql = controlSql(this.#dialect, action, name);
     const startedAt = performance.now();
     const run = this.#execute(frame, action === 'commit' ? 'commit' : 'control', () => this.#executor.exec(sql));
@@ -308,7 +324,7 @@ class Session {
     return run;
   }
 
-  #inTransaction(frame: Frame): Promise<boolean> {
+  #inTransaction(frame: Frame<R>): Promise<boolean> {
     return this.#execute(frame, 'state', async () => {
       const value: unknown = await this.#executor.inTransaction();
       if (typeof value !== 'boolean') throw new Error('malformed transaction state');
@@ -342,14 +358,14 @@ class Session {
   #rootGuard(): void {
     const store = this.#context.getStore();
     if (store) {
-      for (let frame: Frame | null = store; frame; frame = frame.parent) if (frame.active) throw failure('TRANSACTION_ACTIVE');
+      for (let frame: Frame<R> | null = store; frame; frame = frame.parent) if (frame.active) throw failure('TRANSACTION_ACTIVE');
       throw failure('TRANSACTION_CLOSED');
     }
     if (this.#poison !== null) throw failure('CONNECTION_UNUSABLE');
     if (this.#closing) throw failure('CLOSED');
   }
 
-  #frameGuard(frame: Frame): void {
+  #frameGuard(frame: Frame<R>): void {
     if (this.#poison !== null) throw failure('CONNECTION_UNUSABLE');
     if (!frame.active) throw failure(frame.closedCode);
     const store = this.#context.getStore();
@@ -393,15 +409,15 @@ class Session {
 
   // ---------------------------------------------------------------- public operations (all return promises, never throw)
 
-  async #rootAll(sql: unknown, parameters: unknown, options: unknown): Promise<ExecutorRows> {
+  async #rootAll(sql: unknown, parameters: unknown, options: unknown): Promise<R> {
     const text = captureSql(sql), values = captureParameters(parameters), signal = operationSignal(options);
     this.#rootGuard();
     if (signal?.aborted) throw failure('ABORTED');
     // PostgreSQL READ ONLY is a transaction mode, not an executor-wide file flag as it is for SQLite. Enclose even
     // one root statement in that mode, so the option cannot silently permit autocommit writes. This is not a role policy.
     if (this.#dialect === 'postgresql' && this.#readOnly)
-      return this.#rootTransaction<ExecutorRows>((tx: AsyncTransaction) => tx.all(text, values), signal === undefined ? undefined : { signal });
-    return new Promise<ExecutorRows>((resolve, reject) => {
+      return this.#rootTransaction<R>((tx: AsyncTransaction<R>) => tx.all(text, values), signal === undefined ? undefined : { signal });
+    return new Promise<R>((resolve, reject) => {
       this.#admit(signal, () => {
         if (signal?.aborted) { reject(failure('ABORTED')); return; }
         if (this.#poison !== null) { reject(failure('CONNECTION_UNUSABLE')); return; }
@@ -411,24 +427,24 @@ class Session {
     });
   }
 
-  async #rootTransaction<R>(callback: unknown, options: unknown): Promise<Awaited<R>> {
+  async #rootTransaction<T>(callback: unknown, options: unknown): Promise<Awaited<T>> {
     if (typeof callback !== 'function') throw failure('VALIDATION');
     const signal = operationSignal(options);
     this.#rootGuard();
     if (signal?.aborted) throw failure('ABORTED');
-    return new Promise<Awaited<R>>((resolve, reject) => {
+    return new Promise<Awaited<T>>((resolve, reject) => {
       this.#admit(signal, () => {
         if (signal?.aborted) { reject(failure('ABORTED')); return; }
         if (this.#poison !== null) { reject(failure('CONNECTION_UNUSABLE')); return; }
         const frame = this.#frame(null);
         this.#current = frame;
-        this.#runFrame(frame, callback as (tx: AsyncTransaction) => R | PromiseLike<R>, signal).then(resolve, reject);
+        this.#runFrame(frame, callback as (tx: AsyncTransaction<R>) => T | PromiseLike<T>, signal).then(resolve, reject);
       }, reject);
     });
   }
 
   /** Not async: the returned promise is the tracked statement promise itself. Validation failures are rejections. */
-  #txAll(frame: Frame, sql: unknown, parameters: unknown, options: unknown): Promise<ExecutorRows> {
+  #txAll(frame: Frame<R>, sql: unknown, parameters: unknown, options: unknown): Promise<R> {
     let text: string, values: readonly Parameter[];
     let signal: AbortSignal | undefined;
     try {
@@ -443,7 +459,7 @@ class Session {
   }
 
   /** Every admission check is synchronous and happens before SAVEPOINT is issued. */
-  #txTransaction<R>(parent: Frame, callback: unknown, options: unknown): Promise<Awaited<R>> {
+  #txTransaction<T>(parent: Frame<R>, callback: unknown, options: unknown): Promise<Awaited<T>> {
     let signal: AbortSignal | undefined;
     try {
       if (typeof callback !== 'function') throw failure('VALIDATION');
@@ -455,18 +471,18 @@ class Session {
     } catch (error) { return Promise.reject(error); }
     const child = this.#frame(parent);
     parent.child = child;
-    return this.#runFrame(child, callback as (tx: AsyncTransaction) => R | PromiseLike<R>, signal);
+    return this.#runFrame(child, callback as (tx: AsyncTransaction<R>) => T | PromiseLike<T>, signal);
   }
 
-  #frame(parent: Frame | null): Frame {
-    const frame: Frame = {
+  #frame(parent: Frame<R> | null): Frame<R> {
+    const frame: Frame<R> = {
       parent, depth: parent ? parent.depth + 1 : 1, savepoint: parent ? 'rs_async_sp_' + ++this.#savepoints : null,
       active: true, closedCode: 'TRANSACTION_CLOSED', phase: 'starting', child: null, doomed: false, abortRequested: false,
-      issued: new Set(), userPending: new Set(), publicPending: new Set(), publicInvalidated: false, interrupt: deferred(), handle: undefined as unknown as AsyncTransaction,
+      issued: new Set(), userPending: new Set(), publicPending: new Set(), publicInvalidated: false, interrupt: deferred(), handle: undefined as unknown as AsyncTransaction<R>,
     };
     frame.handle = Object.freeze({
       all: (sql: string, parameters?: readonly Parameter[], options?: AsyncOperationOptions) => this.#txAll(frame, sql, parameters, options),
-      transaction: <R>(callback: (tx: AsyncTransaction) => R | PromiseLike<R>, options?: AsyncOperationOptions) => this.#txTransaction<R>(frame, callback, options),
+      transaction: <T>(callback: (tx: AsyncTransaction<R>) => T | PromiseLike<T>, options?: AsyncOperationOptions) => this.#txTransaction<T>(frame, callback, options),
     });
     frames.set(frame.handle, frame);
     return frame;
@@ -475,14 +491,14 @@ class Session {
   // ---------------------------------------------------------------- transaction lifecycle
 
   /** The transaction's rejection reports these outcomes; still-pending public promises must not also become unhandled. */
-  #observePublic(frame: Frame): void {
-    for (let current: Frame | null = frame; current; current = current.child) {
+  #observePublic(frame: Frame<R>): void {
+    for (let current: Frame<R> | null = frame; current; current = current.child) {
       current.publicInvalidated = true;
       for (const promise of current.publicPending) promise.catch(noop);
     }
   }
 
-  #abortFrame(frame: Frame): void {
+  #abortFrame(frame: Frame<R>): void {
     if (frame.phase === 'starting' || frame.phase === 'running') {
       frame.abortRequested = true;
       if (frame.phase === 'running') frame.interrupt.resolve('abort');
@@ -490,7 +506,7 @@ class Session {
   }
 
   /** Invalidates every active descendant; each one stops accepting work and sends no further SQL of its own. */
-  #doomDescendants(frame: Frame): void {
+  #doomDescendants(frame: Frame<R>): void {
     for (let child = frame.child; child; child = child.child) {
       child.active = false; child.doomed = true; child.closedCode = 'TRANSACTION_CLOSED';
       child.interrupt.resolve('doom');
@@ -498,17 +514,17 @@ class Session {
   }
 
   /** Waits for every executor operation already issued by the frame or its descendants. */
-  async #drain(frame: Frame): Promise<void> {
+  async #drain(frame: Frame<R>): Promise<void> {
     for (;;) {
       const pending: Promise<void>[] = [];
-      for (let current: Frame | null = frame; current; current = current.child) pending.push(...current.issued);
+      for (let current: Frame<R> | null = frame; current; current = current.child) pending.push(...current.issued);
       if (!pending.length) return;
       await Promise.all(pending);
     }
   }
 
   /** Returns null after a verified rollback, otherwise the poison code (the connection is then closed). */
-  async #rollback(frame: Frame): Promise<string | null> {
+  async #rollback(frame: Frame<R>): Promise<string | null> {
     if (this.#poison !== null) return this.#poison;
     try {
       if (frame.parent === null) {
@@ -529,8 +545,8 @@ class Session {
   }
 
   /** Not async: callers receive result.promise itself, so doomed outcomes can be marked handled on that exact promise. */
-  #runFrame<R>(frame: Frame, callback: (tx: AsyncTransaction) => R | PromiseLike<R>, signal: AbortSignal | undefined): Promise<Awaited<R>> {
-    const result = deferred<Awaited<R>>();
+  #runFrame<T>(frame: Frame<R>, callback: (tx: AsyncTransaction<R>) => T | PromiseLike<T>, signal: AbortSignal | undefined): Promise<Awaited<T>> {
+    const result = deferred<Awaited<T>>();
     let finished = false;
     const onAbort = (): void => this.#abortFrame(frame);
     const finish = (ok: boolean, value: unknown, handled = false): void => {
@@ -540,7 +556,7 @@ class Session {
       frame.active = false; frame.phase = 'done';
       if (frame.parent) { if (frame.parent.child === frame) frame.parent.child = null; }
       else if (this.#current === frame) { this.#current = null; this.#pump(); }
-      if (ok) result.resolve(value as Awaited<R>);
+      if (ok) result.resolve(value as Awaited<T>);
       else { if (handled) result.promise.catch(noop); result.reject(value); }
     };
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -552,7 +568,7 @@ class Session {
     return result.promise;
   }
 
-  async #lifecycle<R>(frame: Frame, callback: (tx: AsyncTransaction) => R | PromiseLike<R>, signal: AbortSignal | undefined,
+  async #lifecycle<T>(frame: Frame<R>, callback: (tx: AsyncTransaction<R>) => T | PromiseLike<T>, signal: AbortSignal | undefined,
     finish: (ok: boolean, value: unknown, handled?: boolean) => void): Promise<void> {
 
     // 1. BEGIN / SAVEPOINT.
@@ -573,7 +589,7 @@ class Session {
 
     // 2. Run the callback inside this frame's context.
     frame.phase = 'running';
-    let outcome: Promise<R>;
+    let outcome: Promise<T>;
     try { outcome = Promise.resolve(this.#context.run(frame, () => callback(frame.handle))); }
     catch (error) { outcome = Promise.reject(error); }
     type Settled = { kind: 'settled'; ok: boolean; value: unknown } | { kind: 'interrupt'; reason: 'abort' | 'doom' };
@@ -635,7 +651,7 @@ class Session {
   #close(): Promise<void> {
     const store = this.#context.getStore();
     if (store) {
-      for (let frame: Frame | null = store; frame; frame = frame.parent) if (frame.active) return Promise.reject(failure('TRANSACTION_ACTIVE'));
+      for (let frame: Frame<R> | null = store; frame; frame = frame.parent) if (frame.active) return Promise.reject(failure('TRANSACTION_ACTIVE'));
       return Promise.reject(failure('TRANSACTION_CLOSED'));
     }
     if (this.#closeResult) return this.#closeResult;
@@ -654,6 +670,8 @@ class Session {
 }
 
 /** Internal factory. Throws VALIDATION synchronously only for invalid construction arguments. */
-export function createAsyncSession(executor: AsyncExecutor, options?: AsyncSessionOptions): AsyncSession {
-  return new Session(executor, options).facade();
+export function createAsyncSession(executor: AsyncExecutor, options?: AsyncSessionOptions): AsyncSession;
+export function createAsyncSession<R>(executor: AsyncExecutor<R>, options: AsyncSessionOptions<R> & { readonly isResult: AsyncResultGuard<R> }): AsyncSession<R>;
+export function createAsyncSession<R>(executor: AsyncExecutor<R>, options?: AsyncSessionConstruction<R>): AsyncSession<R> {
+  return new Session<R>(executor, options).facade();
 }

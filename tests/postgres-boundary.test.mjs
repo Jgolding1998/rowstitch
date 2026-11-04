@@ -5,8 +5,11 @@ import { queryModel } from '../dist/core/query-model.js';
 import { createPostgresExecutor } from '../dist/core/postgres-executor.js';
 import { createAsyncSession } from '../dist/core/async-session.js';
 import { isAcknowledgedRejection } from '../dist/core/executor.js';
+import { isPostgresRawResult } from '../dist/core/postgres-result.js';
 
 const code = expected => error => error?.code === expected;
+const verdict = (sqlstate, afterCommandComplete = false) => ({ sqlstate, afterCommandComplete });
+const controlTag = sql => /^(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)/.exec(sql)?.[0] ?? 'SELECT 0';
 function fake() {
   const sent = [], errors = new WeakMap();
   let state = 'I', closes = 0, response, responseState, fail;
@@ -23,7 +26,7 @@ function fake() {
         if (response) { if (responseState) state = responseState; return response; }
         if (sql.startsWith('BEGIN')) state = 'T';
         if (sql === 'COMMIT' || sql === 'ROLLBACK') state = 'I';
-        return { rows: [], command: sql.startsWith('BEGIN') ? 'BEGIN' : sql.split(' ')[0] };
+        return { fields: [], rows: [], commandTag: controlTag(sql) };
       },
       transactionStatus() { return state; },
       serverError(error) { return errors.get(error); },
@@ -54,7 +57,7 @@ test('parameter snapshots preserve int64 and text without accepting arbitrary ob
 test('only engine-identified ErrorResponses are acknowledged and sanitized', async () => {
   for (const [state, expected] of [['23505', 'CONSTRAINT'], ['25006', 'READ_ONLY'], ['40001', 'SERIALIZATION_FAILURE'], ['40P01', 'DEADLOCK']]) {
     const d = fake(), executor = createPostgresExecutor(d.transport), error = new Error('SYNTHETIC_PRIVATE_VALUE');
-    d.errors.set(error, state); d.fail(error);
+    d.errors.set(error, verdict(state)); d.fail(error);
     await assert.rejects(executor.all('SELECT $1', ['SYNTHETIC_PRIVATE_VALUE']), result => {
       assert.equal(result.code, expected); assert.ok(isAcknowledgedRejection(result));
       for (const text of [result.message, String(result), JSON.stringify(result)])
@@ -72,18 +75,19 @@ test('only engine-identified ErrorResponses are acknowledged and sanitized', asy
 test('COMMIT that returns ROLLBACK is a definite transaction failure, never success', async () => {
   const d = fake(), executor = createPostgresExecutor(d.transport);
   d.setState('E');
-  d.response({ rows: [], command: 'ROLLBACK' }, 'I');
+  d.response({ fields: [], rows: [], commandTag: 'ROLLBACK' }, 'I');
   await assert.rejects(executor.exec('COMMIT'), error => error.code === 'TRANSACTION_ABORTED' && isAcknowledgedRejection(error));
   d.setState('T');
-  d.response({ rows: [], command: 'unexpected' }, 'I');
+  d.response({ fields: [], rows: [], commandTag: 'unexpected' }, 'I');
   await assert.rejects(executor.exec('COMMIT'), error => !isAcknowledgedRejection(error));
   await executor.close();
 });
 
 test('malformed results and transport errors cannot acquire an acknowledgment brand', async () => {
   const accessor = {}; Object.defineProperty(accessor, 'value', { enumerable:true, get() { throw new Error('must not invoke an output getter'); } });
-  for (const response of [{ rows: false, command: 'SELECT' }, { rows: [], command: null }, [],
-    {rows:[null],command:'SELECT'}, {rows:[{amount:9007199254740992}],command:'SELECT'}, {rows:[accessor],command:'SELECT'}]) {
+  const fields = [{ name: 'amount', typeOid: 20 }];
+  for (const response of [{ fields, rows: false, commandTag: 'SELECT 0' }, { fields, rows: [], commandTag: null }, [],
+    { fields, rows: [null], commandTag: 'SELECT 1' }, { fields, rows: [[9007199254740992]], commandTag: 'SELECT 1' }, { fields, rows: [accessor], commandTag: 'SELECT 1' }]) {
     const d = fake(), executor = createPostgresExecutor(d.transport); d.response(response);
     await assert.rejects(executor.all('SELECT 1', []), error => !isAcknowledgedRejection(error));
     await executor.close();
@@ -101,7 +105,7 @@ test('control requests accept a single generated command and close the owned con
 });
 
 test('the PostgreSQL session uses its dialect for root and nested rollback, keeping SQLite default unchanged', async () => {
-  const d = fake(), session = createAsyncSession(createPostgresExecutor(d.transport), { dialect: 'postgresql' });
+  const d = fake(), session = createAsyncSession(createPostgresExecutor(d.transport), { dialect: 'postgresql', isResult: isPostgresRawResult });
   const original = new Error('synthetic nested failure');
   assert.equal(await session.transaction(async tx => {
     await assert.rejects(tx.transaction(() => { throw original; }), error => error === original);
@@ -111,5 +115,5 @@ test('the PostgreSQL session uses its dialect for root and nested rollback, keep
     'ROLLBACK TO SAVEPOINT "rs_async_sp_1"', 'RELEASE SAVEPOINT "rs_async_sp_1"', 'COMMIT']);
   await session.close();
   for (const dialect of ['postgres', '', () => 'COMMIT'])
-    assert.throws(() => createAsyncSession(createPostgresExecutor(fake().transport), { dialect }), code('VALIDATION'));
+    assert.throws(() => createAsyncSession(createPostgresExecutor(fake().transport), { dialect, isResult: isPostgresRawResult }), code('VALIDATION'));
 });

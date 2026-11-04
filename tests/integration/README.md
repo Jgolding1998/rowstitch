@@ -17,6 +17,13 @@ The result is printed with the location of a report under the OS temporary direc
 
 The runner prints its unique resource label before creation. Normal failures clean up resources found by that label, including a container whose start failed. An interrupted process, unavailable Docker daemon or daemon operation that finishes after a CLI timeout can prevent complete cleanup; use the printed label to find its container and network in Docker. Remove only resources bearing that exact label. No cleanup after abrupt termination is guaranteed.
 
-The suite first checks malformed protocol responses using synthetic messages, then checks parameter binding, exact int64 values, rollback and savepoints, failed COMMIT and RELEASE, read-only root writes, independent sessions, serialization failures and terminated backends against the actual engines. It records the actual engine versions and expects 14 PostgreSQL cases and 12 PGlite cases, counted separately from the synthetic tests. CI runs the same checks on both supported Node versions.
+The suite checks malformed protocol responses with synthetic messages and a scripted server using the real `pg` client, then runs these separate groups on the actual engines:
+
+- 14 PostgreSQL and 12 PGlite transaction cases: binding, int64, rollback/savepoints, failed COMMIT/RELEASE, read-only roots, serialization and terminated backends.
+- 5 positional-result cases per engine: native type OIDs, duplicate field names, exact affected-row counts and transaction handles.
+- 3 error-recovery cases per engine: errors after partial rows or statement completion, and implicit-commit uncertainty. The resource-error case deliberately raises a SQLSTATE; it does not simulate a real disk failure.
+- 8 mapped-root cases per engine: compiled insert/key/count, independent native SQL, input capture, rollback on decoder errors and expanded JSONB, duplicate declared keys, savepoint recovery, read-only execution and an applied COMMIT with its acknowledgment deliberately hidden.
+
+CI runs the same checks on both supported Node versions. These groups are scenarios on fixed fictional datasets, not a count of apps or users. High-bit OIDs, counts beyond Number's safe range and malformed/stale messages are scripted evidence, not observations from a real server.
 
 Deliberately hiding a COMMIT acknowledgment tests an uncertain result; it does not reproduce TCP loss during COMMIT. PGlite does not establish network, pool or role behaviour. Its synchronous WASM execution can block the event loop, so a timer on that thread cannot enforce a wall-clock deadline. A worker boundary remains necessary before making that promise. These checks do not certify security or establish full PostgreSQL ORM support.

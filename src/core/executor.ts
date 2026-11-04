@@ -12,8 +12,8 @@ export interface SyncExecutor {
 }
 
 /** A rejected promise alone never proves that a remote statement did not run. */
-export interface AsyncExecutor {
-  all(sql: string, parameters: readonly Parameter[]): Promise<ExecutorRows>;
+export interface AsyncExecutor<R = ExecutorRows> {
+  all(sql: string, parameters: readonly Parameter[]): Promise<R>;
   exec(sql: string): Promise<void>;
   inTransaction(): Promise<boolean>;
   close(): Promise<void>;
