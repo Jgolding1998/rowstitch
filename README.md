@@ -15,7 +15,7 @@ This release includes the 0.7.1 correction for related summaries with different 
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.9.0/rowstitch-0.9.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.9.1/rowstitch-0.9.1.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -37,7 +37,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.9.0/rowstitch-0.9.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.9.1/rowstitch-0.9.1.tgz
 ```
 
 ```ts
