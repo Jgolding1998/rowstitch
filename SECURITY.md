@@ -34,13 +34,31 @@ Transaction callbacks must be synchronous. Nested transactions use savepoints. F
 
 Schema creation does not authorize a destructive migration. Unsupported schema changes are refused. Existing triggers, cascades, collations and application invariants need independent review before adopting a model. The schema report is not a complete recreation script.
 
+## PostgreSQL and PGlite
+
+These optional entries load their exact pinned peer only when opened, and refuse other versions. The core package has no required runtime dependency. Keep those peers updated within what Rowstitch supports, and watch their own advisories, since this package does not ship them.
+
+The PostgreSQL entry never reads connection environment values or password files, and refuses a connection if the environment or changed client defaults alter an essential setting. Open failures use constant messages without the host, password or connection string. Traces contain no connection details.
+
+**TLS is off by default.** Use `ssl: true`, `ssl: { ca }` or `sslmode=verify-full` for anything remote. These verify the server's certificate and host name, and no option disables that. Without them, passwords and data cross the network in clear text. Channel binding is not enforced. Client certificates were tested only with short-lived self-signed certificates.
+
+Session settings are confirmed by the server once, at open, and are not rechecked per operation. Values stay bound and identifiers stay validated and quoted, including in PostgreSQL's created defaults, which render validated literals because that syntax cannot be bound.
+
+The database is a trusted input, not a sandbox. Roles, row-level security, triggers, rules, default expressions and CHECK constraints are honored but not verified by the library. A trigger can change returned values; a SECURITY DEFINER function runs with its owner's rights. `readOnly: true` is a transaction mode, not an authorization policy; use a restricted database role for that. Schema planning checks that a default exists, not its value, and it never alters an existing table. Compatible server versions from 12 are not refused, but only 18.6 is tested.
+
+Reaching a client deadline abandons the connection and asks the server to cancel. The statement may still finish. Nothing is replayed.
+
+PGlite here is in memory in a worker thread. It has no file option, and nothing persists after close, so no durability or file-sharing behavior is claimed. It is not isolation from your application's code and not a security boundary.
+
+Captured `AbortSignal` options must be same-realm, extensible platform signals, and native methods are used directly. That bounds which objects are accepted. It is not a promise against code that tampers with private state or global prototypes.
+
 ## Inspector
 
 The studio binds only to `127.0.0.1`, serves a fixed asset allowlist and a fictional demo, and has no SQL, database-path, upload or mutation endpoint. It checks Host/Origin and request framing, applies response policies and bounds connections, headers and output. Do not expose it with a public tunnel or reverse proxy.
 
 Trace imports are parsed and displayed in browser memory. Imported SQL is never executed. No browser storage, remote scripts, external fonts, analytics or AI provider is used. Initial installation still downloads development packages; a hosted static copy can have hosting access logs.
 
-Traces are bounded and hide bound values by default. They do not retain result rows or raw database errors. SQL text, identifiers and literal defaults may still contain sensitive information. Explicit exports preserve the trace you loaded; review them before sharing. Clear removes the current view and file reference, not operating-system or browser memory caches.
+Traces are bounded and hide bound values by default. They do not retain result rows or raw database errors. SQL text, identifiers, titles and literal defaults may still contain sensitive information. Redaction is not anonymization. A trace may name its database dialect; a trace that does not is read as legacy SQLite. Explicit exports preserve the trace you loaded; review them before sharing. Clear removes the current view and file reference, not operating-system or browser memory caches.
 
 Transaction-effect labels are bounded interpretations of the imported statement order. They are not authenticated evidence of a commit, the current database state or an application's success. A modified trace can misrepresent those outcomes without executing any SQL.
 

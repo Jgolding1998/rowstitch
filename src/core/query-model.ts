@@ -191,6 +191,9 @@ export function relationCountComparison(operator: unknown, threshold: unknown): 
 /** Logical limits shared by every predicate scope of one query (root where and all related domains). */
 export interface PredicateBudget { nodes: number; parameters: number }
 export const MAX_PREDICATE_NODES = 100, MAX_BOUND_PARAMETERS = 10_000;
+export const MAX_RELATION_KEYS = 400;
+/** Physical requests also carry generated paging, assignments or relation keys. The largest is a relation window. */
+export const MAX_REQUEST_PARAMETERS = MAX_BOUND_PARAMETERS + MAX_RELATION_KEYS + 3;
 export function predicateModel(tableInput: TableModel, input: PredicateModel, budget: PredicateBudget = { nodes: 0, parameters: 0 }, startRelationDepth = 0): PredicateModel {
   const table = tableModel(tableInput);
   if (!Number.isSafeInteger(startRelationDepth) || startRelationDepth < 0 || startRelationDepth > 4) fail('QUERY', 'Relation filters support at most four nested relationships.');
@@ -548,7 +551,7 @@ export function normalizeQueryModel(input: QueryModel): QueryModel {
     record(value, ['kind', 'table', 'columns', 'partitionBy', 'keys', 'correlateKeys', 'where', 'orderBy', 'offset', 'limit', 'readLimit']);
     const columns = names(value.columns, 100, 1, table), partitionBy = field(table, value.partitionBy);
     if (!columns.includes(partitionBy)) fail('QUERY', 'A relationship window must retain its partition key internally.');
-    const keys = list(value.keys, 400, 1).map(v => parameter(v));
+    const keys = list(value.keys, MAX_RELATION_KEYS, 1).map(v => parameter(v));
     if (keys.some(v => v === null)) fail('QUERY', 'Relationship key batches cannot contain NULL.');
     if (value.correlateKeys !== undefined && typeof value.correlateKeys !== 'boolean') fail('QUERY', 'Relationship key correlation must be a boolean.');
     if (value.correlateKeys && (table.kinds?.[partitionBy] !== 'text' || keys.some(key => typeof key !== 'string'))) fail('QUERY', 'Correlated relationship keys require mapped text columns and text values.');

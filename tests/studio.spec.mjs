@@ -2,7 +2,7 @@ import { test as base, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -624,4 +624,258 @@ test('guide copy controls use fixed content and select complete text when clipbo
   await page.getByRole('button', { name: 'Copy code', exact: true }).click();
   await expect.poll(() => page.evaluate(() => String(window.getSelection()))).toBe(codeText);
   await expect(page.locator('#status')).toContainText(/Ctrl\+C|Command\+C/);
+});
+
+// ---------------------------------------------------------------------------
+// Trace dialect. SQL shapes follow what the PostgreSQL compiler and control statements generate; all data is fictional.
+// ---------------------------------------------------------------------------
+const PG_BEGIN = 'BEGIN ISOLATION LEVEL SERIALIZABLE';
+const pgWrite = (extra = {}) => ({ operation: 'insert', table: 'sample_rows', sql: 'INSERT INTO "sample"."sample_rows" AS "__rs_pg_root" ("id", "label") VALUES ($1::"pg_catalog"."int8", $2::"pg_catalog"."text") RETURNING "__rs_pg_root"."id" AS "__rs_pg_0"', parameters: ['[redacted]', '[redacted]'], rowCount: 1, ...extra });
+const pgRead = (extra = {}) => ({ operation: 'select', table: 'sample_rows', sql: 'SELECT "pg_catalog"."count"(*) AS "__rs_pg_count" FROM "sample"."sample_rows" AS "__rs_pg_root"', parameters: [], rowCount: 1, ...extra });
+const pgTrace = queries => ({ ...outcomeTrace(queries), dialect: 'postgresql', title: 'Fictional PostgreSQL trace' });
+const rowAt = (page, index) => page.locator('#query-list .q-row').nth(index);
+const effectAt = async (page, index, expected) => { await rowAt(page, index).click(); await expect(page.locator('.fact-effect')).toContainText(expected); };
+const exported = async page => {
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#export-trace').click()]);
+  return JSON.parse(readFileSync(await download.path(), 'utf8'));
+};
+
+test('a PostgreSQL trace names its database and reads its real control statements', async ({ page, studioURL }) => {
+  const requests = [];
+  page.on('request', request => requests.push(request.method() + ' ' + new URL(request.url()).pathname));
+  await open(page, studioURL);
+  const after = requests.length;
+  const document = pgTrace([
+    { sql: PG_BEGIN }, pgWrite(), { sql: 'COMMIT' },
+    { sql: 'BEGIN READ ONLY', transactionId: 'tx-read' }, pgRead({ transactionId: 'tx-read' }), { sql: 'COMMIT', transactionId: 'tx-read' },
+    { sql: PG_BEGIN, transactionId: 'tx-undone' }, pgWrite({ transactionId: 'tx-undone' }), { sql: 'ROLLBACK', transactionId: 'tx-undone' },
+    pgRead({ transactionId: null }),
+  ]);
+  await importTrace(page, document);
+  await expect(page.locator('#loaded-dialect')).toHaveText('PostgreSQL');
+  await expect(page.locator('#outcome-note')).toBeHidden();
+  await expect(page.locator('#counts')).toContainText('Recorded plans');
+  await expect(page.locator('#counts')).not.toContainText('full scan');
+  const groups = page.locator('.tx-group');
+  await expect(groups.nth(0)).toContainText('Committed in trace');
+  await expect(groups.nth(0)).toContainText('Serializable');
+  await expect(groups.nth(1)).toContainText('Read only');
+  await expect(groups.nth(2)).toContainText('Rolled back');
+  await effectAt(page, 1, 'Committed in trace');
+  await effectAt(page, 7, 'Undone by ROLLBACK');
+  await expect(page.locator('#detail-body')).toContainText('PostgreSQL ran this write');
+  await expect(page.locator('#detail-body')).not.toContainText('SQLite');
+  await rowAt(page, 1).click();
+  const chips = page.locator('#detail-body .sql .slot');
+  await expect(chips).toHaveText(['$1', '$2']);
+  await expect(page.locator('#detail-body .slot-cell')).toHaveText(['$1', '$2']);
+  await expect(page.locator('#detail-body')).not.toContainText('The SQL has');
+  await expect(page.locator('#detail-body')).toContainText('This trace has no query plan for this statement.');
+  await page.locator('#tab-about').click();
+  await expect(page.locator('#view-about')).toContainText('PostgreSQL, named by this trace');
+  await expect(page.locator('#view-about')).toContainText('1 committed, 1 undone, 0 not finished, 0 unknown');
+  expect(requests.slice(after).filter(request => !request.startsWith('GET /'))).toEqual([]);
+  expect(requests.slice(after).filter(request => /api|sql|query/i.test(request))).toEqual([]);
+  expect((await exported(page)).dialect).toBe('postgresql');
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(page.locator('#loaded-dialect')).toBeHidden();
+  await expect(page.locator('#loaded-dialect')).toHaveText('');
+});
+
+test('the nested savepoints of a real PostgreSQL trace resolve their write effects', async ({ page, studioURL }) => {
+  await open(page, studioURL);
+  // The same frames, ids and order that the actual engine prototype recorded: a released child, a doubly nested failure, a later child.
+  await importTrace(page, pgTrace([
+    { sql: PG_BEGIN, transactionId: 'tx8' },
+    { sql: 'SAVEPOINT "rs_async_sp_2"', transactionId: 'tx9' }, pgWrite({ transactionId: 'tx9' }), { sql: 'RELEASE SAVEPOINT "rs_async_sp_2"', transactionId: 'tx9' },
+    { sql: 'SAVEPOINT "rs_async_sp_3"', transactionId: 'tx10' }, { sql: 'SAVEPOINT "rs_async_sp_4"', transactionId: 'tx11' },
+    pgWrite({ transactionId: 'tx11', status: 'error', rowCount: 0 }),
+    { sql: 'ROLLBACK TO SAVEPOINT "rs_async_sp_4"', transactionId: 'tx11' }, { sql: 'RELEASE SAVEPOINT "rs_async_sp_4"', transactionId: 'tx11' },
+    { sql: 'ROLLBACK TO SAVEPOINT "rs_async_sp_3"', transactionId: 'tx10' }, { sql: 'RELEASE SAVEPOINT "rs_async_sp_3"', transactionId: 'tx10' },
+    { sql: 'SAVEPOINT "rs_async_sp_5"', transactionId: 'tx12' }, pgWrite({ transactionId: 'tx12' }), { sql: 'RELEASE SAVEPOINT "rs_async_sp_5"', transactionId: 'tx12' },
+    { sql: 'COMMIT', transactionId: 'tx8' },
+  ]));
+  await effectAt(page, 2, 'Committed in trace');
+  await effectAt(page, 12, 'Committed in trace');
+  await rowAt(page, 6).click();
+  await expect(page.locator('.fact-effect')).toHaveCount(0);
+  await expect(page.locator('#detail-body')).toContainText('does not prove that nothing changed');
+  await expect(page.locator('.tx-group .tx-label', { hasText: 'Savepoint' })).toHaveCount(5);
+  await expect(page.locator('#counts')).toContainText('4 savepoints');
+  await page.locator('#tab-about').click();
+  await expect(page.locator('#view-about')).toContainText('2 committed, 0 undone, 0 not finished, 0 unknown');
+});
+
+test('a failed PostgreSQL COMMIT stays unknown, and a later ROLLBACK does not make it a rollback', async ({ page, studioURL }) => {
+  await open(page, studioURL);
+  const lost = pgTrace([{ sql: PG_BEGIN }, pgWrite(), { sql: 'COMMIT', status: 'error' }]);
+  await importTrace(page, lost);
+  await effectAt(page, 1, 'Unknown from this trace');
+  await expect(page.locator('#detail-body .callout.is-note')).toContainText('cannot show whether PostgreSQL applied it');
+  await expect(page.locator('.tx-outcome')).toHaveText('COMMIT outcome unknown');
+  await expect(page.locator('#outcome-note')).toContainText('1 write has an outcome this trace does not show');
+  await rowAt(page, 2).click();
+  await expect(page.locator('#detail-body .callout.is-error')).toContainText('does not prove that nothing changed');
+
+  // ROLLBACK succeeds in PostgreSQL with nothing open, so this order proves no rollback. The same order in SQLite does.
+  await importTrace(page, { ...pgTrace([{ sql: PG_BEGIN }, pgWrite(), { sql: 'COMMIT', status: 'error' }, { sql: 'ROLLBACK' }]), title: 'Rollback after failure' });
+  await effectAt(page, 1, 'Unknown from this trace');
+  await expect(page.locator('.fact-effect')).not.toContainText('Undone');
+  await expect(page.locator('.tx-outcome').first()).not.toHaveText('Rolled back');
+  await page.locator('#tab-about').click();
+  await expect(page.locator('#view-about')).toContainText('0 committed, 0 undone, 0 not finished, 1 unknown');
+  await page.locator('#tab-queries').click();
+
+  // A rejected COMMIT ends the transaction, so later work is ordinary and resolves on its own.
+  await importTrace(page, { ...pgTrace([{ sql: PG_BEGIN }, pgWrite(), { sql: 'COMMIT', status: 'error' }, pgRead({ transactionId: null }),
+    { sql: PG_BEGIN, transactionId: 'tx-two' }, pgWrite({ transactionId: 'tx-two' }), { sql: 'COMMIT', transactionId: 'tx-two' }]), title: 'Work after a rejected commit' });
+  await effectAt(page, 1, 'Unknown from this trace');
+  await effectAt(page, 5, 'Committed in trace');
+  await page.locator('#tab-about').click();
+  await expect(page.locator('#view-about')).toContainText('1 committed, 0 undone, 0 not finished, 1 unknown');
+});
+
+test('a PostgreSQL trace follows aborted-transaction rules instead of trusting impossible success', async ({ page, studioURL }) => {
+  await open(page, studioURL);
+  const failedRead = pgRead({ status: 'error', rowCount: 0 });
+  const cases = [
+    // A failed statement aborts the transaction, so a COMMIT reported as ok here is not a recorded order.
+    ['Impossible commit', [{ sql: PG_BEGIN }, pgWrite(), failedRead, { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    ['Impossible statement', [{ sql: PG_BEGIN }, pgWrite(), failedRead, pgRead(), { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    ['Impossible write', [{ sql: PG_BEGIN }, failedRead, pgWrite(), { sql: 'ROLLBACK' }], 2, 'Unknown from this trace'],
+    ['Impossible savepoint', [{ sql: PG_BEGIN }, pgWrite(), failedRead, { sql: 'SAVEPOINT "rs_async_sp_1"', transactionId: 'tx-child' }], 1, 'Unknown from this trace'],
+    ['Whole rollback', [{ sql: PG_BEGIN }, pgWrite(), failedRead, { sql: 'ROLLBACK' }], 1, 'Undone by ROLLBACK'],
+    ['Savepoint recovery', [{ sql: PG_BEGIN }, pgWrite(),
+      { sql: 'SAVEPOINT "rs_async_sp_1"', transactionId: 'tx-child' }, pgRead({ transactionId: 'tx-child', status: 'error', rowCount: 0 }),
+      { sql: 'ROLLBACK TO SAVEPOINT "rs_async_sp_1"', transactionId: 'tx-child' }, { sql: 'RELEASE SAVEPOINT "rs_async_sp_1"', transactionId: 'tx-child' }, { sql: 'COMMIT' }], 1, 'Committed in trace'],
+    ['Failed savepoint release', [{ sql: PG_BEGIN }, pgWrite(),
+      { sql: 'SAVEPOINT "rs_async_sp_1"', transactionId: 'tx-child' }, pgRead({ transactionId: 'tx-child', status: 'error', rowCount: 0 }),
+      { sql: 'RELEASE SAVEPOINT "rs_async_sp_1"', transactionId: 'tx-child' }, { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    // SQLite's BEGIN forms and transaction spellings other than the generated ones are not PostgreSQL controls.
+    ['SQLite begin', [{ sql: 'BEGIN IMMEDIATE' }, pgWrite(), { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    ['Plain begin', [{ sql: 'BEGIN' }, pgWrite(), { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    ['Lowercase begin', [{ sql: PG_BEGIN.toLowerCase() }, pgWrite(), { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    ['Extra space', [{ sql: PG_BEGIN.replace(' ', '  ') }, pgWrite(), { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    ['Abort spelling', [{ sql: PG_BEGIN }, pgWrite(), { sql: 'ABORT' }], 1, 'Unknown from this trace'],
+    ['Disguised abort', [{ sql: PG_BEGIN }, pgWrite(), { operation: 'select', table: 'sample_rows', sql: 'ABORT', rowCount: 0 }, { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    ['Disguised start', [{ sql: PG_BEGIN }, pgWrite(), { operation: 'select', table: 'sample_rows', sql: 'START TRANSACTION', rowCount: 0 }, { sql: 'COMMIT' }], 1, 'Unknown from this trace'],
+    ['Autocommit write', [pgWrite({ transactionId: null })], 0, 'Unknown from this trace'],
+    ['Unfinished', [{ sql: PG_BEGIN }, pgWrite()], 1, 'Not finished in this trace'],
+    ['Failed rollback', [{ sql: PG_BEGIN }, pgWrite(), { sql: 'ROLLBACK', status: 'error' }], 1, 'Unknown from this trace'],
+  ];
+  for (const [title, queries, index, expected] of cases) {
+    await importTrace(page, { ...pgTrace(queries), title });
+    await effectAt(page, index, expected);
+  }
+});
+
+test('legacy and SQLite traces keep their meaning, and the PostgreSQL forms are not read into them', async ({ page, studioURL }) => {
+  await open(page, studioURL);
+  const legacy = trace('Legacy trace without a dialect');
+  await importTrace(page, legacy);
+  await expect(page.locator('#loaded-dialect')).toHaveText('SQLite');
+  await expect(page.locator('#counts')).toContainText('Plans with a full scan');
+  await expect(page.locator('#detail-body .sql .slot')).toHaveText(['?1']);
+  const round = await exported(page);
+  expect(Object.keys(round)).not.toContain('dialect');
+  expect(round.queries.map(query => query.sql)).toEqual(legacy.queries.map(query => query.sql));
+  await page.locator('#tab-about').click();
+  await expect(page.locator('#view-about')).toContainText('This trace names no database');
+  await page.locator('#tab-queries').click();
+
+  const named = { ...trace('Explicit SQLite trace'), dialect: 'sqlite' };
+  await importTrace(page, named);
+  await expect(page.locator('#loaded-dialect')).toHaveText('SQLite');
+  const namedRound = await exported(page);
+  expect(namedRound.dialect).toBe('sqlite');
+  expect(Object.keys(namedRound).indexOf('dialect')).toBe(Object.keys(namedRound).indexOf('source') + 1);
+  await page.locator('#tab-about').click();
+  await expect(page.locator('#view-about')).toContainText('SQLite, named by this trace');
+  await page.locator('#tab-queries').click();
+
+  for (const extra of [{}, { dialect: 'sqlite' }]) {
+    await importTrace(page, { ...outcomeTrace([{ sql: PG_BEGIN }, { operation: 'insert', table: 'posts', sql: 'INSERT INTO "posts" ("id") VALUES ($1)', parameters: ['[redacted]'], rowCount: 1 }, { sql: 'COMMIT' }]), ...extra, title: 'PostgreSQL forms in SQLite ' + Object.keys(extra).length });
+    await effectAt(page, 1, 'Unknown from this trace');
+    await expect(page.locator('#detail-body .sql .slot')).toHaveCount(0);
+  }
+  // In SQLite ROLLBACK after a failed COMMIT does prove the transaction was still open.
+  await importTrace(page, { ...outcomeTrace([{ sql: 'BEGIN IMMEDIATE' }, { operation: 'insert', table: 'posts', sql: 'INSERT INTO "posts" ("id") VALUES (?)', parameters: ['[redacted]'], rowCount: 1 }, { sql: 'COMMIT', status: 'error' }, { sql: 'ROLLBACK' }]), title: 'SQLite recovery' });
+  await effectAt(page, 1, 'Undone by ROLLBACK');
+  await expect(page.locator('#detail-body')).toContainText('SQLite ran this write');
+});
+
+test('malformed dialects are refused without echoing them, and the current trace stays', async ({ page, studioURL }) => {
+  await open(page, studioURL);
+  await importTrace(page, trace('Trace that stays'));
+  const hostile = '<img src=x onerror="window.__dialectInjected=1">';
+  for (const dialect of ['PostgreSQL', 'postgres', 'postgresql ', ' sqlite', 'mysql', '', null, 0, 1, true, false, [], ['postgresql'], {}, { name: 'postgresql' }, hostile]) {
+    await put(page, { ...trace('Refused'), dialect });
+    await expect(page.locator('#error-text')).toContainText('"dialect" must be "sqlite" or "postgresql" when present');
+    await expect(page.locator('#error-text')).toContainText('The previous trace is still shown');
+    await expect(page.locator('#error-text')).not.toContainText('onerror');
+    await expect(page.locator('#loaded-title')).toHaveText('Trace that stays');
+    await expect(page.locator('#loaded-dialect')).toHaveText('SQLite');
+  }
+  await put(page, JSON.stringify(trace('Reserved')).replace('"format"', '"__proto__":{"dialect":"postgresql"},"format"'));
+  await expect(page.locator('#error-text')).toContainText('reserved field name');
+  expect(await page.evaluate(() => window.__dialectInjected)).toBeUndefined();
+  await expect(page.locator('#detail-body img, #loaded img:not(.brand-mark)')).toHaveCount(0);
+});
+
+test('PostgreSQL placeholders are slots only where PostgreSQL reads them, and hostile text stays text', async ({ page, studioURL }) => {
+  await open(page, studioURL);
+  const markup = '<img src=x onerror="window.__traceInjected=1">';
+  const slotsOf = async (index, sql, parameters, expected) => {
+    await rowAt(page, index).click();
+    await expect(page.locator('#detail-body .sql code')).toHaveText(sql);
+    await expect(page.locator('#detail-body .sql .slot')).toHaveText(expected);
+  };
+  const statements = [
+    ['SELECT "a" FROM "t" WHERE "a" OPERATOR("pg_catalog".=) $1::"pg_catalog"."int8" AND "b" = $2 OR "c" = $1', ['[redacted]', '[redacted]'], ['$1', '$2', '$1']],
+    ['SELECT "j" ? \'k\', "j" ?| $1 FROM "t"', ['[redacted]'], ['$1']],
+    ['SELECT ("arr"[$1])[$2]::"pg_catalog"."int4"[] FROM "t"', ['[redacted]', '[redacted]'], ['$1', '$2']],
+    ['SELECT $tag$ not $9 a slot $tag$, $$ nor $8 $$, $1 FROM "t"', ['[redacted]'], ['$1']],
+    ['SELECT \'$7\', "$6", E\'it\\\'s $5\', $1 FROM "t"', ['[redacted]'], ['$1']],
+    ['SELECT name$1, $1 FROM "t" -- $4\n/* $3 */', ['[redacted]'], ['$1']],
+    ['SELECT \'' + markup + '\', "' + markup + '", $1', ['[redacted]'], ['$1']],
+  ];
+  const document = pgTrace(statements.map(([sql, parameters]) => ({ operation: 'select', table: markup, id: undefined, sql, parameters, transactionId: null, rowCount: 1 })));
+  document.title = markup; document.notes = [markup]; document.queries.forEach((query, index) => { query.id = markup + index; });
+  await put(page, document);
+  await expect(page.locator('#loaded-title')).toHaveText(markup);
+  await expect(page.locator('#loaded-dialect')).toHaveText('PostgreSQL');
+  for (const [index, [sql, parameters, expected]] of statements.entries()) await slotsOf(index, sql, parameters, expected);
+  await rowAt(page, 0).click();
+  await expect(page.locator('#detail-body')).not.toContainText('The SQL has');
+  // A shortfall is still called out, in the same notation.
+  await importTrace(page, pgTrace([{ operation: 'select', table: 'sample_rows', sql: 'SELECT $1, $2, $3', parameters: ['[redacted]'], transactionId: null }]));
+  await expect(page.locator('#detail-body')).toContainText('The SQL has 3 slots and the trace lists 1 value.');
+  await importTrace(page, { ...pgTrace([{ operation: 'select', table: 'sample_rows', sql: 'SELECT 1', parameters: [], transactionId: null, plan: [{ detail: 'SCAN sample_rows' }, { detail: 'Seq Scan on sample_rows USING INDEX TEMP B-TREE' }] }]), title: 'Plan text only' });
+  await expect(page.locator('#detail-body .plan .tag')).toHaveCount(0);
+  await expect(page.locator('#detail-body')).toContainText('shown without interpretation');
+  await expect(page.locator('#counts')).toContainText('Recorded plans');
+  expect(await page.evaluate(() => window.__traceInjected)).toBeUndefined();
+  await expect(page.locator('body img:not(.brand-mark)')).toHaveCount(0);
+});
+
+test('the PostgreSQL view fits a phone, and stays usable from the keyboard', async ({ page, studioURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, studioURL);
+  await importTrace(page, { ...pgTrace([{ sql: PG_BEGIN }, pgWrite(), { sql: 'COMMIT', status: 'error' }, { sql: 'BEGIN READ ONLY', transactionId: 'tx-two' }, pgRead({ transactionId: 'tx-two' }), { sql: 'ROLLBACK', transactionId: 'tx-two' }]), title: 'A long fictional PostgreSQL trace title that has to wrap on a phone' });
+  await expect(page.locator('#loaded-dialect')).toBeVisible();
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(await overflow()).toBeLessThanOrEqual(0);
+  await rowAt(page, 1).click();
+  await expect(page.locator('#detail-title')).toBeFocused();
+  await expect(page.locator('.fact-effect')).toContainText('Unknown from this trace');
+  await expect(page.locator('#detail-body .sql .slot')).toHaveText(['$1', '$2']);
+  expect(await overflow()).toBeLessThanOrEqual(0);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const first = rowAt(page, 0);
+  await first.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(rowAt(page, 1)).toBeFocused();
+  await expect(rowAt(page, 1)).toHaveAttribute('aria-current', 'true');
+  await page.keyboard.press('End');
+  await expect(page.locator('#detail-body .sql')).toHaveText('ROLLBACK');
 });

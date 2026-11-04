@@ -13,9 +13,10 @@ import { decode, encode, identifier, isColumnRef, isTable, literal, plainRecord,
 import { ManyRelation, SingularRelation, and, assertOptions, eq, isRelation, orderToModel, predicateToModel, selectionFields, validateRelation,
   type FindOptions, type Includes, type LoweringBudget, type Predicate, type Selection } from './predicates.js';
 import { mappedCreateTableModel, mappedTableModel } from './model-mapping.js';
-import { hasRelationFilter, predicateTruth, queryModel, relationKindsCompatible,
-  type AggregateModel, type CreateIndexModel, type CreateTableModel, type GroupModel, type PredicateModel, type SelectModel } from './query-model.js';
+import { hasRelationFilter, predicateTruth, queryModel, relationKindsCompatible, MAX_RELATION_KEYS,
+  type AggregateModel, type CreateIndexModel, type CreateTableModel, type GroupModel, type PredicateModel, type QueryModel, type SelectModel } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
+import type { DialectQuery, RepositoryDialect } from './dialect.js';
 import { aggregateToPlan, groupToPlan, type AggregateLowering, type AggregatePlan, type RelatedAggregates } from './aggregates.js';
 import { decodeAggregateRow } from './aggregate-decode.js';
 import { assertProjectedGuard, decodeProjectedRow, projectedAggregatesToModel, type ProjectedPlan } from './projected-aggregates.js';
@@ -29,6 +30,8 @@ export type Rows = Record<string, unknown>[];
 export interface Step {
   readonly sql: string; readonly parameters: readonly Parameter[]; readonly operation: Operation; readonly table: string;
   readonly explain?: boolean; readonly metadata?: boolean; readonly control?: boolean;
+  /** Trusted compiler result contract, evaluated before any logical row is exposed. */
+  readonly decode?: (result: unknown) => Rows;
 }
 export type Work<R> = Generator<Step, R, Rows>;
 export function* request(step: Step): Work<Rows> { return yield step; }
@@ -48,6 +51,11 @@ export interface CoreContext {
   writeCheck(): void;
   mapped(table: AnyTable): void;
   readonly tables: ReadonlyMap<string, AnyTable>;
+  readonly dialect?: RepositoryDialect;
+}
+
+export function compileFor(ctx: CoreContext, model: QueryModel): DialectQuery {
+  return ctx.dialect ? ctx.dialect.compile(model) : compileSqlite(model);
 }
 
 export function integer(value: number | undefined, fallback: number, min: number, max: number): number {
@@ -128,9 +136,10 @@ export function* inspectSchemaWork(): Work<SchemaTable[]> {
 
 export function* schemaPlansWork(ctx: CoreContext): Work<PlannedSchema[]> {
   ctx.check();
+  if (ctx.dialect && ctx.dialect.name !== 'sqlite') fail('QUERY', 'Schema planning is not implemented for this database dialect.');
   const actual = yield* inspectSchemaWork();
   const plans: PlannedSchema[] = [];
-  const add = (table: string, action: SchemaPlan['action'], model: CreateTableModel | CreateIndexModel): void => { plans.push({ table, action, model, sql: compileSqlite(model).sql }); };
+  const add = (table: string, action: SchemaPlan['action'], model: CreateTableModel | CreateIndexModel): void => { plans.push({ table, action, model, sql: compileFor(ctx, model).sql }); };
   for (const table of ctx.tables.values()) {
     const found = actual.find(t => t.name.toLowerCase() === table.name.toLowerCase());
     const columns = Object.entries(table.columns as Columns);
@@ -222,6 +231,7 @@ export interface PreparedWrite { predicate: PredicateModel; max: number; fields:
 export class RepositoryCore<T extends AnyTable> {
   #captured: IncludeCapture = new Map();
   constructor(readonly ctx: CoreContext, readonly definition: T) {}
+  compile(model: QueryModel): DialectQuery { return compileFor(this.ctx, model); }
   #child<U extends AnyTable>(table: U): RepositoryCore<U> {
     const core = new RepositoryCore(this.ctx, table);
     core.#captured = this.#captured;
@@ -315,8 +325,8 @@ export class RepositoryCore<T extends AnyTable> {
     return yield* this.insertEncoded(captured.value);
   }
   *insertEncoded([fields, values]: [string[], Parameter[]]): Work<Row<T>> {
-    const query = compileSqlite(queryModel.insert({ table: mappedTableModel(this.definition), columns: fields, values }));
-    const rows = yield* request({ sql: query.sql, parameters: query.parameters, operation: 'insert', table: this.definition.name });
+    const query = this.compile(queryModel.insert({ table: mappedTableModel(this.definition), columns: fields, values }));
+    const rows = yield* request({ ...query, operation: 'insert', table: this.definition.name });
     if (rows.length !== 1) fail('DATA', 'An insert did not return one record.');
     return this.decodeRow(rows[0]);
   }
@@ -337,6 +347,8 @@ export class RepositoryCore<T extends AnyTable> {
     // Planning, SQL and materialization all use one call-time snapshot of the selection and include tree.
     this.#captured = new Map();
     const options = { ...input, select: captureSelect(input.select), include: captureIncludes(input.include, this.#captured, 0) as Includes | undefined };
+    if (this.ctx.dialect?.supportsIncludes === false && Object.keys(options.include ?? {}).length)
+      fail('QUERY', 'Eager relationships are not implemented for this database dialect.');
     const fields = this.#fetchFields(options.select, options.include);
     const limit = integer(options.limit, 1000, 0, 10_000);
     const offset = integer(options.offset, 0, 0, 1_000_000_000);
@@ -360,8 +372,8 @@ export class RepositoryCore<T extends AnyTable> {
     return plan === undefined ? { model, fields, ...captured } : { model, fields, plan, ...captured };
   }
   *explainWork(model: SelectModel | AggregateModel | GroupModel): Work<QueryPlan[]> {
-    const query = compileSqlite(queryModel.explain({ query: model }));
-    return toPlan(yield* request({ sql: query.sql, parameters: query.parameters, operation: 'select', table: this.definition.name, explain: true }));
+    const query = this.compile(queryModel.explain({ query: model }));
+    return toPlan(yield* request({ ...query, operation: 'select', table: this.definition.name, explain: true }));
   }
   /** Plans synchronously (call time); only the returned Work performs I/O. */
   findMany(options: FindOptions<Includes, Selection<T> | undefined, RelatedAggregates>): Work<Record<string, unknown>[]> {
@@ -370,8 +382,8 @@ export class RepositoryCore<T extends AnyTable> {
   }
   *#findPlanned(planned: Planned<T>): Work<Record<string, unknown>[]> {
     const { model, fields, plan, select, include } = planned;
-    const query = compileSqlite(model);
-    const raw = yield* request({ sql: query.sql, parameters: query.parameters, operation: 'select', table: this.definition.name });
+    const query = this.compile(model);
+    const raw = yield* request({ ...query, operation: 'select', table: this.definition.name });
     // The same-query storage guard covers every returned row; fail before decoding, loading includes or exposing rows.
     if (plan) assertProjectedGuard(raw);
     const rows = raw.map(row => this.decodeRow(row, fields));
@@ -389,8 +401,8 @@ export class RepositoryCore<T extends AnyTable> {
     return this.#predicate(where);
   }
   *countWork(where: PredicateModel | undefined): Work<number> {
-    const query = compileSqlite(queryModel.count({ table: mappedTableModel(this.definition), ...(where === undefined ? {} : { where }) }));
-    const rows = yield* request({ sql: query.sql, parameters: query.parameters, operation: 'select', table: this.definition.name });
+    const query = this.compile(queryModel.count({ table: mappedTableModel(this.definition), ...(where === undefined ? {} : { where }) }));
+    const rows = yield* request({ ...query, operation: 'select', table: this.definition.name });
     return countValue(rows[0].n);
   }
 
@@ -411,14 +423,14 @@ export class RepositoryCore<T extends AnyTable> {
     return groupToPlan(this.definition, options, this.#aggregateLowering());
   }
   *aggregateWork(plan: AggregatePlan<AggregateModel>): Work<unknown> {
-    const { model, leaves } = plan, query = compileSqlite(model);
-    const rows = yield* request({ sql: query.sql, parameters: query.parameters, operation: 'select', table: this.definition.name });
+    const { model, leaves } = plan, query = this.compile(model);
+    const rows = yield* request({ ...query, operation: 'select', table: this.definition.name });
     if (rows.length !== 1) fail('DATA', 'An aggregate query must return one result.');
     return decodeAggregateRow(this.definition, model, rows[0], leaves);
   }
   *groupWork(plan: AggregatePlan<GroupModel>): Work<unknown[]> {
-    const { model, leaves } = plan, query = compileSqlite(model);
-    const rows = yield* request({ sql: query.sql, parameters: query.parameters, operation: 'select', table: this.definition.name });
+    const { model, leaves } = plan, query = this.compile(model);
+    const rows = yield* request({ ...query, operation: 'select', table: this.definition.name });
     if (model.overflow && rows.length > 10_000) fail('RESULT_LIMIT', 'Grouped results exceed 10,000 rows. Add an explicit limit and offset to page the groups.');
     return rows.map(row => decodeAggregateRow(this.definition, model, row, leaves));
   }
@@ -449,14 +461,14 @@ export class RepositoryCore<T extends AnyTable> {
       const sourceKeys = new WeakMap<object, string>();
       const where = repository.#predicate(relation.options.where);
       const ordering = orderToModel(relation.table, relation.options.orderBy, true);
-      for (let index = 0; index < values.length && limit > 0; index += 400) {
-        const chunk = values.slice(index, index + 400);
+      for (let index = 0; index < values.length && limit > 0; index += MAX_RELATION_KEYS) {
+        const chunk = values.slice(index, index + MAX_RELATION_KEYS);
         // Both integer codecs use SQLite INTEGER; bind the validated source value
         // losslessly instead of forcing number IDs through the bigint JS codec.
         const encoded = chunk.map(value => encode(this.definition.columns[localKey.name].config, value));
-        const query = compileSqlite(queryModel.relation({ table: mappedTableModel(relation.table), columns: fields, partitionBy: foreignKey.name, keys: encoded,
+        const query = this.compile(queryModel.relation({ table: mappedTableModel(relation.table), columns: fields, partitionBy: foreignKey.name, keys: encoded,
           ...(correlateKeys ? { correlateKeys: true } : {}), ...(where === undefined ? {} : { where }), orderBy: ordering, offset, limit, readLimit: budget.remaining + 1 }));
-        const raw = yield* request({ sql: query.sql, parameters: query.parameters, operation: 'select', table: relation.table.name });
+        const raw = yield* request({ ...query, operation: 'select', table: relation.table.name });
         const result = raw.map(row => {
           const decoded = repository.decodeRow(row, fields);
           if (correlateKeys) {
@@ -505,8 +517,8 @@ export class RepositoryCore<T extends AnyTable> {
     const table = mappedTableModel(this.definition);
     const model = remove ? queryModel.delete({ table, where: predicate })
       : queryModel.update({ table, where: predicate, assignments: fields.map((column, i) => ({ column, value: values[i] })) });
-    const query = compileSqlite(model);
-    const raw = yield* request({ sql: query.sql, parameters: query.parameters, operation: remove ? 'delete' : 'update', table: this.definition.name });
+    const query = this.compile(model);
+    const raw = yield* request({ ...query, operation: remove ? 'delete' : 'update', table: this.definition.name });
     const result = raw.map(row => this.decodeRow(row));
     if (result.length !== matched || result.length > max) fail('AFFECTED_ROWS', 'Affected records did not match the guarded count. The transaction was rolled back.');
     return result;

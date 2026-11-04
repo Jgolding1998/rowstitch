@@ -1,10 +1,10 @@
 # Rowstitch
 
-A small SQLite ORM for Node and TypeScript. Define your tables, load related rows in batches, and inspect the SQL your application actually ran.
+A small ORM for Node and TypeScript. Define your tables, load related rows in batches, and inspect the SQL your application actually ran. SQLite is built in. PostgreSQL and PGlite are optional and currently cover a smaller set of features.
 
-Rowstitch has no runtime npm dependencies. It uses Node's built-in SQLite driver and includes a local, read-only query inspector. No account, AI subscription or API key is needed.
+Rowstitch has no required runtime npm dependencies. SQLite uses Node's built-in driver, and the PostgreSQL and PGlite clients are installed only if you use them. It includes a local, read-only query inspector. No account, AI subscription or API key is needed.
 
-Use the library inside a Node app, such as a small inventory tool or a backend that stores related records in SQLite. Your app reads and writes through Rowstitch; the browser inspector helps you understand the SQL it ran. Coding assistants can follow the included integration instructions. There is no MCP server in the current package.
+Use the library inside a Node app, such as a small inventory tool or a backend that stores related records. Your app reads and writes through Rowstitch; the browser inspector helps you understand the SQL it ran. Coding assistants can follow the included integration instructions. Rowstitch is a library: there is no MCP server in the current package.
 
 ![Rowstitch Studio showing a real query trace from its fictional notebook demo](docs/images/studio.png)
 
@@ -15,7 +15,7 @@ This release includes the 0.7.1 correction for related summaries with different 
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.9.1/rowstitch-0.9.1.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.10.0/rowstitch-0.10.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -37,7 +37,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.9.1/rowstitch-0.9.1.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.10.0/rowstitch-0.10.0.tgz
 ```
 
 ```ts
@@ -89,6 +89,77 @@ try {
 `table()`, the compile methods, `clearTrace()` and `exportTrace()` remain synchronous. Async trace export uses the most recently inspected schema and states when it was captured. Query execution runs in the worker; planning and decoding still run on the calling thread.
 
 Await each write inside a transaction, or use `insertMany` for a batch. Concurrent writes inside the same callback are refused because they would overlap savepoints. Work from outside the callback queues separately. Unfinished work at callback settlement is drained and rolled back; a lost COMMIT response raises `COMMIT_UNCONFIRMED` and must be reconciled before retrying. The [async example](examples/async.mjs) and [driver guide](docs/async-drivers.md) cover ownership, cancellation, limits and trace interpretation.
+
+## Use PostgreSQL or PGlite
+
+Both are optional. Your SQLite code keeps working with neither installed, and you only install the one you use. Each uses the same `defineTable` mappings, and returns the same `AsyncDatabase` you get from `openAsyncDatabase`, so await its operations and close it when finished.
+
+| | PostgreSQL | PGlite |
+| --- | --- | --- |
+| Import | `rowstitch/postgres` | `rowstitch/pglite` |
+| Install the exact tested client | `npm install --save-exact pg@8.23.1` | `npm install --save-exact @electric-sql/pglite@0.5.15` |
+| What it needs | A PostgreSQL server you run | Nothing else. It runs in a worker thread in your Node process |
+| Where data lives | On your server | In memory only. **Everything is lost when it closes** |
+
+```ts
+import { column, defineTable, eq } from 'rowstitch';
+import { openPgliteDatabase } from 'rowstitch/pglite';
+
+const notes = defineTable('notes', {
+  id: column.integer().primaryKey({ generated: true }),
+  title: column.text(),
+});
+
+const db = await openPgliteDatabase({ tables: [notes] });
+try {
+  await db.ensureSchema();
+  const note = await db.table(notes).insert({ title: 'Moon garden' });
+  console.log(await db.table(notes).findFirst({ where: eq(notes.col('id'), note.id) }));
+} finally {
+  await db.close();
+}
+```
+
+For a server, each database object owns one dedicated connection. There is no pool, and it does not retry. Say how to secure the connection explicitly:
+
+```ts
+import { openPostgresDatabase } from 'rowstitch/postgres';
+
+const db = await openPostgresDatabase({
+  host: 'db.example.test', user: 'app_user', database: 'notes', password: process.env.NOTES_DB_PASSWORD,
+  ssl: true, // Verifies the server against Node's trusted roots. Use ssl: { ca } for a private certificate authority.
+  tables: [notes],
+});
+```
+
+A connection string works too: `postgres://app_user:password@db.example.test:5432/notes?sslmode=verify-full`. **If you pass neither `ssl` nor `sslmode`, the connection is not encrypted**, including to a remote server. Leave it off only for a trusted local test. `sslmode=require` and `rejectUnauthorized: false` are refused, because they would not verify the server. Rowstitch never reads `PGPASSWORD`, password files or other connection environment values, so pass what you intend to use.
+
+Set `schema` to use a PostgreSQL namespace other than `public`. It must already exist.
+
+### What works today
+
+| Available | Not available yet on PostgreSQL or PGlite |
+| --- | --- |
+| `insert`, `insertMany`, `findMany`, `findFirst`, `count` | Eager relations through `include` |
+| `update`, `delete`, `updateVersion` with their guards | `aggregate`, `groupBy` and `agg.related` |
+| Value filters, `and`/`or`/`not`, literal text searches, column comparisons | `explain` and query plans |
+| Relation filters in reads: `some`, `none`, `every`, `countRelated` | |
+| `select`, ordering, `limit`, `offset` | Pools, replicas, migrations |
+| Transactions and nested savepoints, `ensureSchema`, `planSchema`, `inspectSchema`, traces | |
+
+The methods in the right column still exist on the same object, and TypeScript allows them, but they fail with a `QUERY` error rather than guessing. This is not the full SQLite feature set, and not Orange parity.
+
+Filters were checked against small fixed fictional datasets on PostgreSQL 18.6 and PGlite 0.5.15. Relation filters were checked one relation deep, with integer keys. Deeper nesting and how text keys compare under a database's collation have not been compared with SQLite, so test those against your own schema. Relation filters work in reads only, and `update` and `delete` refuse them.
+
+### Good to know
+
+- **Tested versions:** PostgreSQL 18.6, PGlite 0.5.15 and pg 8.23.1. Opening is refused below PostgreSQL 12 and with a different client version. Passing that check does not mean other PostgreSQL versions were tested.
+- **`ensureSchema` only creates.** It adds missing tables and foreign-key indexes, and never alters an existing table. A mismatch raises `SCHEMA_DRIFT`. It compares column types, nullability, keys and that a default exists, but not that the default has the same value.
+- **Your database rules still apply.** Roles, row-level security, triggers and CHECK constraints stay in charge and can change what a write returns. Rowstitch does not verify them, and the database is not a sandbox for this library or for your code.
+- **Serializable transactions:** `db.transaction` runs at SERIALIZABLE, and a conflict raises `SERIALIZATION_FAILURE`. Nothing is retried for you, because your callback may have other side effects. If `COMMIT_UNCONFIRMED` appears, check the saved data first.
+- **Integers:** `column.integer()` returns JavaScript numbers and raises `DATA` on a stored value beyond the safe range. Use `column.bigint()` for those.
+
+See [examples/pglite.mjs](examples/pglite.mjs), [examples/postgres.mjs](examples/postgres.mjs) and the [driver guide](docs/async-drivers.md#native-postgresql-and-pglite) for options and deadlines.
 
 ## Read connected records
 
@@ -295,7 +366,9 @@ import { writeFileSync } from 'node:fs';
 writeFileSync('trace.json', JSON.stringify(db.exportTrace({ title: 'A local session' })));
 ```
 
-Bound values are redacted at collection by default and result rows are not collected. Trace history defaults to 200 statements with a separate 1 MiB byte limit. Exports fit within 2 MiB by dropping old statements; an oversized schema raises a clear error. Omitted history is noted in the export. SQL, schema names and literal defaults can still reveal information. **Redaction is not anonymization.** Review a trace before sharing it. Compiled-query APIs deliberately return their parameters to your code; keep that output private too.
+Bound values are redacted at collection by default and result rows are not collected. Trace history defaults to 200 statements with a separate 1 MiB byte limit. Exports fit within 2 MiB by dropping old statements; an oversized schema raises a clear error. Omitted history is noted in the export. SQL, schema names, titles and literal defaults can still reveal information. **Redaction is not anonymization.** Review a trace before sharing it. Compiled-query APIs deliberately return their parameters to your code; keep that output private too.
+
+Traces stay in format version 1. PostgreSQL and PGlite traces also name their database, and Studio labels it. A trace with no database named is read as SQLite, so older files keep working.
 
 Trace statuses describe individual SQL statements. An ORM call can still reject a stale edit or ambiguous relationship after its SQL succeeds. Those application-level failures do not yet appear as separate trace events, so zero failed statements does not mean every API call succeeded.
 
@@ -303,7 +376,7 @@ Studio separately shows a write's effect in the recorded transaction: committed,
 
 ## Scope and checks
 
-This release supports SQLite through synchronous and async APIs. The async API executes SQLite operations in a background worker; its transactions await async callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, public drivers for other databases, a migration history runner, nested graph writes, a remote database API or an authorization system. Identifiers use simple names of at most 63 characters. Use the dedicated bigint column for integers beyond JavaScript's safe range.
+This release supports SQLite through synchronous and async APIs, plus the narrower PostgreSQL and in-memory PGlite paths described above. The async API executes SQLite operations in a background worker; its transactions await async callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, other databases, the missing PostgreSQL features listed above, a migration history runner, nested graph writes, a remote database API or an authorization system. Identifiers use simple names of at most 63 characters. Use the dedicated bigint column for integers beyond JavaScript's safe range.
 
 JSON reads and writes accept finite JSON data within the same depth and node limits. Stored JSON text is limited to 1,048,576 characters before parsing; oversized, invalid or out-of-domain stored values raise a `DATA` error. This also applies to existing databases populated by another tool.
 
@@ -318,7 +391,7 @@ npm run test:browser
 
 Tests use temporary or in-memory fictional databases. The [comparison harness](benchmarks/README.md) records correctness and relationship query counts against pinned public libraries. Different SQLite driver versions are disclosed; no blanket speed or security ranking is claimed. [Research notes](docs/research.md) explain which upstream discussions informed the tests. [SECURITY.md](SECURITY.md) defines the trust boundary and remaining limits.
 
-Contributors working on the internal PostgreSQL transaction boundary can also run the optional [live engine checks](tests/integration/README.md). Those tests do not make PostgreSQL or PGlite available through the public ORM.
+Contributors can also run the optional [live engine checks](tests/integration/README.md) against PostgreSQL and PGlite. They need Docker and the separately pinned test clients.
 
 Claude Code leads the inspector's UI and UX. Codex coordinates the core implementation, independent reviews, testing and packaging. The source and branding are original; the project is inspired by public work, not affiliated with those maintainers. See [third-party notices](THIRD_PARTY_NOTICES.md).
 

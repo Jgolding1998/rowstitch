@@ -28,6 +28,11 @@
     'CROSS ON AS DISTINCT COUNT RETURNING BEGIN COMMIT ROLLBACK SAVEPOINT RELEASE TO TRANSACTION IMMEDIATE DEFERRED EXCLUSIVE ' +
     'INTEGER TEXT REAL BLOB NUMERIC CHECK CONSTRAINT LIKE GLOB BETWEEN CASE WHEN THEN ELSE END UNION ALL EXCEPT INTERSECT WITH ' +
     'RECURSIVE CONFLICT DO NOTHING REPLACE ABORT FAIL IGNORE STRICT WITHOUT ROWID COLLATE NOCASE EXPLAIN QUERY PLAN').split(' '));
+  const POSTGRES_KEYWORDS = new Set('OPERATOR OVERRIDING SYSTEM USER VALUE ONLY ISOLATION LEVEL SERIALIZABLE READ'.split(' '));
+  const DIALECTS = Object.freeze(['sqlite', 'postgresql']);
+  const isPostgres = (doc) => doc.dialect === 'postgresql';
+  // Constant display names. An imported dialect is validated against DIALECTS and never shown as text.
+  const backendName = (doc) => (isPostgres(doc) ? 'PostgreSQL' : 'SQLite');
 
   // ---------------------------------------------------------------------------
   // Validation
@@ -136,7 +141,9 @@
     if (!isPlainObject(raw)) fail('', 'The file is JSON, but not a Rowstitch trace object.');
     if (raw.format !== 'rowstitch-trace') fail('', 'This is not a Rowstitch trace: "format" must be "rowstitch-trace".');
     if (raw.version !== 1) fail('', 'This trace version is not supported. The studio reads version 1.');
-    checkKeys(raw, 'The trace', ['format', 'version', 'title', 'generatedAt', 'source', 'schema', 'queries'], ['results', 'notes']);
+    checkKeys(raw, 'The trace', ['format', 'version', 'title', 'generatedAt', 'source', 'schema', 'queries'], ['results', 'notes', 'dialect']);
+    // Absent means a legacy SQLite trace. It stays absent, so an export keeps matching the document that was loaded.
+    if (has(raw, 'dialect') && !DIALECTS.includes(raw.dialect)) fail('"dialect"', 'must be "sqlite" or "postgresql" when present');
 
     const title = text(raw.title, '"title"');
     const generatedAt = text(raw.generatedAt, '"generatedAt"', { max: 64 });
@@ -220,7 +227,7 @@
       };
     });
 
-    const doc = { format: 'rowstitch-trace', version: 1, title, generatedAt, source: raw.source, schema, queries };
+    const doc = { format: 'rowstitch-trace', version: 1, title, generatedAt, source: raw.source, ...(has(raw, 'dialect') ? { dialect: raw.dialect } : {}), schema, queries };
     if (has(raw, 'results')) {
       doc.results = list(raw.results, '"results"', LIMITS.results).map((result, r) => {
         const at = `results[${r}]`;
@@ -430,7 +437,7 @@
 
   // Empties every container that can hold trace-derived text so a cleared trace does not linger in hidden DOM.
   const TRACE_CONTAINERS = ['counts', 'thread-scroll', 'thread-scale', 'query-list', 'showing', 'errors-count', 'table-filter-name',
-    'detail-body', 'relationships', 'tables', 'results', 'facts', 'notes', 'loaded-title',
+    'detail-body', 'relationships', 'tables', 'results', 'facts', 'notes', 'loaded-title', 'loaded-dialect',
     'tab-count-queries', 'tab-count-schema', 'tab-count-results', 'outcome-note'];
   function purgeTraceDom() {
     for (const id of TRACE_CONTAINERS) clear($(id));
@@ -459,7 +466,7 @@
 
   function applyDocument(doc, origin) {
     state.doc = doc;
-    state.outcomes = analyzeOutcomes(doc.queries);
+    state.outcomes = analyzeOutcomes(doc.queries, isPostgres(doc));
     state.origin = origin;
     resetView();
     state.selected = doc.queries.length ? 0 : -1;
@@ -496,11 +503,14 @@
     if (!doc) {
       $('loaded-kind').textContent = 'Nothing loaded';
       $('loaded-kind').className = 'loaded-kind';
+      $('loaded-dialect').hidden = true;
       purgeTraceDom();
       return;
     }
     $('loaded-kind').textContent = doc.source === 'fictional-demo' ? 'Fictional demo' : 'Local trace';
     $('loaded-kind').className = `loaded-kind ${doc.source === 'fictional-demo' ? 'is-demo' : 'is-local'}`;
+    $('loaded-dialect').textContent = backendName(doc);
+    $('loaded-dialect').hidden = false;
     setText($('loaded-title'), doc.title || 'Untitled trace');
     $('tab-count-queries').textContent = doc.queries.length.toLocaleString('en-US');
     $('tab-count-schema').textContent = doc.schema.length.toLocaleString('en-US');
@@ -524,7 +534,7 @@
       if (q.status === 'error') failed += 1;
       if (q.plan && q.plan.length) {
         withPlan += 1;
-        if (q.plan.some((s) => isFullScan(s.detail))) scans += 1;
+        if (!isPostgres(doc) && q.plan.some((s) => isFullScan(s.detail))) scans += 1;
       }
       if (q.durationMs !== null) { timed += 1; total += q.durationMs; }
     }
@@ -547,14 +557,18 @@
   const SAVEPOINT_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
   // SQL that reads like transaction control but is not recorded as a "transaction" operation is ambiguous, never ignored.
   const CONTROL_LOOKALIKE = /^\s*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
+  // The exact statements compilePostgresControl generates. SQLite's BEGIN forms are not PostgreSQL controls, and the reverse.
+  const POSTGRES_PLAIN_CONTROLS = Object.freeze(new Map([['BEGIN READ ONLY', 'begin'], ['BEGIN ISOLATION LEVEL SERIALIZABLE', 'begin'], ['COMMIT', 'commit'], ['ROLLBACK', 'rollback']]));
+  const POSTGRES_BEGIN_MODES = Object.freeze(new Map([['BEGIN READ ONLY', 'Read only'], ['BEGIN ISOLATION LEVEL SERIALIZABLE', 'Serializable']]));
+  const POSTGRES_LOOKALIKE = /^\s*(?:START\s+TRANSACTION|ABORT|PREPARE\s+TRANSACTION)\b/i;
   const WRITE_OPERATIONS = new Set(['insert', 'update', 'delete']);
   const UNRECOGNIZED = Object.freeze({ kind: 'unrecognized', name: null });
 
-  function parseControl(q) {
-    if (q.operation !== 'transaction') return CONTROL_LOOKALIKE.test(q.sql) ? UNRECOGNIZED : null;
+  function parseControl(q, postgres) {
+    if (q.operation !== 'transaction') return CONTROL_LOOKALIKE.test(q.sql) || (postgres && POSTGRES_LOOKALIKE.test(q.sql)) ? UNRECOGNIZED : null;
     // Rowstitch records its own control statements with no bound values and no table.
     if (q.parameters.length !== 0 || (q.table !== null && q.table !== '')) return UNRECOGNIZED;
-    const plain = PLAIN_CONTROLS.get(q.sql);
+    const plain = (postgres ? POSTGRES_PLAIN_CONTROLS : PLAIN_CONTROLS).get(q.sql);
     if (plain) return { kind: plain, name: null };
     for (const [prefix, kind] of NAMED_CONTROLS) {
       if (!q.sql.startsWith(prefix) || !q.sql.endsWith('"') || q.sql.length <= prefix.length + 1) continue;
@@ -568,9 +582,15 @@
   /**
    * Returns per-statement write outcomes and per-statement frame outcomes (for opening statements):
    *   writes: Map<index, {state: 'kept'|'undone'|'pending'|'unknown', by: index|null, how: string}>
-   *   frames: Map<openingIndex, 'committed'|'rolled-back'|'rolled-back-to'|'unfinished'>
+   *   frames: Map<openingIndex, 'committed'|'rolled-back'|'rolled-back-to'|'unfinished'|'commit-unknown'>
+   *
+   * PostgreSQL differs from SQLite in three ways that change what the order of statements proves:
+   * - ROLLBACK succeeds with no open transaction, so a ROLLBACK after a failed COMMIT proves nothing. A failed COMMIT may have
+   *   applied (lost acknowledgment) or already ended the transaction, and the trace's "error" cannot tell these apart.
+   * - A rejected COMMIT ends the transaction with no ROLLBACK, so other work can legitimately follow it.
+   * - A failed statement aborts its transaction until ROLLBACK or ROLLBACK TO, so a later success there breaks the recorded order.
    */
-  function analyzeOutcomes(queries) {
+  function analyzeOutcomes(queries, postgres = false) {
     const writes = new Map();
     const frames = new Map();
     let stack = [];
@@ -587,7 +607,7 @@
     const limit = Math.min(queries.length, 1000);
     for (let i = 0; i < limit; i += 1) {
       const q = queries[i];
-      const control = parseControl(q);
+      const control = parseControl(q, postgres);
       const ok = q.status === 'ok';
       if (control && control.kind === 'begin' && ok) {
         if (stack.length) desync(i);
@@ -612,6 +632,8 @@
           continue;
         }
         if (q.transactionId !== frame.id) { if (isWrite) writes.set(i, { state: 'unknown', by: i, how: 'lost' }); desync(i); continue; }
+        if (postgres && frame.aborted && ok) { if (isWrite) writes.set(i, { state: 'unknown', by: i, how: 'lost' }); desync(i); continue; }
+        if (postgres && !ok) frame.aborted = true;
         if (isWrite) frame.pending.push(i);
         continue;
       }
@@ -622,10 +644,20 @@
         desync(i); continue;
       }
       if (control.kind === 'commit' && !ok) {
-        if (stack.length === 1 && frame.kind === 'tx' && q.transactionId === frame.id) { frame.commitFailed = true; continue; }
+        if (stack.length === 1 && frame.kind === 'tx' && q.transactionId === frame.id) {
+          if (postgres) {
+            settle(frame.pending, { state: 'unknown', by: null, how: 'commit-failed' });
+            frames.set(frame.open, 'commit-unknown');
+            stack = [];
+            continue;
+          }
+          frame.commitFailed = true;
+          continue;
+        }
         desync(i); continue;
       }
       if (!ok || control.kind === 'unrecognized') { desync(i); continue; }
+      if (postgres && frame && frame.aborted && control.kind !== 'rollback' && control.kind !== 'rollback-to') { desync(i); continue; }
       if (control.kind === 'savepoint') {
         if (!stack.length || typeof q.transactionId !== 'string' || stack.some((f) => f.id === q.transactionId) || stack.length >= MAX_OUTCOME_DEPTH) { desync(i); continue; }
         stack.push({ kind: 'sp', id: q.transactionId, name: control.name, open: i, pending: [], commitFailed: false, rolledBackTo: false });
@@ -638,6 +670,7 @@
           settle(frame.pending, { state: 'undone', by: i, how: 'rollback-to' });
           frame.pending = [];
           frame.rolledBackTo = true;
+          frame.aborted = false;
           continue;
         }
         stack.pop();
@@ -666,21 +699,26 @@
     // Label a list group only when its transaction id belongs to exactly one opened frame in this trace.
     const frameById = new Map();
     const seenIds = new Map();
+    const opened = new Map();
     for (let i = 0; i < limit; i += 1) {
-      const control = parseControl(queries[i]);
+      const control = parseControl(queries[i], postgres);
       if (control && (control.kind === 'begin' || control.kind === 'savepoint') && queries[i].status === 'ok' && typeof queries[i].transactionId === 'string') {
         seenIds.set(queries[i].transactionId, (seenIds.get(queries[i].transactionId) || 0) + 1);
+        opened.set(queries[i].transactionId, control.kind === 'savepoint' ? { savepoint: true, mode: null } : { savepoint: false, mode: POSTGRES_BEGIN_MODES.get(queries[i].sql) });
       }
     }
     for (const [open, outcome] of frames) {
       const id = queries[open].transactionId;
       if (seenIds.get(id) === 1) frameById.set(id, outcome);
     }
-    return { writes, frames, frameById, totals, transactions, savepoints };
+    // PostgreSQL traces name what each group opened; a repeated id cannot be attributed, so it is not labelled.
+    const openedById = new Map();
+    if (postgres) for (const [id, value] of opened) if (seenIds.get(id) === 1) openedById.set(id, value);
+    return { writes, frames, frameById, openedById, totals, transactions, savepoints };
   }
 
   const FRAME_LABELS = Object.freeze({
-    committed: 'Committed in trace', 'rolled-back': 'Rolled back', 'rolled-back-to': 'Rolled back to savepoint', unfinished: 'Not finished in trace',
+    committed: 'Committed in trace', 'rolled-back': 'Rolled back', 'rolled-back-to': 'Rolled back to savepoint', unfinished: 'Not finished in trace', 'commit-unknown': 'COMMIT outcome unknown',
   });
   const EFFECT_LABELS = Object.freeze({
     kept: { default: 'Committed in trace' },
@@ -689,10 +727,12 @@
     unknown: { default: 'Unknown from this trace' },
   });
   const EFFECT_NOTES = Object.freeze({
-    rollback: 'SQLite ran this write, but its transaction was rolled back later in this trace, so the change was not kept.',
-    'rollback-to': 'SQLite ran this write, but a later ROLLBACK TO SAVEPOINT in this trace undid it.',
+    rollback: (doc) => `${backendName(doc)} ran this write, but its transaction was rolled back later in this trace, so the change was not kept.`,
+    'rollback-to': (doc) => `${backendName(doc)} ran this write, but a later ROLLBACK TO SAVEPOINT in this trace undid it.`,
     unfinished: 'The trace ends before this write\'s transaction committed or rolled back. A trace exported inside a transaction looks like this.',
-    'commit-failed': 'COMMIT failed and the trace ends before the transaction\'s outcome, so the effect is unknown.',
+    'commit-failed': (doc) => (isPostgres(doc)
+      ? 'COMMIT reported a failure, and a trace cannot show whether PostgreSQL applied it: the failure may be a rejection or a lost acknowledgment. The effect is unknown, so check the data before retrying.'
+      : 'COMMIT failed and the trace ends before the transaction\'s outcome, so the effect is unknown.'),
     'no-start': 'This trace does not show where this write\'s transaction began, for example because older entries were left out, so the effect is unknown.',
     lost: 'The transaction statements around this write do not follow the order Rowstitch records, so no effect is inferred.',
   });
@@ -711,7 +751,9 @@
     item(doc.queries.length.toLocaleString('en-US'), doc.queries.length === 1 ? 'Statement' : 'Statements');
     item(a.transactions.toLocaleString('en-US'), `${a.transactions === 1 ? 'Transaction' : 'Transactions'}${a.savepoints ? `, ${plural(a.savepoints, 'savepoint', 'savepoints')}` : ''}`);
     item(s.failed.toLocaleString('en-US'), 'Failed', s.failed ? 'is-error' : '');
-    item(`${s.scans} of ${s.withPlan}`, 'Plans with a full scan', s.scans ? 'is-warn' : '');
+    // Scan labels read SQLite's plan text. They say nothing about a plan from another database.
+    if (isPostgres(doc)) item(s.withPlan.toLocaleString('en-US'), 'Recorded plans');
+    else item(`${s.scans} of ${s.withPlan}`, 'Plans with a full scan', s.scans ? 'is-warn' : '');
     const missing = doc.queries.length - s.timed;
     item(s.timed ? formatMs(s.total) : 'none', missing ? `Recorded time, ${missing} without a duration` : 'Recorded time');
     if (a.totals.undone) item(a.totals.undone.toLocaleString('en-US'), a.totals.undone === 1 ? 'Undone write' : 'Undone writes');
@@ -833,8 +875,10 @@
       const header = el('div', 'tx-head');
       const groupFailed = group.items.filter((i) => doc.queries[i].status === 'error').length;
       const groupMs = group.items.reduce((sum, i) => sum + (doc.queries[i].durationMs || 0), 0);
-      header.append(el('span', 'tx-label', 'Transaction'), el('code', 'tx-id mono', group.tx));
+      const opened = state.outcomes ? state.outcomes.openedById.get(group.tx) : undefined;
+      header.append(el('span', 'tx-label', opened && opened.savepoint ? 'Savepoint' : 'Transaction'), el('code', 'tx-id mono', group.tx));
       const meta = [plural(group.items.length, 'statement', 'statements')];
+      if (opened && opened.mode) meta.unshift(opened.mode);
       if (visible.length !== group.items.length) meta.push(`${visible.length} shown`);
       if (groupFailed) meta.push(`${groupFailed} failed`);
       meta.push(formatMs(groupMs));
@@ -925,8 +969,9 @@
     }
   }
 
-  function tokenizeSql(sql) {
+  function tokenizeSql(sql, postgres = false) {
     // Splits SQL into display tokens. Placeholders are numbered in order; quoted text is never treated as a placeholder.
+    // In PostgreSQL only $n is a placeholder: ? is an operator, [ ] are array brackets, and $tag$ opens a quoted string.
     const tokens = [];
     let i = 0;
     let slot = 0;
@@ -934,10 +979,35 @@
     const flush = () => { if (plain) { tokens.push({ kind: 'plain', text: plain }); plain = ''; } };
     while (i < sql.length) {
       const c = sql[i];
-      if (c === '\'' || c === '"' || c === '`' || c === '[') {
+      if (postgres && c === '$') {
+        const dollar = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i, i + 66));
+        if (dollar) {
+          const j = sql.indexOf(dollar[0], i + dollar[0].length);
+          const end = j < 0 ? sql.length : j + dollar[0].length;
+          flush();
+          tokens.push({ kind: 'string', text: sql.slice(i, end) });
+          i = end;
+          continue;
+        }
+        let j = i + 1;
+        while (j < sql.length && sql[j] >= '0' && sql[j] <= '9') j += 1;
+        if (j > i + 1) {
+          flush();
+          const number = Number(sql.slice(i + 1, j));
+          slot = Math.max(slot, number);
+          tokens.push({ kind: 'slot', text: sql.slice(i, j), slot: number });
+          i = j;
+          continue;
+        }
+        plain += c;
+        i += 1;
+      } else if (c === '\'' || c === '"' || (!postgres && (c === '`' || c === '['))) {
         const close = c === '[' ? ']' : c;
+        // PostgreSQL E'...' strings use backslash escapes, so an escaped quote does not end them.
+        const escapes = postgres && c === '\'' && /(?:^|[^A-Za-z0-9_$])[eE]$/.test(sql.slice(Math.max(0, i - 2), i));
         let j = i + 1;
         while (j < sql.length) {
+          if (escapes && sql[j] === '\\') { j += 2; continue; }
           if (sql[j] === close) {
             if (close !== ']' && sql[j + 1] === close) { j += 2; continue; }
             break;
@@ -959,7 +1029,7 @@
         flush();
         tokens.push({ kind: 'comment', text: sql.slice(i, end) });
         i = end;
-      } else if (c === '?') {
+      } else if (c === '?' && !postgres) {
         let j = i + 1;
         while (j < sql.length && sql[j] >= '0' && sql[j] <= '9') j += 1;
         flush();
@@ -969,9 +1039,10 @@
         i = j;
       } else if (/[A-Za-z_]/.test(c)) {
         let j = i + 1;
-        while (j < sql.length && /[A-Za-z0-9_]/.test(sql[j])) j += 1;
+        // A PostgreSQL identifier may contain $, which then does not start a placeholder.
+        while (j < sql.length && (postgres ? /[A-Za-z0-9_$]/ : /[A-Za-z0-9_]/).test(sql[j])) j += 1;
         const word = sql.slice(i, j);
-        if (SQL_KEYWORDS.has(word.toUpperCase())) {
+        if (SQL_KEYWORDS.has(word.toUpperCase()) || (postgres && POSTGRES_KEYWORDS.has(word.toUpperCase()))) {
           flush();
           tokens.push({ kind: 'keyword', text: word });
         } else {
@@ -1052,13 +1123,18 @@
       facts.append(wrap);
     }
     body.append(facts);
+    const postgres = isPostgres(doc);
+    const slotLabel = (n) => `${postgres ? '$' : '?'}${n}`;
     if (q.status === 'error') {
-      body.append(el('p', 'callout is-error', 'This statement failed. Traces do not carry error messages, so check your application log for the reason.'));
+      body.append(el('p', 'callout is-error', `This statement failed. Traces do not carry error messages, so check your application log for the reason.${postgres ? ' A failed status can also mean the outcome was never confirmed, so it does not prove that nothing changed.' : ''}`));
     }
-    if (effect && effect.state !== 'kept') body.append(el('p', 'callout is-note', EFFECT_NOTES[effect.how]));
+    if (effect && effect.state !== 'kept') {
+      const note = EFFECT_NOTES[effect.how];
+      body.append(el('p', 'callout is-note', typeof note === 'function' ? note(doc) : note));
+    }
 
     // SQL
-    const { tokens, slots } = tokenizeSql(q.sql);
+    const { tokens, slots } = tokenizeSql(q.sql, postgres);
     const sqlBlock = el('section', 'block');
     const sqlHead = el('div', 'block-head');
     sqlHead.append(el('h3', 'block-title', 'SQL'));
@@ -1079,7 +1155,7 @@
     for (const t of tokens) {
       if (t.kind === 'plain') code.append(document.createTextNode(t.text));
       else if (t.kind === 'slot') {
-        const chip = el('span', 'slot', `?${t.slot}`);
+        const chip = el('span', 'slot', slotLabel(t.slot));
         chip.dataset.slot = String(t.slot);
         chip.addEventListener('mouseenter', () => highlightSlot(t.slot, true));
         chip.addEventListener('mouseleave', () => highlightSlot(t.slot, false));
@@ -1088,7 +1164,7 @@
     }
     pre.append(code);
     sqlBlock.append(pre);
-    sqlBlock.append(el('p', 'fine', 'Numbered chips mark bound-value slots. Values travel separately from the SQL text and are never pasted into it here.'));
+    sqlBlock.append(el('p', 'fine', 'Numbered chips mark bound-value slots. Bound values travel separately from the SQL text and are never pasted into it here.'));
     body.append(sqlBlock);
 
     // Parameters
@@ -1120,7 +1196,7 @@
       const tbody = el('tbody');
       q.parameters.forEach((value, k) => {
         const tr = el('tr');
-        tr.append(el('td', 'mono slot-cell', `?${k + 1}`));
+        tr.append(el('td', 'mono slot-cell', slotLabel(k + 1)));
         let cell;
         if (value === REDACTED) cell = el('td', 'muted', 'Redacted when the trace was written');
         else if (!state.showValues) cell = el('td', 'muted', `Hidden (${value === null ? 'null' : typeof value === 'string' ? 'text' : typeof value})`);
@@ -1145,12 +1221,14 @@
     if (q.plan === null) {
       planBlock.append(el('p', 'muted', q.operation === 'select'
         ? 'No plan was recorded for this read.'
-        : 'No plan in the trace. Rowstitch records EXPLAIN QUERY PLAN for generated reads.'));
+        : (postgres ? 'This trace has no query plan for this statement.' : 'No plan in the trace. Rowstitch records EXPLAIN QUERY PLAN for generated reads.')));
     } else if (!q.plan.length) {
       planBlock.append(el('p', 'muted', 'A plan was recorded with no steps.'));
     } else {
-      planBlock.append(renderPlan(q.plan));
-      planBlock.append(el('p', 'fine', 'From SQLite\'s EXPLAIN QUERY PLAN text in the trace. The labels are reading aids, not measurements. Nothing was re-run.'));
+      planBlock.append(renderPlan(q.plan, postgres));
+      planBlock.append(el('p', 'fine', postgres
+        ? 'Plan text from the trace, shown without interpretation. Nothing was re-run.'
+        : 'From SQLite\'s EXPLAIN QUERY PLAN text in the trace. The labels are reading aids, not measurements. Nothing was re-run.'));
     }
     body.append(planBlock);
   }
@@ -1159,7 +1237,7 @@
     for (const r of state.paramRows) r.tr.classList.toggle('is-hot', on && r.slot === slot);
   }
 
-  function renderPlan(plan) {
+  function renderPlan(plan, postgres = false) {
     const byId = new Map();
     plan.forEach((step, k) => { if (typeof step.id === 'number' && !byId.has(step.id)) byId.set(step.id, k); });
     const depthOf = (k) => {
@@ -1179,7 +1257,7 @@
     plan.forEach((step, k) => {
       const li = el('li', `plan-step depth-${depthOf(k)}`);
       li.append(el('code', 'mono plan-detail', step.detail || '(empty step)'));
-      const d = step.detail;
+      const d = postgres ? '' : step.detail;
       if (isFullScan(d)) li.append(el('span', 'tag is-warn', 'Reads every row'));
       else if (/\bUSING (COVERING )?INDEX\b|\bUSING (INTEGER )?PRIMARY KEY\b/.test(d)) li.append(el('span', 'tag is-ok', 'Uses an index'));
       if (/\bTEMP B-TREE\b/.test(d)) li.append(el('span', 'tag', 'Temporary sort'));
@@ -1326,6 +1404,7 @@
     const when = new Date(Date.parse(doc.generatedAt));
     add('Title', doc.title || 'Untitled trace');
     add('Source', doc.source === 'fictional-demo' ? 'Fictional demo data' : 'Local trace');
+    add('Database', has(doc, 'dialect') ? `${backendName(doc)}, named by this trace` : 'SQLite. This trace names no database, as older SQLite traces do.');
     add('Loaded from', state.origin);
     add('Generated', `${doc.generatedAt} (${when.toISOString().replace('T', ' ').slice(0, 19)} UTC)`, 'mono');
     add('Statements', `${doc.queries.length.toLocaleString('en-US')}, ${s.failed} failed, ${plural(state.outcomes.transactions, 'transaction', 'transactions')}, ${plural(state.outcomes.savepoints, 'savepoint', 'savepoints')}`);

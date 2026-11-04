@@ -22,7 +22,7 @@ import { performance } from 'node:perf_hooks';
 import { types } from 'node:util';
 import { RowstitchError } from './errors.js';
 import { isAcknowledgedRejection, type AsyncExecutor, type ExecutorRows } from './executor.js';
-import { MAX_BOUND_PARAMETERS, queryModel, type TransactionAction } from './query-model.js';
+import { MAX_REQUEST_PARAMETERS, queryModel, type TransactionAction } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
 import { compilePostgresControl } from './postgres-control.js';
 import type { Parameter } from './schema.js';
@@ -99,6 +99,13 @@ const noop = (): void => {};
 
 const MAX_RESULT_PROTOTYPES = 64;
 const { isProxy } = types, { getOwnPropertyDescriptor, getPrototypeOf } = Reflect, { hasOwn } = Object;
+// Operation signals are platform objects. Never dispatch through caller-overridden instance properties.
+const abortPrototype = AbortSignal.prototype;
+const nativeAborted = Object.getOwnPropertyDescriptor(abortPrototype, 'aborted')!.get!;
+const nativeAddListener = EventTarget.prototype.addEventListener, nativeRemoveListener = EventTarget.prototype.removeEventListener;
+const isAborted = (signal: AbortSignal | undefined): boolean => signal !== undefined && nativeAborted.call(signal) === true;
+const listenAbort = (signal: AbortSignal | undefined, listener: () => void): void => { if (signal) nativeAddListener.call(signal, 'abort', listener, { once: true }); };
+const unlistenAbort = (signal: AbortSignal | undefined, listener: () => void): void => { if (signal) nativeRemoveListener.call(signal, 'abort', listener); };
 /**
  * Whether a promise can resolve with this settled value without running code. Resolving a promise reads `then` from any object,
  * so a callback's fulfilled value would otherwise be read again after COMMIT, where a failure could only be a false one.
@@ -198,10 +205,23 @@ function integerOption(options: Record<string, unknown>, key: string, fallback: 
 }
 function operationSignal(options: unknown): AbortSignal | undefined {
   if (options === undefined) return undefined;
-  if (!plainObject(options) || Object.keys(options).some(key => key !== 'signal')) throw failure('VALIDATION');
-  const signal = options.signal;
-  if (signal !== undefined && !(signal instanceof AbortSignal)) throw failure('VALIDATION');
-  return signal;
+  try {
+    if (!options || typeof options !== 'object' || isProxy(options) || !plainObject(options)) throw failure('VALIDATION');
+    const descriptors = Object.getOwnPropertyDescriptors(options);
+    if (Reflect.ownKeys(descriptors).some(key => key !== 'signal')) throw failure('VALIDATION');
+    const descriptor = hasOwn(descriptors, 'signal') ? descriptors.signal : undefined;
+    if (descriptor && (!hasOwn(descriptor, 'value') || !descriptor.enumerable)) throw failure('VALIDATION');
+    const signal: unknown = descriptor?.value;
+    if (signal === undefined) return undefined;
+    if (!signal || typeof signal !== 'object' || isProxy(signal) || getPrototypeOf(signal) !== abortPrototype || !Object.isExtensible(signal)) throw failure('VALIDATION');
+    const properties = Object.getOwnPropertyDescriptors(signal);
+    if (Reflect.ownKeys(properties).some(key => {
+      const property = properties[key as keyof typeof properties]!;
+      return !hasOwn(property, 'value') || typeof key === 'symbol' && !property.writable;
+    })) throw failure('VALIDATION');
+    nativeAborted.call(signal); // Native brand check before queue admission or transaction state changes.
+    return signal as AbortSignal;
+  } catch { throw failure('VALIDATION'); }
 }
 function captureSql(sql: unknown): string {
   if (typeof sql !== 'string' || !sql.length) throw failure('VALIDATION');
@@ -212,7 +232,7 @@ function captureParameters(parameters: unknown): readonly Parameter[] {
   if (parameters === undefined) return Object.freeze([]);
   let copy: unknown[];
   try {
-    if (!Array.isArray(parameters) || parameters.length > MAX_BOUND_PARAMETERS) throw failure('VALIDATION');
+    if (!Array.isArray(parameters) || parameters.length > MAX_REQUEST_PARAMETERS) throw failure('VALIDATION');
     copy = Array.from(parameters);
   } catch { throw failure('VALIDATION'); }
   for (const value of copy) {
@@ -326,13 +346,13 @@ class Session<R> {
   #statement(frame: Frame<R> | null, sql: string, parameters: readonly Parameter[], signal?: AbortSignal): Promise<R> {
     this.#inflight++;
     const onAbort = (): void => { if (frame) this.#abortFrame(frame); };
-    if (frame) signal?.addEventListener('abort', onAbort, { once: true });
+    if (frame) listenAbort(signal, onAbort);
     const run = this.#execute(frame, 'statement', async () => {
       const rows: unknown = await this.#executor.all(sql, parameters);
       if (!this.#isResult(rows)) throw new Error('malformed executor result');
       return rows;
-    }, () => { if (signal?.aborted) { onAbort(); throw failure('ABORTED'); } });
-    const release = (): void => { this.#inflight--; if (frame) signal?.removeEventListener('abort', onAbort); };
+    }, () => { if (isAborted(signal)) { onAbort(); throw failure('ABORTED'); } });
+    const release = (): void => { this.#inflight--; if (frame) unlistenAbort(signal, onAbort); };
     run.then(release, release);
     if (frame) {
       frame.userPending.add(run);
@@ -420,14 +440,14 @@ class Session<R> {
       start: () => { cleanup(); start(); },
       fail: error => { cleanup(); reject(error); },
     };
-    const cleanup = (): void => { if (timer !== undefined) clearTimeout(timer); signal?.removeEventListener('abort', onAbort); };
+    const cleanup = (): void => { if (timer !== undefined) clearTimeout(timer); unlistenAbort(signal, onAbort); };
     const remove = (): void => {
       cleanup();
       const index = this.#queue.indexOf(entry);
       if (index >= 0) this.#queue.splice(index, 1);
     };
     timer = setTimeout(() => { remove(); reject(failure('QUEUE_TIMEOUT')); }, this.#queueTimeoutMs);
-    signal?.addEventListener('abort', onAbort, { once: true });
+    listenAbort(signal, onAbort);
     this.#queue.push(entry);
   }
 
@@ -443,14 +463,14 @@ class Session<R> {
   async #rootAll(sql: unknown, parameters: unknown, options: unknown): Promise<R> {
     const text = captureSql(sql), values = captureParameters(parameters), signal = operationSignal(options);
     this.#rootGuard();
-    if (signal?.aborted) throw failure('ABORTED');
+    if (isAborted(signal)) throw failure('ABORTED');
     // PostgreSQL READ ONLY is a transaction mode, not an executor-wide file flag as it is for SQLite. Enclose even
     // one root statement in that mode, so the option cannot silently permit autocommit writes. This is not a role policy.
     if (this.#dialect === 'postgresql' && this.#readOnly)
       return this.#rootTransaction<R>((tx: AsyncTransaction<R>) => tx.all(text, values), signal === undefined ? undefined : { signal });
     return new Promise<R>((resolve, reject) => {
       this.#admit(signal, () => {
-        if (signal?.aborted) { reject(failure('ABORTED')); return; }
+        if (isAborted(signal)) { reject(failure('ABORTED')); return; }
         if (this.#poison !== null) { reject(failure('CONNECTION_UNUSABLE')); return; }
         if (this.#inflight >= this.#maxPending) { reject(failure('PENDING_LIMIT')); return; }
         this.#statement(null, text, values, signal).then(resolve, reject);
@@ -465,12 +485,12 @@ class Session<R> {
       if (typeof callback !== 'function') throw failure('VALIDATION');
       signal = operationSignal(options);
       this.#rootGuard();
-      if (signal?.aborted) throw failure('ABORTED');
+      if (isAborted(signal)) throw failure('ABORTED');
     } catch (error) { return Promise.reject(error); }
     // The frame settles this exact deferred, so an acknowledged result is read once, right after its last check.
     const result = deferred<Awaited<T>>();
     this.#admit(signal, () => {
-      if (signal?.aborted) { result.reject(failure('ABORTED')); return; }
+      if (isAborted(signal)) { result.reject(failure('ABORTED')); return; }
       if (this.#poison !== null) { result.reject(failure('CONNECTION_UNUSABLE')); return; }
       const frame = this.#frame(null);
       this.#current = frame;
@@ -488,7 +508,7 @@ class Session<R> {
       signal = operationSignal(options);
       this.#frameGuard(frame);
       // A pre-aborted request never joins this transaction, matching child-transaction admission.
-      if (signal?.aborted) throw failure('ABORTED');
+      if (isAborted(signal)) throw failure('ABORTED');
       if (this.#inflight >= this.#maxPending) throw failure('PENDING_LIMIT');
     } catch (error) { return Promise.reject(error); }
     return this.#statement(frame, text, values, signal);
@@ -503,7 +523,7 @@ class Session<R> {
       this.#frameGuard(parent);
       if (parent.issued.size) throw failure('TRANSACTION_NESTED_ACTIVE', 'NESTED_PENDING');
       if (parent.depth >= ASYNC_SESSION_LIMITS.maxDepth) throw failure('TRANSACTION_DEPTH');
-      if (signal?.aborted) throw failure('ABORTED');
+      if (isAborted(signal)) throw failure('ABORTED');
     } catch (error) { return Promise.reject(error); }
     const child = this.#frame(parent);
     parent.child = child;
@@ -587,7 +607,7 @@ class Session<R> {
     const finish = (ok: boolean, value: unknown, handled = false): void => {
       if (finished) return;
       finished = true;
-      signal?.removeEventListener('abort', onAbort);
+      unlistenAbort(signal, onAbort);
       frame.active = false; frame.phase = 'done';
       if (frame.parent) { if (frame.parent.child === frame) frame.parent.child = null; }
       else if (this.#current === frame) { this.#current = null; this.#pump(); }
@@ -596,7 +616,7 @@ class Session<R> {
       else if (ok) result.reject(failure('TRANSACTION_RESULT_CHANGED'));
       else { if (handled) result.promise.catch(noop); result.reject(value); }
     };
-    signal?.addEventListener('abort', onAbort, { once: true });
+    listenAbort(signal, onAbort);
     this.#lifecycle(frame, callback, signal, finish).catch(() => {
       // Defensive: an internal fault must not leave a transaction open or report success.
       if (this.#poison === null) this.#poisonWith('CONNECTION_UNUSABLE');
@@ -617,7 +637,7 @@ class Session<R> {
       return;
     }
     if (frame.doomed) { finish(false, failure('TRANSACTION_CLOSED'), true); return; }
-    if (frame.abortRequested || signal?.aborted) {
+    if (frame.abortRequested || isAborted(signal)) {
       frame.active = false; frame.closedCode = 'ABORTED';
       const cleanup = await this.#rollback(frame);
       finish(false, cleanup === null ? failure('ABORTED') : withCleanup(failure('ABORTED'), cleanup));

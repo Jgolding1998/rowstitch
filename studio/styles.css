@@ -126,6 +126,10 @@ button, input, select { font: inherit; color: inherit; }
   background: var(--raised); color: var(--ink-2); font-size: 12px; font-weight: 500;
 }
 .loaded-kind.is-demo { background: var(--accent-soft); color: var(--accent-ink); }
+.loaded-dialect {
+  flex: none; padding: 1px 7px; border: 1px solid var(--line-strong); border-radius: 6px;
+  color: var(--ink-2); font-size: 12px; font-weight: 500;
+}
 .loaded-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .actions { display: flex; align-items: center; gap: 8px; }
 
@@ -372,7 +376,7 @@ main:focus { outline: none; }
 .q-effect.is-pending { background: var(--warn-soft); color: var(--warn); }
 .tx-outcome { color: var(--ink-2); font-weight: 500; }
 .tx-outcome.is-rolled-back, .tx-outcome.is-rolled-back-to { color: var(--ink); }
-.tx-outcome.is-unfinished { color: var(--warn); }
+.tx-outcome.is-unfinished, .tx-outcome.is-commit-unknown { color: var(--warn); }
 .fact-effect { grid-column: span 2; }
 .fact dd.effect { font-weight: 500; }
 .fact dd.effect.is-kept { color: var(--ok); }

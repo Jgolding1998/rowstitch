@@ -1,9 +1,10 @@
 /**
- * Public asynchronous ORM over one worker-owned SQLite connection. Every database request goes through the proven
+ * Public asynchronous ORM over one owned connection. Every database request goes through the
  * internal async session (serialization, FIFO admission, transaction leases, unknown-outcome poisoning). Planning,
  * validation, lowering, budgets and decoding are the shared repository core used by the synchronous API.
  *
- * Honest scope: SQLite only, one connection, worker-thread execution. No PostgreSQL/PGlite claim; no raw SQL API.
+ * openAsyncDatabase uses worker-owned SQLite. Optional native factories select PostgreSQL or worker-owned PGlite.
+ * Capabilities depend on the selected dialect; unsupported operations refuse explicitly. No raw SQL API is exposed.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance } from 'node:perf_hooks';
@@ -11,12 +12,12 @@ import { RowstitchError, fail } from './errors.js';
 import type { AnyTable, InsertRow, KeyRow, Row, UpdateRow } from './schema.js';
 import { isTable } from './schema.js';
 import { assertOptions, type CompiledQuery, type FindOptions, type Includes, type Predicate, type Selection, type WithIncludes } from './predicates.js';
-import { compileSqlite } from './sqlite-compiler.js';
+import type { RepositoryDialect } from './dialect.js';
 import type { AggregateSelection, AggregateOptions, AggregateResult, GroupKey, GroupOptions, GroupResult, ProjectedRow, RelatedAggregates } from './aggregates.js';
 import { RepositoryCore, ensureSchemaWork, inspectSchemaWork, integer, openConfig, publicPlans, runAsync, schemaPlansWork,
   type CoreContext, type OpenConfig, type QueryPlan, type Rows, type SchemaPlan, type SchemaTable, type Step, type Work, type WriteOptions } from './repository-core.js';
 import { clearTraceState, recordTrace, traceDocument, type TraceDocument, type TraceState } from './trace-log.js';
-import { ASYNC_SESSION_LIMITS, createAsyncSession, trackTransactionPromise, type AsyncControlEvent, type AsyncSession, type AsyncTransaction } from './async-session.js';
+import { ASYNC_SESSION_LIMITS, createAsyncSession, trackTransactionPromise, type AsyncControlEvent, type AsyncResultGuard, type AsyncSession, type AsyncTransaction } from './async-session.js';
 import { isAcknowledgedRejection, type AsyncExecutor } from './executor.js';
 import { openWorkerSqliteExecutor } from './worker-executor.js';
 import type { DatabaseOptions } from './database.js';
@@ -33,9 +34,20 @@ export interface AsyncDatabaseOptions extends DatabaseOptions {
 }
 export interface AsyncTransactionOptions { readonly signal?: AbortSignal }
 
+/** Internal adapter contract. Public open functions supply it; it is not a user-provided SQL or decoder API. */
+export interface AsyncDatabaseRuntime {
+  readonly dialect: RepositoryDialect;
+  readonly sessionDialect: 'sqlite' | 'postgresql';
+  readonly isResult: AsyncResultGuard<unknown>;
+  readonly inspectSchema: () => Work<SchemaTable[]>;
+  readonly planSchema?: () => Work<SchemaPlan[]>;
+  readonly ensureSchema?: () => Work<{ plans: SchemaPlan[]; schema: SchemaTable[] }>;
+}
+
 interface AsyncState extends TraceState {
-  session: AsyncSession; tables: Map<string, AnyTable>; closed: boolean; readOnly: boolean; context: AsyncLocalStorage<Lease>;
-  transactionSequence: number; ids: WeakMap<AsyncTransaction, string>;
+  session: AsyncSession<unknown>; tables: Map<string, AnyTable>; closed: boolean; readOnly: boolean; context: AsyncLocalStorage<Lease>;
+  runtime: AsyncDatabaseRuntime | undefined;
+  transactionSequence: number; ids: WeakMap<AsyncTransaction<unknown>, string>;
   schema: SchemaTable[]; schemaAt: string; unconfirmed: number;
 }
 interface Lease { active: boolean }
@@ -62,14 +74,15 @@ function safe(error: unknown): unknown {
 
 export class AsyncDatabase {
   #state: AsyncState;
-  #handle: AsyncTransaction;
+  #handle: AsyncTransaction<unknown>;
   #lease: Lease | undefined;
-  /** Internal: use openAsyncDatabase(). */
-  constructor(token: symbol, state: AsyncState, handle: AsyncTransaction, lease?: Lease) {
+  /** Internal: use openAsyncDatabase() or one of the optional native database factories. */
+  constructor(token: symbol, state: AsyncState, handle: AsyncTransaction<unknown>, lease?: Lease) {
     if (token !== CONSTRUCT) fail('VALIDATION', 'Use openAsyncDatabase() to open an asynchronous database.');
     this.#state = state; this.#handle = handle; this.#lease = lease;
     internal.set(this, {
       check: () => this.#check(), writeCheck: () => this.#writeCheck(), mapped: table => this.#mapped(table), tables: state.tables,
+      ...(state.runtime ? { dialect: state.runtime.dialect } : {}),
       run: work => runAsync(work, step => this.#perform(step)),
       atomic: callback => this.#transaction(callback),
       scoped: work => trackTransactionPromise(this.#handle, work()),
@@ -100,12 +113,14 @@ export class AsyncDatabase {
    */
   async #perform(step: Step): Promise<Rows> {
     this.#check();
+    if (this.#state.runtime && typeof step.decode !== 'function') fail('QUERY', 'A native database statement requires its compiler result contract.');
+    const decode = (result: unknown): Rows => step.decode ? step.decode(result) : result as Rows;
     if (step.metadata) {
-      try { return await this.#handle.all(step.sql, step.parameters); } catch (error) { throw safe(error); }
+      try { return decode(await this.#handle.all(step.sql, step.parameters)); } catch (error) { throw safe(error); }
     }
     const start = performance.now();
     try {
-      const rows = await this.#handle.all(step.sql, step.parameters);
+      const rows = decode(await this.#handle.all(step.sql, step.parameters));
       const plan = step.explain ? rows.map(row => ({ id: Number(row.id), parent: Number(row.parent), detail: String(row.detail) })) : undefined;
       recordTrace(this.#state, { operation: step.operation, table: step.table, sql: step.sql, parameters: step.parameters, start, rowCount: rows.length,
         transactionId: this.#transactionId(), status: 'ok', ...(plan ? { plan } : {}) });
@@ -155,16 +170,43 @@ export class AsyncDatabase {
     return ops(this).scoped(() => this.#inspect());
   }
   async #inspect(): Promise<SchemaTable[]> {
-    const schema = await ops(this).run(inspectSchemaWork());
-    this.#snapshot(schema);
-    return schema;
+    this.#check();
+    try {
+      const schema = await ops(this).run(this.#state.runtime ? this.#state.runtime.inspectSchema() : inspectSchemaWork());
+      this.#snapshot(schema);
+      return schema;
+    } catch (error) { throw safe(error); }
   }
   planSchema(): Promise<SchemaPlan[]> {
-    return ops(this).scoped(async () => publicPlans(await ops(this).run(schemaPlansWork(ops(this)))));
+    return ops(this).scoped(async () => {
+      this.#check();
+      try {
+        if (this.#state.runtime?.planSchema) return await ops(this).run(this.#state.runtime.planSchema());
+        return publicPlans(await ops(this).run(schemaPlansWork(ops(this))));
+      } catch (error) { throw safe(error); }
+    });
   }
   ensureSchema(): Promise<SchemaPlan[]> {
     return ops(this).scoped(async () => {
       this.#writeCheck();
+      const ensure = this.#state.runtime?.ensureSchema;
+      if (ensure) {
+        try {
+          const captured = await this.#transaction(async tx => {
+            try {
+              const result = await ops(tx).run(ensure());
+              // All inspection, validation and allocation finish before COMMIT. Afterwards only these owned values are assigned.
+              return { plans: result.plans, schema: structuredClone(result.schema), at: new Date().toISOString() };
+            } catch (error) {
+              // Sanitize internal computation errors before rollback, so its acknowledgment/cleanup metadata remains attached.
+              throw safe(error);
+            }
+          });
+          this.#state.schema = captured.schema; this.#state.schemaAt = captured.at;
+          return captured.plans;
+        } catch (error) { throw safe(error); }
+      }
+      if (this.#state.runtime?.dialect.name === 'postgresql') fail('QUERY', 'Schema creation is not implemented for this database dialect.');
       const plans = await this.#transaction(tx => ops(tx).run(ensureSchemaWork(ops(tx))));
       await this.#inspect();
       return plans;
@@ -186,8 +228,10 @@ export class AsyncDatabase {
     this.#check();
     const title = options.title ?? 'Local query trace';
     if (typeof title !== 'string' || title.length > 4096) fail('VALIDATION', 'Trace titles must be bounded text.');
-    const notes = ['Asynchronous connection: the schema shown was inspected at ' + this.#state.schemaAt + ' and may not include later changes made by other connections.',
-      'An "error" status records a failed or unconfirmed request; it is not proof that nothing changed. A failed COMMIT that is not followed by a recorded ROLLBACK has an unknown outcome.'];
+    const outcomeNote = this.#state.runtime?.dialect.name === 'postgresql'
+      ? 'An "error" status records a failed or unconfirmed request; it is not proof that nothing changed. In this trace, a failed PostgreSQL COMMIT has an unknown outcome even if a later ROLLBACK succeeds, because that ROLLBACK might have had no transaction to undo.'
+      : 'An "error" status records a failed or unconfirmed request; it is not proof that nothing changed. A failed COMMIT that is not followed by a recorded ROLLBACK has an unknown outcome.';
+    const notes = ['Asynchronous connection: the schema shown was inspected at ' + this.#state.schemaAt + ' and may not include later changes made by other connections.', outcomeNote];
     if (this.#state.unconfirmed) notes.push(this.#state.unconfirmed + ' request(s) on this connection had unconfirmed outcomes. Inspect the stored data before retrying any of that work.');
     return traceDocument(this.#state, title, this.#state.schema, notes);
   }
@@ -239,13 +283,16 @@ export class AsyncRepository<T extends AnyTable> {
   }
   /** Pure and synchronous: never executes or traces. */
   compileSelect(options: FindOptions<Includes, Selection<T> | undefined, RelatedAggregates> = {}): CompiledQuery {
-    return compileSqlite(this.#core.selectPlan(options).model);
+    const { sql, parameters } = this.#core.compile(this.#core.selectPlan(options).model);
+    return { sql, parameters: [...parameters] };
   }
   compileAggregate<const S extends AggregateSelection>(options: AggregateOptions<S>): CompiledQuery {
-    return compileSqlite(this.#core.aggregatePlan(options).model);
+    const { sql, parameters } = this.#core.compile(this.#core.aggregatePlan(options).model);
+    return { sql, parameters: [...parameters] };
   }
   compileGroupBy<const B extends readonly GroupKey<T>[], const S extends AggregateSelection>(options: GroupOptions<T, B, S>): CompiledQuery {
-    return compileSqlite(this.#core.groupPlan(options).model);
+    const { sql, parameters } = this.#core.compile(this.#core.groupPlan(options).model);
+    return { sql, parameters: [...parameters] };
   }
   explain(options: FindOptions<Includes, Selection<T> | undefined, RelatedAggregates> = {}): Promise<QueryPlan[]> {
     return ops(this.#db).scoped(async () => ops(this.#db).run(this.#core.explainWork(this.#core.selectPlan(options).model)));
@@ -287,18 +334,35 @@ export class AsyncRepository<T extends AnyTable> {
 
 const ASYNC_KEYS = ['maxQueue', 'maxPending', 'queueTimeoutMs', 'requestTimeoutMs'] as const;
 
+/** Internal immutable call-time options, captured before a native adapter starts opening its connection. */
+export interface CapturedAsyncDatabaseOptions {
+  readonly config: OpenConfig;
+  readonly limits: ReturnType<typeof asyncLimits>;
+}
+export function captureAsyncDatabaseOptions(options: AsyncDatabaseOptions): CapturedAsyncDatabaseOptions {
+  return Object.freeze({ config: openConfig(':memory:', options, ASYNC_KEYS), limits: Object.freeze(asyncLimits(options)) });
+}
+export async function openPreparedAsyncDatabase<R>(executor: AsyncExecutor<R>, captured: CapturedAsyncDatabaseOptions, runtime: AsyncDatabaseRuntime): Promise<AsyncDatabase> {
+  return openCaptured(executor, captured.config, captured.limits, runtime);
+}
+
 /** Internal: opens the public API over any AsyncExecutor (controlled executors in tests). Not exported from the SDK. */
 export async function openAsyncDatabaseWithExecutor(executor: AsyncExecutor, options: AsyncDatabaseOptions = {}): Promise<AsyncDatabase> {
   return openCaptured(executor, openConfig(':memory:', options, ASYNC_KEYS), asyncLimits(options));
 }
-async function openCaptured(executor: AsyncExecutor, config: OpenConfig, sessionLimits: ReturnType<typeof asyncLimits>): Promise<AsyncDatabase> {
+/** Internal native adapter entry. Connection options and this runtime are captured by a dedicated public factory. */
+export async function openAsyncDatabaseWithDialect<R>(executor: AsyncExecutor<R>, options: AsyncDatabaseOptions, runtime: AsyncDatabaseRuntime): Promise<AsyncDatabase> {
+  return openCaptured(executor, openConfig(':memory:', options, ASYNC_KEYS), asyncLimits(options), runtime);
+}
+async function openCaptured(executor: AsyncExecutor<unknown>, config: OpenConfig, sessionLimits: ReturnType<typeof asyncLimits>, runtime?: AsyncDatabaseRuntime): Promise<AsyncDatabase> {
   const state: AsyncState = {
-    session: undefined as unknown as AsyncSession, tables: config.tables, closed: false, readOnly: config.readOnly, context: new AsyncLocalStorage(),
+    session: undefined as unknown as AsyncSession<unknown>, tables: config.tables, closed: false, readOnly: config.readOnly, context: new AsyncLocalStorage(), runtime,
+    ...(runtime?.dialect.name === 'postgresql' ? { dialect: 'postgresql' as const } : {}),
     traceValues: config.traceValues, capacity: config.capacity, traces: [], sequence: 0, traceBytes: 0, omittedEntries: 0,
     transactionSequence: 0, ids: new WeakMap(), schema: [], schemaAt: new Date(0).toISOString(), unconfirmed: 0,
   };
   const observer = {
-    control(event: AsyncControlEvent): void {
+    control(event: AsyncControlEvent<unknown>): void {
       let id = state.ids.get(event.handle);
       if (id === undefined) { id = 'tx' + ++state.transactionSequence; state.ids.set(event.handle, id); }
       if (event.outcome === 'unconfirmed') state.unconfirmed++;
@@ -306,7 +370,9 @@ async function openCaptured(executor: AsyncExecutor, config: OpenConfig, session
         transactionId: id, status: event.outcome === 'ok' ? 'ok' : 'error' });
     },
   };
-  state.session = createAsyncSession(executor, { readOnly: config.readOnly, observer, ...sessionLimits });
+  state.session = runtime
+    ? createAsyncSession(executor, { readOnly: config.readOnly, observer, ...sessionLimits, dialect: runtime.sessionDialect, isResult: runtime.isResult })
+    : createAsyncSession(executor as AsyncExecutor, { readOnly: config.readOnly, observer, ...sessionLimits });
   const db = new AsyncDatabase(CONSTRUCT, state, state.session);
   try { await db.inspectSchema(); }
   catch (error) { await state.session.close().catch(() => {}); state.closed = true; throw safe(error); }

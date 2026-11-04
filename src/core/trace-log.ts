@@ -8,13 +8,17 @@ export interface TraceEntry {
   id: string; operation: Operation; table: string; sql: string; parameters: (string | number | null)[];
   durationMs: number; rowCount: number; transactionId: string | null; status: 'ok' | 'error'; plan?: QueryPlan[];
 }
+/** The database that produced a trace. A document without it is a legacy SQLite trace. */
+export type TraceDialect = 'sqlite' | 'postgresql';
 export interface TraceDocument {
-  format: 'rowstitch-trace'; version: 1; title: string; generatedAt: string; source: 'local-trace';
+  format: 'rowstitch-trace'; version: 1; title: string; generatedAt: string; source: 'local-trace'; dialect?: TraceDialect;
   schema: { name: string; columns: { name: string; type: string; nullable: boolean; primaryKey: boolean }[]; foreignKeys: { column: string; table: string; target: string }[] }[];
   queries: TraceEntry[]; notes: string[];
 }
 export interface TraceState {
   traceValues: boolean; capacity: number; traces: TraceEntry[]; sequence: number; traceBytes: number; omittedEntries: number;
+  /** Exported only when set, so existing SQLite documents stay byte for byte the same. */
+  dialect?: TraceDialect;
 }
 export interface TraceRecord {
   operation: Operation; table: string; sql: string; parameters: readonly Parameter[]; start: number; rowCount: number;
@@ -55,6 +59,7 @@ export function clearTraceState(state: TraceState): void {
 export function traceDocument(state: TraceState, title: string, schema: readonly SchemaTable[], extraNotes: readonly string[]): TraceDocument {
   const document: TraceDocument = {
     format: 'rowstitch-trace', version: 1, title, generatedAt: new Date().toISOString(), source: 'local-trace',
+    ...(state.dialect === undefined ? {} : { dialect: state.dialect }),
     schema: schema.map(t => ({ name: small(t.name), columns: t.columns.map(c => ({ name: small(c.name), type: c.type, nullable: c.nullable, primaryKey: c.primaryKey })),
       foreignKeys: t.foreignKeys.map(f => ({ column: small(f.column), table: small(f.table), target: small(f.target) })) })),
     queries: [],

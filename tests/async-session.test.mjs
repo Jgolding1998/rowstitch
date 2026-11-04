@@ -7,6 +7,7 @@ import * as sdk from '../dist/index.js';
 import { createAsyncSession, ASYNC_SESSION_LIMITS } from '../dist/core/async-session.js';
 import { openSqliteExecutor } from '../dist/core/sqlite-executor.js';
 import { inlineAsyncExecutor, acknowledgedRejection, isAcknowledgedRejection } from '../dist/core/executor.js';
+import { MAX_REQUEST_PARAMETERS } from '../dist/core/query-model.js';
 
 // Internal session conformance. SQL text here is trusted test SQL; the session is not a public raw-SQL API.
 const code = value => error => error?.code === value;
@@ -128,7 +129,7 @@ test('construction validates exactly; every session method returns a rejected pr
   assert.ok(Object.isFrozen(session));
   const calls = [() => session.all(''), () => session.all(1), () => session.all('SELECT ?', [undefined]), () => session.all('SELECT ?', [{}]), () => session.all('SELECT ?', [NaN]),
     () => session.all('SELECT 1', 'x'), () => session.all('SELECT 1', [], { signal: {} }), () => session.all('SELECT 1', [], { other: 1 }),
-    () => session.all('SELECT 1', new Array(10_001).fill(1)), () => session.transaction(null), () => session.transaction(async () => {}, { signal: 1 })];
+    () => session.all('SELECT 1', new Array(MAX_REQUEST_PARAMETERS + 1).fill(1)), () => session.transaction(null), () => session.transaction(async () => {}, { signal: 1 })];
   for (const call of calls) {
     let result;
     assert.doesNotThrow(() => { result = call(); });

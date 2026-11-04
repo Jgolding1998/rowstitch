@@ -65,11 +65,17 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             tests/integration/package-lock.json
+            tests/comparison/package-lock.json
       - run: npm ci --ignore-scripts
       - run: npm run build
       - run: npm --prefix tests/integration ci --ignore-scripts
+      - run: npm --prefix tests/comparison ci --ignore-scripts
       - run: node --test tests/integration/protocol.test.mjs
       - name: Check the internal PostgreSQL and PGlite boundary
         env:
           ROWSTITCH_TEST_OUTPUT_DIR: ${{ runner.temp }}/rowstitch-engine-results
         run: node tests/integration/check.mjs ci
+      - name: Check public native APIs and pinned comparisons
+        env:
+          ROWSTITCH_TEST_OUTPUT_DIR: ${{ runner.temp }}/rowstitch-public-results
+        run: node tests/integration/public-driver.mjs ci --require-native --compare

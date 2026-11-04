@@ -4,6 +4,7 @@ import { createPostgresExecutor } from '../dist/core/postgres-executor.js';
 import { createAsyncSession } from '../dist/core/async-session.js';
 import { isAcknowledgedRejection } from '../dist/core/executor.js';
 import { isPostgresRawResult } from '../dist/core/postgres-result.js';
+import { MAX_REQUEST_PARAMETERS } from '../dist/core/query-model.js';
 
 // Private fake transport. Responses are simulated: nothing here claims a live PostgreSQL server produced them.
 const code = expected => error => error?.code === expected;
@@ -628,9 +629,9 @@ test('a completed request cancels its own deadline', async () => {
 
 test('input validation: parameter limit, values and SQL', async () => {
   const d = fake(), executor = createPostgresExecutor(d.transport);
-  await executor.all('SELECT 1', new Array(10_000).fill(1));
+  await executor.all('SELECT 1', new Array(MAX_REQUEST_PARAMETERS).fill(1));
   assert.equal(d.sent.length, 1);
-  for (const [sql, parameters] of [['SELECT 1', new Array(10_001).fill(1)], ['SELECT 1\0', []], ['', []], [1, []], ['SELECT 1', 'x'], ['SELECT $1', [NaN]], ['SELECT $1', [Infinity]], ['SELECT $1', [undefined]], ['SELECT $1', [true]], ['SELECT $1', [{}]]])
+  for (const [sql, parameters] of [['SELECT 1', new Array(MAX_REQUEST_PARAMETERS + 1).fill(1)], ['SELECT 1\0', []], ['', []], [1, []], ['SELECT 1', 'x'], ['SELECT $1', [NaN]], ['SELECT $1', [Infinity]], ['SELECT $1', [undefined]], ['SELECT $1', [true]], ['SELECT $1', [{}]]])
     await assert.rejects(executor.all(sql, parameters), code('VALIDATION'));
   assert.equal(d.sent.length, 1);
   await executor.close();

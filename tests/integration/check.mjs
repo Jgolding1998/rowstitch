@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve as resolvePath, join, relative, isAbsolute, sep } from 'node:path';
 import { connectPgTransport, connectPgliteTransport } from './glue.mjs';
+import { runMixedNumericCases } from './mixed-numeric.mjs';
 // Run npm run build first. This check uses only this checkout's compiled source.
 const distBase = new URL('../../dist/', import.meta.url).href;
 const hashFile = url => createHash('sha256').update(readFileSync(url)).digest('hex');
@@ -14,13 +15,14 @@ const harnessSha256 = hashFile(new URL(import.meta.url)), glueSha256 = hashFile(
 const inheritanceSha256 = hashFile(new URL('./inheritance.mjs',import.meta.url));
 const verifiedSha256 = hashFile(new URL('./verified-roots.mjs',import.meta.url));
 const schemaSha256 = hashFile(new URL('./schema.mjs',import.meta.url));
+const mixedNumericSha256 = hashFile(new URL('./mixed-numeric.mjs',import.meta.url));
 const compiledHashes = () => Object.fromEntries(readdirSync(new URL(distBase), { recursive: true }).filter(name => name.endsWith('.js')).sort().map(name => {
   const file = join(fileURLToPath(distBase), name);
   assert.ok(lstatSync(file).isFile() && !lstatSync(file).isSymbolicLink(), 'Compiled files must be ordinary files');
   return [name.replaceAll('\\', '/'), createHash('sha256').update(readFileSync(file)).digest('hex')];
 }));
 const executedBuildHashes = compiledHashes();
-const sourceNames=['async-session.ts','executor.ts','postgres-control.ts','postgres-executor.ts','postgres-result.ts','postgres-root-plan.ts','postgres-root-execution.ts','postgres-physical.ts','postgres-catalog.ts','postgres-roots.ts'];
+const sourceNames=['async-session.ts','executor.ts','postgres-control.ts','postgres-executor.ts','postgres-result.ts','postgres-root-plan.ts','postgres-root-execution.ts','postgres-physical.ts','postgres-catalog.ts','postgres-roots.ts','query-model.ts','postgres-compiler.ts','postgres-storage.ts'];
 const currentSourceHashes=()=>Object.fromEntries(sourceNames.map(name=>[name,hashFile(new URL('../../src/core/'+name,import.meta.url))]));
 const sourceHashes=currentSourceHashes();
 const { checkMappedRoots } = await import('./mapped.mjs');
@@ -382,6 +384,16 @@ try {
   phase = 'postgresql: actual schema lock waits and deadline';
   report.engines.postgresql.schemaLockCases = await checkPostgresSchemaLocks(connectPg);
   assert.equal(report.engines.postgresql.schemaLockCases.cases.length, 6);
+  phase = 'postgresql: exact mixed numeric compiler comparisons';
+  report.engines.postgresql.mixedNumericCases = await runMixedNumericCases(connectPg);
+  phase = 'pglite: exact mixed numeric compiler comparisons';
+  report.engines.pglite.mixedNumericCases = await runMixedNumericCases(connectPglite);
+  for (const engine of ['postgresql', 'pglite']) {
+    const mixed = report.engines[engine].mixedNumericCases;
+    assert.equal(mixed.cases.length, 13);
+    assert.equal(mixed.comparisons, 15_552);
+    assert.ok(mixed.cleanup.transactionEnded && mixed.cleanup.temporaryObjectsDropped && mixed.cleanup.ownedTransportClosed);
+  }
 } catch (error) { original = error; }
 finally {
   for (const resource of open) {
@@ -430,6 +442,7 @@ try {
   assert.equal(hashFile(new URL('./inheritance.mjs',import.meta.url)), inheritanceSha256, 'Inheritance tests changed during checks');
   assert.equal(hashFile(new URL('./verified-roots.mjs',import.meta.url)), verifiedSha256, 'Verified-root tests changed during checks');
   assert.equal(hashFile(new URL('./schema.mjs',import.meta.url)), schemaSha256, 'Schema tests changed during checks');
+  assert.equal(hashFile(new URL('./mixed-numeric.mjs',import.meta.url)), mixedNumericSha256, 'Mixed numeric tests changed during checks');
   assert.deepEqual(currentSourceHashes(),sourceHashes,'Driver/context source changed during checks');
 } catch (error) { original ??= error; }
 report.sourceHashes = sourceHashes;
@@ -439,6 +452,7 @@ report.mappedSha256 = mappedSha256;
 report.inheritanceSha256 = inheritanceSha256;
 report.verifiedSha256 = verifiedSha256;
 report.schemaSha256 = schemaSha256;
+report.mixedNumericSha256 = mixedNumericSha256;
 // Preserve the finite fictional-data report in CI logs without uploading database files or generated credentials.
 const outcome = { ...report, failed:!!original, ...(original ? { phase, error:{code:original.code??'ASSERTION',message:String(original.message).replaceAll(password,'[redacted]').slice(0,1000)} } : {}) };
 if (process.env.CI) console.log(JSON.stringify(outcome));

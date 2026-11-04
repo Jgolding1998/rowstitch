@@ -2,7 +2,7 @@
 import { RowstitchError } from './errors.js';
 import { acknowledgedRejection, type AsyncExecutor } from './executor.js';
 import { snapshotPostgresResult, type PostgresRawField, type PostgresRawResult } from './postgres-result.js';
-import { MAX_BOUND_PARAMETERS } from './query-model.js';
+import { MAX_REQUEST_PARAMETERS } from './query-model.js';
 import type { Parameter } from './schema.js';
 
 type Status = 'I' | 'T' | 'E';
@@ -190,7 +190,7 @@ export function createPostgresExecutor(transport: PostgresTransport, options: Po
 
   return Object.freeze({
     async all(sql: string, parameters: readonly Parameter[]): Promise<PostgresRawResult> {
-      if (typeof sql !== 'string' || !sql || sql.includes('\0') || !Array.isArray(parameters) || parameters.length > MAX_BOUND_PARAMETERS) throw invalid();
+      if (typeof sql !== 'string' || !sql || sql.includes('\0') || !Array.isArray(parameters) || parameters.length > MAX_REQUEST_PARAMETERS) throw invalid();
       const values = Array.from(parameters);
       if (values.some(value => !(value === null || typeof value === 'string' || typeof value === 'bigint' || typeof value === 'number' && Number.isFinite(value)))) throw invalid();
       usable();
