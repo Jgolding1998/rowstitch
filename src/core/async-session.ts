@@ -14,9 +14,12 @@
  *   un-awaited cannot be detected.
  * - A rejection that is not a branded acknowledged engine rejection leaves the outcome unknown: the session is poisoned
  *   and its connection closed once. COMMIT_UNCONFIRMED never implies rollback and the callback is never replayed.
+ * - A callback's settled result must be deliverable (see deliverableResult): one that could still run code when a promise
+ *   resolves with it is refused before COMMIT or RELEASE and rolled back, because afterwards it could only fail falsely.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { RowstitchError } from './errors.js';
 import { isAcknowledgedRejection, type AsyncExecutor, type ExecutorRows } from './executor.js';
 import { MAX_BOUND_PARAMETERS, queryModel, type TransactionAction } from './query-model.js';
@@ -74,6 +77,8 @@ const MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   NESTED_PARENT: 'A nested transaction is active. Use its handle until it finishes.',
   NESTED_PENDING: 'Await this transaction\'s pending statements before starting a nested transaction.',
   SESSION_ACTIVE: 'Close the session after its transactions and queued work finish.',
+  TRANSACTION_RESULT_UNSAFE: 'A transaction callback settled with a value that is a Proxy, or whose then property is an accessor or a function. This transaction was not committed; return a plain value instead.',
+  TRANSACTION_RESULT_CHANGED: 'The database acknowledged this transaction, but the callback result changed while it finished, so it was not delivered. Do not replay the callback.',
 });
 
 /** Codes are public-safe constants; the message never includes SQL, values, stacks or paths. */
@@ -82,6 +87,32 @@ function failure(code: string, detail?: string): RowstitchError {
   return new RowstitchError(code, MESSAGES[key] ?? MESSAGES[code] ?? 'The async session could not complete this operation.');
 }
 const noop = (): void => {};
+
+const MAX_RESULT_PROTOTYPES = 64;
+const { isProxy } = types, { getOwnPropertyDescriptor, getPrototypeOf } = Reflect, { hasOwn } = Object;
+/**
+ * Whether a promise can resolve with this settled value without running code. Resolving a promise reads `then` from any object,
+ * so a callback's fulfilled value would otherwise be read again after COMMIT, where a failure could only be a false one.
+ * Refuses a Proxy met before `then` is found, an accessor `then` (even one with no getter) and a callable `then`. An own or
+ * inherited non-callable data `then` is ordinary data, and it ends the search as it would end the engine's lookup.
+ *
+ * Never invokes an accessor or a Proxy trap, and never changes the value. Descriptors are read as own properties, so
+ * Object.prototype pollution is not consulted either. A chain beyond the bound, or an object whose inspection throws (a module
+ * namespace in its temporal dead zone), is refused. This is a check at one moment: the caller re-checks where it matters.
+ */
+function deliverableResult(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' && typeof value !== 'function') return true;
+  try {
+    let current: object | null = value as object;
+    for (let inspected = 0; current !== null; inspected++) {
+      if (inspected >= MAX_RESULT_PROTOTYPES || isProxy(current)) return false;
+      const property: PropertyDescriptor | undefined = getOwnPropertyDescriptor(current, 'then');
+      if (property !== undefined) return hasOwn(property, 'value') && typeof property.value !== 'function';
+      current = getPrototypeOf(current);
+    }
+    return true;
+  } catch { return false; }
+}
 
 interface Deferred<T> { promise: Promise<T>; resolve(value: T): void; reject(error: unknown): void }
 function deferred<T>(): Deferred<T> {
@@ -400,20 +431,25 @@ class Session {
     });
   }
 
-  async #rootTransaction<R>(callback: unknown, options: unknown): Promise<Awaited<R>> {
-    if (typeof callback !== 'function') throw failure('VALIDATION');
-    const signal = operationSignal(options);
-    this.#rootGuard();
-    if (signal?.aborted) throw failure('ABORTED');
-    return new Promise<Awaited<R>>((resolve, reject) => {
-      this.#admit(signal, () => {
-        if (signal?.aborted) { reject(failure('ABORTED')); return; }
-        if (this.#poison !== null) { reject(failure('CONNECTION_UNUSABLE')); return; }
-        const frame = this.#frame(null);
-        this.#current = frame;
-        this.#runFrame(frame, callback as (tx: AsyncTransaction) => R | PromiseLike<R>, signal).then(resolve, reject);
-      }, reject);
-    });
+  /** Not async: an async function would adopt this promise and resolve itself with the value again, reading `then` a second time. */
+  #rootTransaction<R>(callback: unknown, options: unknown): Promise<Awaited<R>> {
+    let signal: AbortSignal | undefined;
+    try {
+      if (typeof callback !== 'function') throw failure('VALIDATION');
+      signal = operationSignal(options);
+      this.#rootGuard();
+      if (signal?.aborted) throw failure('ABORTED');
+    } catch (error) { return Promise.reject(error); }
+    // The frame settles this exact deferred, so an acknowledged result is read once, right after its last check.
+    const result = deferred<Awaited<R>>();
+    this.#admit(signal, () => {
+      if (signal?.aborted) { result.reject(failure('ABORTED')); return; }
+      if (this.#poison !== null) { result.reject(failure('CONNECTION_UNUSABLE')); return; }
+      const frame = this.#frame(null);
+      this.#current = frame;
+      this.#runFrame(frame, callback as (tx: AsyncTransaction) => R | PromiseLike<R>, signal, result);
+    }, result.reject);
+    return result.promise;
   }
 
   /** Not async: the returned promise is the tracked statement promise itself. Validation failures are rejections. */
@@ -518,8 +554,7 @@ class Session {
   }
 
   /** Not async: callers receive result.promise itself, so doomed outcomes can be marked handled on that exact promise. */
-  #runFrame<R>(frame: Frame, callback: (tx: AsyncTransaction) => R | PromiseLike<R>, signal: AbortSignal | undefined): Promise<Awaited<R>> {
-    const result = deferred<Awaited<R>>();
+  #runFrame<R>(frame: Frame, callback: (tx: AsyncTransaction) => R | PromiseLike<R>, signal: AbortSignal | undefined, result = deferred<Awaited<R>>()): Promise<Awaited<R>> {
     let finished = false;
     const onAbort = (): void => this.#abortFrame(frame);
     const finish = (ok: boolean, value: unknown, handled = false): void => {
@@ -529,7 +564,9 @@ class Session {
       frame.active = false; frame.phase = 'done';
       if (frame.parent) { if (frame.parent.child === frame) frame.parent.child = null; }
       else if (this.#current === frame) { this.#current = null; this.#pump(); }
-      if (ok) result.resolve(value as Awaited<R>);
+      // Checked and resolved in one synchronous step, so nothing can run between this check and resolve's one read of `then`.
+      if (ok && deliverableResult(value)) result.resolve(value as Awaited<R>);
+      else if (ok) result.reject(failure('TRANSACTION_RESULT_CHANGED'));
       else { if (handled) result.promise.catch(noop); result.reject(value); }
     };
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -563,7 +600,7 @@ class Session {
     // 2. Run the callback inside this frame's context.
     frame.phase = 'running';
     let outcome: Promise<R>;
-    try { outcome = Promise.resolve(this.#context.run(frame, () => callback(frame.handle))); }
+    try { outcome = this.#context.run(frame, () => Promise.resolve(callback(frame.handle))); }
     catch (error) { outcome = Promise.reject(error); }
     type Settled = { kind: 'settled'; ok: boolean; value: unknown } | { kind: 'interrupt'; reason: 'abort' | 'doom' };
     const settled = await Promise.race<Settled>([
@@ -591,14 +628,14 @@ class Session {
     if (this.#poison !== null) { finish(false, failure(this.#poison)); return; }
     // A public operation between its database steps has nothing issued yet, but it is still unfinished work.
     const pending = frame.issued.size > 0 || frame.child !== null || frame.publicPending.size > 0;
-    if (pending || !settled.ok) {
+    if (pending || !settled.ok || !deliverableResult(settled.value)) {
       this.#doomDescendants(frame);
       this.#observePublic(frame);
       for (const statement of frame.userPending) statement.catch(noop);
       await this.#drain(frame);
       if (frame.doomed) { finish(false, failure('TRANSACTION_CLOSED'), true); return; }
       const cleanup = await this.#rollback(frame);
-      const original = pending && settled.ok ? failure('TRANSACTION_PENDING') : settled.value;
+      const original = !settled.ok ? settled.value : pending ? failure('TRANSACTION_PENDING') : failure('VALIDATION', 'TRANSACTION_RESULT_UNSAFE');
       finish(false, cleanup === null ? original : withCleanup(original, cleanup));
       return;
     }

@@ -43,6 +43,35 @@ function readBack(file, sql = 'SELECT label FROM item ORDER BY id') {
 }
 const labels = file => readBack(file).map(row => row.label);
 
+test('a lazy PromiseLike callback adopts its awaited SQL inside the transaction context',async t=>{
+  const file=localFile(t);prepare(file);
+  const session=own(t,createAsyncSession(inlineAsyncExecutor(openSqliteExecutor(file))));
+  const value=await session.transaction(tx=>({then(resolve,reject){
+    tx.all('INSERT INTO item(id,label) VALUES(?,?) RETURNING label',[1,'lazy awaited']).then(rows=>resolve(rows[0].label),reject);
+  }}));
+  assert.equal(value,'lazy awaited');assert.deepEqual(labels(file),['lazy awaited']);
+});
+test('getter-based PromiseLike callbacks preserve nested ownership and refuse root misuse',async t=>{
+  const file=localFile(t);prepare(file);let reads=0;
+  const session=own(t,createAsyncSession(inlineAsyncExecutor(openSqliteExecutor(file))));
+  const value=await session.transaction(tx=>({get then(){
+    reads++;
+    return(resolve,reject)=>{Promise.resolve().then(async()=>{
+      await assert.rejects(session.all('SELECT label FROM item'),code('TRANSACTION_ACTIVE'));
+      return tx.transaction(child=>({then(ok,no){child.all('INSERT INTO item(id,label) VALUES(?,?)',[1,'nested lazy']).then(()=>ok('nested value'),no);}}));
+    }).then(resolve,reject);};
+  }}));
+  assert.equal(value,'nested value');assert.equal(reads,1);assert.deepEqual(labels(file),['nested lazy']);
+});
+test('a lazy PromiseLike rejection retains callback identity and rolls back its completed SQL',async t=>{
+  const file=localFile(t);prepare(file);const marker=new Error('fictional lazy rejection');
+  const session=own(t,createAsyncSession(inlineAsyncExecutor(openSqliteExecutor(file))));
+  await assert.rejects(session.transaction(tx=>({then(resolve,reject){
+    tx.all('INSERT INTO item(id,label) VALUES(?,?)',[1,'rolled back']).then(()=>reject(marker),reject);
+  }})),error=>error===marker);
+  assert.deepEqual(labels(file),[]);
+});
+
 /**
  * Deterministic test executor over a real SQLite connection. Every call is async; holds pause chosen calls, faults replace
  * an outcome. 'lost' faults may first apply the real operation, then hide its acknowledgment (durable unknown outcome).
