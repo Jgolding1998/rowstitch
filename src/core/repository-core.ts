@@ -17,6 +17,7 @@ import { hasRelationFilter, predicateTruth, queryModel, relationKindsCompatible,
   type AggregateModel, type CreateIndexModel, type CreateTableModel, type GroupModel, type PredicateModel, type QueryModel, type SelectModel } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
 import type { DialectQuery, RepositoryDialect } from './dialect.js';
+import type { GraphResources } from './graph-resources.js';
 import { aggregateToPlan, groupToPlan, type AggregateLowering, type AggregatePlan, type RelatedAggregates } from './aggregates.js';
 import { decodeAggregateRow } from './aggregate-decode.js';
 import { assertProjectedGuard, decodeProjectedRow, projectedAggregatesToModel, type ProjectedPlan } from './projected-aggregates.js';
@@ -232,11 +233,13 @@ export interface PreparedWrite { predicate: PredicateModel; max: number; fields:
 
 export class RepositoryCore<T extends AnyTable> {
   #captured: IncludeCapture = new Map();
+  #graph: GraphResources | undefined;
   constructor(readonly ctx: CoreContext, readonly definition: T) {}
   compile(model: QueryModel): DialectQuery { return compileFor(this.ctx, model); }
   #child<U extends AnyTable>(table: U): RepositoryCore<U> {
     const core = new RepositoryCore(this.ctx, table);
     core.#captured = this.#captured;
+    core.#graph = this.#graph;
     return core;
   }
   /** The nested include record of a relation as captured at call time (the live record if it was never captured). */
@@ -254,7 +257,15 @@ export class RepositoryCore<T extends AnyTable> {
     for (const name of fields) result[name] = decode(this.definition.columns[name].config, row[name]);
     return result as Row<T>;
   }
-  #fetchFields(select: readonly string[] | undefined, includes: Includes | undefined, extra: readonly string[] = [], depth = 0): string[] {
+  #decodeGraphRows(raw: Rows, fields: string[]): Row<T>[] {
+    return raw.map(storage => {
+      const costs = this.#graph?.source(storage);
+      const row = this.decodeRow(storage, fields);
+      if (this.#graph && costs) this.#graph.attach(row, costs);
+      return row;
+    });
+  }
+  #fetchFields(select: readonly string[] | undefined, includes: Includes | undefined, extra: readonly string[] = [], depth = 0, preflight = true): string[] {
     const fields = new Set([...selectionFields(this.definition, select), ...extra]);
     if (includes === undefined) return [...fields];
     plainRecord(includes);
@@ -265,21 +276,34 @@ export class RepositoryCore<T extends AnyTable> {
       if (Object.hasOwn(this.definition.columns, name) || !isRelation(relation)) fail('QUERY', 'An include needs a distinct alias and a Rowstitch relationship descriptor.');
       this.ctx.mapped(relation.table);
       validateRelation(relation.table, relation.options, relation instanceof SingularRelation);
-      this.#child(relation.table).#predicate(relation.options.where);
+      const child = this.#child(relation.table), where = child.#predicate(relation.options.where);
       const { localKey, foreignKey } = relation.options;
       if (!isColumnRef(localKey) || !isColumnRef(foreignKey) || localKey.table !== this.definition || foreignKey.table !== relation.table) fail('QUERY', 'Relationship keys must reference their respective mapped tables.');
       const source = this.definition.columns[localKey.name].config;
       const target = relation.table.columns[foreignKey.name].config;
       if (!relationKindsCompatible(source.kind, target.kind)) fail('QUERY', 'Relationship keys must be compatible scalar columns.');
       fields.add(localKey.name);
-      this.#child(relation.table).#fetchFields(relation.options.select, this.#nested(relation), [foreignKey.name], depth + 1);
+      const childFields = child.#fetchFields(relation.options.select, this.#nested(relation), [foreignKey.name], depth + 1, preflight);
+      if (preflight && this.ctx.dialect?.preflightRelation) {
+        const many = relation instanceof ManyRelation;
+        // Validate native wire constraints on known filters even if the eventual root/child page is empty.
+        // Actual source keys are unknown until the root read; their batch/type/byte checks run at real compilation.
+        this.ctx.dialect.preflightRelation(queryModel.relation({ table: mappedTableModel(relation.table), columns: childFields,
+          partitionBy: foreignKey.name, keys: [source.kind === 'text' ? '' : 0n],
+          ...(source.kind === 'text' ? { correlateKeys: true } : {}), ...(where === undefined ? {} : { where }),
+          orderBy: orderToModel(relation.table, relation.options.orderBy, true),
+          offset: many ? integer(relation.options.offset, 0, 0, 1_000_000_000) : 0,
+          limit: many ? integer(relation.options.limit, 100, 0, 1000) : 2, readLimit: 10_001 }));
+      }
     }
     if (entries.length) for (const [name, c] of this.#columns()) if (c.config.primary) fields.add(name);
     return [...fields];
   }
   #materialize(row: Row<T>, includes: Includes | undefined, select: readonly string[] | undefined, budget: { remaining: number }): Record<string, unknown> {
+    const fields = selectionFields(this.definition, select);
+    this.#graph?.outputRecord(row, fields);
     const result: Record<string, unknown> = {};
-    for (const field of selectionFields(this.definition, select)) {
+    for (const field of fields) {
       const value = row[field];
       result[field] = value !== null && typeof value === 'object' ? structuredClone(value) : value;
     }
@@ -290,6 +314,7 @@ export class RepositoryCore<T extends AnyTable> {
         return repository.#materialize(value, repository.#nested(relation), relation.options.select, budget);
       };
       const value = (row as Record<string, unknown>)[name];
+      this.#graph?.outputAlias(name, relation instanceof ManyRelation ? (value as Row<AnyTable>[]).length : null);
       result[name] = relation instanceof ManyRelation ? (value as Row<AnyTable>[]).map(child)
         : value === null ? null : child(value as Row<AnyTable>);
     }
@@ -352,6 +377,8 @@ export class RepositoryCore<T extends AnyTable> {
     if (this.ctx.dialect?.supportsIncludes === false && Object.keys(options.include ?? {}).length)
       fail('QUERY', 'Eager relationships are not implemented for this database dialect.');
     const fields = this.#fetchFields(options.select, options.include);
+    // Include records have now passed plain-data validation; do not enumerate a rejected caller Proxy first.
+    this.#graph = Object.keys(options.include ?? {}).length ? this.ctx.dialect?.createGraphResources?.() : undefined;
     const limit = integer(options.limit, 1000, 0, 10_000);
     const offset = integer(options.offset, 0, 0, 1_000_000_000);
     // One lowering budget covers the root where and every related aggregate domain.
@@ -388,13 +415,21 @@ export class RepositoryCore<T extends AnyTable> {
     const raw = yield* request({ ...query, operation: 'select', table: this.definition.name });
     // The same-query storage guard covers every returned row; fail before decoding, loading includes or exposing rows.
     if (plan) assertProjectedGuard(raw);
-    const rows = raw.map(row => this.decodeRow(row, fields));
-    const projected = plan ? raw.map(row => decodeProjectedRow(plan, row)) : undefined;
+    const rows = this.#decodeGraphRows(raw, fields);
+    const projected = plan ? raw.map(row => {
+      const decoded = decodeProjectedRow(plan, row);
+      if (this.#graph) this.#graph.attach(decoded, this.#graph.source(decoded));
+      return decoded;
+    }) : undefined;
     yield* this.#loadIncludes(rows, include, { remaining: 10_000 }, 0);
     const budget = { remaining: 10_000 };
+    this.#graph?.outputArray(rows.length);
     return rows.map((row, index) => {
       const result = this.#materialize(row, include, select, budget);
-      if (projected) Object.assign(result, projected[index]);
+      if (projected) {
+        this.#graph?.outputRecord(projected[index]!, Object.keys(projected[index]!));
+        Object.assign(result, projected[index]);
+      }
       return result;
     });
   }
@@ -458,7 +493,8 @@ export class RepositoryCore<T extends AnyTable> {
       const offset = many ? integer(relation.options.offset, 0, 0, 1_000_000_000) : 0;
       const repository = this.#child(relation.table);
       const nested = this.#nested(relation);
-      const fields = repository.#fetchFields(relation.options.select, nested, [foreignKey.name], depth + 1);
+      // Whole-tree native preflight already ran at call time; loading must not recompile every descendant's filters.
+      const fields = repository.#fetchFields(relation.options.select, nested, [foreignKey.name], depth + 1, false);
       const children: Row<AnyTable>[] = [];
       const sourceKeys = new WeakMap<object, string>();
       const where = repository.#predicate(relation.options.where);
@@ -471,8 +507,14 @@ export class RepositoryCore<T extends AnyTable> {
         const query = this.compile(queryModel.relation({ table: mappedTableModel(relation.table), columns: fields, partitionBy: foreignKey.name, keys: encoded,
           ...(correlateKeys ? { correlateKeys: true } : {}), ...(where === undefined ? {} : { where }), orderBy: ordering, offset, limit, readLimit: budget.remaining + 1 }));
         const raw = yield* request({ ...query, operation: 'select', table: relation.table.name });
-        const result = raw.map(row => {
-          const decoded = repository.decodeRow(row, fields);
+        if (this.#graph) {
+          const wireBytes = this.ctx.dialect?.relatedWireBytes;
+          if (!wireBytes) fail('DATA', 'Native graph accounting data is unavailable.');
+          this.#graph.relatedWire(wireBytes(raw));
+        }
+        const decodedRows = repository.#decodeGraphRows(raw, fields);
+        const result = raw.map((row, rowIndex) => {
+          const decoded = decodedRows[rowIndex]!;
           if (correlateKeys) {
             const ordinal = row.__rs_parent;
             if (typeof ordinal !== 'bigint' || ordinal < 0n || ordinal >= BigInt(chunk.length)) fail('DATA', 'A relationship returned an invalid source-key ordinal.');

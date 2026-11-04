@@ -1,6 +1,6 @@
 // Optional adapters against the real pg client, real PGlite, a scripted wire server and a pinned native PostgreSQL container.
 // The adapters run from a fresh consumer holding ordinary copies of dist and the pinned peers, under a directory outside the checkout.
-// Run npm run build first. Usage: node public-driver.mjs [label] [--no-docker|--require-native] [--compare]. Fictional data only.
+// Run npm run build first. Usage: node public-driver.mjs [label] [--no-docker|--require-native] [--compare] [--comparison-only]. Fictional data only.
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { createHash, randomBytes } from 'node:crypto';
@@ -18,9 +18,14 @@ import { runPublicAggregateComparisonCases } from './public-aggregate-compare.mj
 import { runAggregateGuardCases } from './aggregate-guards.mjs';
 import { runAggregateOperatorCases } from './aggregate-operators.mjs';
 import { runAggregateCapacityCases } from './aggregate-capacity.mjs';
+import { runPublicEagerCases, runPublicEagerCapacityCases } from './public-eager.mjs';
+import { runPublicEagerResourceCases } from './eager-resources.mjs';
+import { runEagerNativeControlCases } from './eager-native-controls.mjs';
+import { runPublicEagerComparisonCases } from './public-eager-compare.mjs';
+import { runPublicParameterBudgetCases } from './parameter-budget.mjs';
 import { connectPgliteTransport } from './glue.mjs';
 
-const args = process.argv.slice(2), knownFlags = new Set(['--no-docker', '--require-native', '--compare']);
+const args = process.argv.slice(2), knownFlags = new Set(['--no-docker', '--require-native', '--compare', '--comparison-only']);
 for (const arg of args.filter(arg => arg.startsWith('--'))) assert.ok(knownFlags.has(arg), 'Unknown integration flag');
 const labels = args.filter(arg => !arg.startsWith('--'));
 assert.ok(labels.length <= 1, 'Pass at most one run label');
@@ -28,6 +33,8 @@ assert.equal(new Set(args.filter(arg => arg.startsWith('--'))).size, args.filter
 const label = labels[0] ?? 'local';
 assert.match(label, /^[a-z0-9-]{1,30}$/);
 const useDocker = !args.includes('--no-docker'), requireNative = args.includes('--require-native'), compare = args.includes('--compare');
+const comparisonOnly = args.includes('--comparison-only');
+assert.ok(!comparisonOnly || requireNative && compare, '--comparison-only requires --require-native --compare');
 assert.ok(useDocker || !requireNative, '--require-native conflicts with --no-docker');
 assert.ok(useDocker || !compare, '--compare requires native PostgreSQL and conflicts with --no-docker');
 
@@ -118,12 +125,14 @@ const sourceHashes = treeHashes(join(checkout, 'src'), '.ts');
 const compiledHashes = treeHashes(join(consumer, 'dist'), '.js');
 assert.deepEqual(compiledHashes, treeHashes(distSource, '.js'), 'The consumer must hold the exact current compiled source');
 const harnessNames = ['public-driver.mjs', 'public-api.mjs', 'public-compare.mjs', 'public-aggregates.mjs',
-  'public-aggregate-compare.mjs', 'aggregate-guards.mjs', 'aggregate-operators.mjs', 'aggregate-capacity.mjs', 'glue.mjs'];
+  'public-aggregate-compare.mjs', 'aggregate-guards.mjs', 'aggregate-operators.mjs', 'aggregate-capacity.mjs', 'public-eager.mjs', 'eager-resources.mjs',
+  'eager-native-controls.mjs', 'public-eager-compare.mjs', 'parameter-budget.mjs', 'glue.mjs'];
 const harnessHashes = Object.fromEntries(harnessNames.map(name => [name, hashOf(fileURLToPath(new URL(name, import.meta.url)))]));
 const adapterHashes = Object.fromEntries(readdirSync(join(consumer, 'dist/adapters')).filter(name => name.endsWith('.js')).sort().map(name => [name, hashOf(join(consumer, 'dist/adapters', name))]));
 const report = { format: 'rowstitch-public-driver-checks', label, node: process.version, packages: { pg: '8.23.1', pglite: '0.5.15' }, imageDigest, adapterHashes, passed: [], skipped: [], failed: [],
-  sourceHashes, compiledHashes, harnessHashes, requireNative, compare, publicApi: {}, publicAggregates: {}, aggregateGuards: {}, aggregateOperators: {}, aggregateCapacity: {}, cleanup: {},
-  scope: 'Adapter boundary and actual public scalar/aggregate/group/projected ORM APIs on fictional fixtures, native PostgreSQL trigger/partition/restricted-login RLS controls, and explicitly separate inline PGlite malformed-storage/operator controls. Not full ORM parity, pools, replicas, managed services or a performance or reliability claim.' };
+  selection: { comparisonOnly }, notExecuted: [],
+  sourceHashes, compiledHashes, harnessHashes, requireNative, compare, publicApi: {}, publicAggregates: {}, publicEager: {}, eagerCapacity: {}, eagerResources: {}, parameterBudget: {}, eagerNativeControls: null, eagerComparison: null, aggregateGuards: {}, aggregateOperators: {}, aggregateCapacity: {}, cleanup: {},
+  scope: 'Adapter boundary and actual public scalar/aggregate/group/projected/eager ORM APIs on fictional fixtures, native PostgreSQL trigger/partition/restricted-login RLS controls, real-worker wide capacity and explicitly inline PGlite malformed-storage/operator controls. Native graph controls separately exercise ICU, hostile resolution, statement visibility, cancellation and backend loss. Parameter tests exercise the actual payload limit, not a heap or full-protocol bound. Not full ORM parity, pools, replicas, managed services or a performance or reliability claim.' };
 const password = randomBytes(32).toString('base64url');
 const pause = ms => new Promise(ok => setTimeout(ok, ms));
 const code = wanted => error => { assert.equal(error.code, wanted); return true; };
@@ -137,6 +146,7 @@ function checkedOperators(result) {
 const unconfirmed = error => { assert.ok(!isAcknowledgedRejection(error), 'Must not be acknowledged'); return true; };
 const safe = error => { const text = String(error?.message) + String(error?.stack) + JSON.stringify(error ?? null); assert.ok(!text.includes(password), 'Must not expose the password'); assert.equal(error.cause, undefined); return true; };
 async function step(name, fn) {
+  if (comparisonOnly && !name.startsWith('native comparison:')) { report.notExecuted.push(name); return; }
   try { await fn(); report.passed.push(name); process.stdout.write('ok   ' + name + '\n'); }
   catch (error) { report.failed.push(name); process.stdout.write('FAIL ' + name + ': ' + String(error?.message).replaceAll(password, '<password>').slice(0, 500) + '\n'); }
 }
@@ -159,6 +169,22 @@ await step('pglite public summaries: actual worker factory, root/group/related/p
   assert.equal(result.cases.length, 17);
   assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases); assert.equal(result.cleanup.schemaDropped, true);
   report.publicAggregates.pglite = result;
+});
+await step('pglite public eager reads: actual worker factory, all relation kinds/options, pages, batches and graph bounds', async () => {
+  const result = await runPublicEagerCases({ engine: 'pglite', sdk, openPgliteDatabase });
+  assert.equal(result.cases.length, 63); assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases);
+  report.publicEager.pglite = result;
+});
+await step('pglite public eager resources: cumulative wire and repeated JSON copies refuse before graph exposure', async () => {
+  const result = await runPublicEagerResourceCases({ engine: 'pglite', sdk, openPgliteDatabase });
+  assert.equal(result.cases.length, 2); assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases);
+  report.eagerResources.pglite = result;
+});
+await step('pglite public parameter budget: exact payload boundary, local preflight refusal and healthy recovery', async () => {
+  const result = await runPublicParameterBudgetCases({ engine: 'pglite', sdk, openPgliteDatabase });
+  assert.equal(result.cases.length, 3); assert.equal(result.cases[1].refusedVariants, 7);
+  assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases); assert.equal(result.cleanup.schemaDropped, true);
+  report.parameterBudget.pglite = result;
 });
 await step('pglite inline native controls: malformed mapped storage, input guards and hostile operator lookup', async () => {
   const transport = await connectPgliteTransport();
@@ -192,6 +218,22 @@ await step('pglite worker capacity: exact 10000-row ordinary and projected field
     assert.equal(result.cases.length, 8); assert.equal(result.maxRawCells, 1_330_000);
     assert.deepEqual(result.cleanup, { schemaDropped: true, openedHandles: 1, closedHandles: 1 });
     report.aggregateCapacity.pglite = result;
+  } finally { await executor.close(); }
+});
+await step('pglite worker eager capacity: 100 mapped fields, 10000 related rows and validated10001 sentinel', async () => {
+  const executor = await openPgliteExecutor();
+  try {
+    const borrowed = { all: (...args) => executor.all(...args), exec: (...args) => executor.exec(...args),
+      inTransaction: () => executor.inTransaction(), async close() {} };
+    const openDatabase = options => {
+      const captured = captureNativeOpen(options, []);
+      return openPreparedAsyncDatabase(borrowed, captured.database, captured.runtime);
+    };
+    const result = await runPublicEagerCapacityCases({ engine: 'pglite-worker-adapter', sdk, openDatabase,
+      admin: { query: (sql, parameters = []) => executor.all(sql, parameters) } });
+    assert.equal(result.cases.length, 3);
+    assert.deepEqual(result.cleanup, { openedHandles: 1, closedHandles: 1, schemaDropped: true });
+    report.eagerCapacity.pglite = result;
   } finally { await executor.close(); }
 });
 await step('pglite: CRUD through the worker, with values read back through the same connection', async () => {
@@ -598,6 +640,63 @@ async function native() {
     assert.equal(report.publicAggregates.postgresql.cleanup.openedDatabases, report.publicAggregates.postgresql.cleanup.closedDatabases);
     assert.equal(report.publicAggregates.postgresql.cleanup.schemaDropped, true);
   });
+  await step('native public eager reads: actual PostgreSQL factory, all relation kinds/options, pages, batches and graph bounds', async () => {
+    const result = await runPublicEagerCases({ engine: 'postgresql', sdk, openPostgresDatabase,
+      postgresOptions: { ...options, ssl: false }, admin: publicAdmin });
+    assert.equal(result.cases.length, 64); assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases);
+    assert.equal(result.cleanup.schemaDropped, true); report.publicEager.postgresql = result;
+  });
+  await step('native public eager resources: cumulative wire and repeated JSON copies refuse before graph exposure', async () => {
+    const result = await runPublicEagerResourceCases({ engine: 'postgresql', sdk, openPostgresDatabase,
+      postgresOptions: { ...options, ssl: false }, admin: publicAdmin });
+    assert.equal(result.cases.length, 2); assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases);
+    assert.equal(result.cleanup.schemaDropped, true); report.eagerResources.postgresql = result;
+  });
+  await step('native public parameter budget: exact payload boundary, local preflight refusal and healthy recovery', async () => {
+    const result = await runPublicParameterBudgetCases({ engine: 'postgresql', sdk, openPostgresDatabase,
+      postgresOptions: { ...options, ssl: false }, admin: publicAdmin });
+    assert.equal(result.cases.length, 3); assert.equal(result.cases[1].refusedVariants, 7);
+    assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases); assert.equal(result.cleanup.schemaDropped, true);
+    report.parameterBudget.postgresql = result;
+  });
+  await step('native public eager controls: ICU, hostile resolution, graph visibility, aborts and unknown child outcomes', async () => {
+    const extras = new Set(), counts = { opened: 0, closed: 0, forced: 0 };
+    const makeAdmin = async (overrides = {}) => {
+      assert.ok(overrides && typeof overrides === 'object' && !Array.isArray(overrides));
+      assert.ok(Object.keys(overrides).every(key => ['applicationName', 'user', 'password'].includes(key)));
+      for (const value of Object.values(overrides)) assert.equal(typeof value, 'string');
+      // Host, port and database stay on this already verified owned fixture; helpers cannot redirect the client.
+      const client = new pg.Client({ ...options, ssl: false, user: overrides.user ?? options.user,
+        password: overrides.password ?? options.password, application_name: overrides.applicationName ?? 'rowstitch-eager-control-admin',
+        connectionTimeoutMillis: 5000 });
+      try { await client.connect(); }
+      catch { await client.end().catch(() => {}); throw new Error('Owned eager control client failed to open.'); }
+      let closed = false;
+      const handle = {
+        query: (text, values = []) => client.query({ text, values, rowMode: 'array', types: { getTypeParser: () => value => value } }),
+        async close() {
+          if (closed) return;
+          try { await client.end(); }
+          finally { closed = true; extras.delete(handle); counts.closed++; }
+        },
+      };
+      extras.add(handle); counts.opened++; return handle;
+    };
+    try {
+      const result = await runEagerNativeControlCases({ sdk, openPostgresDatabase,
+        postgresOptions: { ...options, ssl: false }, admin: publicAdmin, makeAdmin });
+      report.eagerNativeControls = result;
+      assert.deepEqual(result.skipped, [], 'The pinned native fixture must execute its ICU controls.');
+      assert.equal(result.cases.length, 13);
+      assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases);
+      assert.equal(result.cleanup.openedClients, result.cleanup.closedClients);
+      assert.equal(result.cleanup.schemaDropped, true); assert.equal(result.cleanup.roleDropped, true);
+    } finally {
+      for (const handle of [...extras]) { counts.forced++; await handle.close(); }
+      report.cleanup.eagerControlAdmins = counts;
+    }
+    assert.equal(counts.opened, counts.closed); assert.equal(counts.forced, 0, 'Native controls must close their own clients.');
+  });
   await step('native aggregate controls: malformed mapped storage and hidden invalid inputs', async () => {
     const result = await runAggregateGuardCases({ engine: 'postgresql', sdk,
       openDatabase: orm => openPostgresDatabase({ ...options, ssl: false, ...orm }), admin: publicAdmin });
@@ -613,6 +712,13 @@ async function native() {
     assert.equal(result.cases.length, 8); assert.equal(result.maxRawCells, 1_330_000);
     assert.deepEqual(result.cleanup, { schemaDropped: true, openedHandles: 1, closedHandles: 1 });
     report.aggregateCapacity.postgresql = result;
+  });
+  await step('native public eager capacity:100 mapped fields,10000 related rows and validated10001 sentinel', async () => {
+    const result = await runPublicEagerCapacityCases({ engine: 'postgresql', sdk,
+      openDatabase: orm => openPostgresDatabase({ ...options, ssl: false, ...orm }), admin: publicAdmin });
+    assert.equal(result.cases.length, 3);
+    assert.deepEqual(result.cleanup, { openedHandles: 1, closedHandles: 1, schemaDropped: true });
+    report.eagerCapacity.postgresql = result;
   });
   if (compare) await step('native comparison: pinned Orange ORM and Kysely on the same owned PostgreSQL engine', async () => {
     // References have their own peer tree: Orange's older optional PGlite peer must not replace the tested 0.5.15 peer.
@@ -647,6 +753,15 @@ async function native() {
     assert.equal(aggregateResult.cases.length, 30);
     assert.deepEqual(aggregateResult.summary, { pass: 20, difference: 10, fail: 0 });
     assert.deepEqual(aggregateResult.cleanup, { openedHandles: 3, closedHandles: 3, schemasDropped: 3 });
+    const eagerResult = await runPublicEagerComparisonCases({ sdk, openPostgresDatabase,
+      postgresOptions: { ...options, ssl: false }, admin: publicAdmin, orange, kysely, pg: comparisonPg, versions });
+    report.eagerComparison = eagerResult;
+    assert.equal(comparisonPg.types.getTypeParser(1700, 'text'), parser, 'Graph comparison must restore the reference NUMERIC parser');
+    assert.equal(eagerResult.cases.length, 13); assert.equal(eagerResult.summary.observations, 39);
+    assert.equal(eagerResult.summary.fail, 0);
+    assert.equal(eagerResult.cleanup.openedHandles, eagerResult.cleanup.closedHandles);
+    assert.equal(eagerResult.cleanup.schemasDropped, 3);
+    assert.equal(eagerResult.cleanup.queryListenerRemoved, true); assert.equal(eagerResult.cleanup.numericParserRestored, true);
   });
   await admin.query('CREATE TABLE ledger (id int8 PRIMARY KEY, note text)');
   await admin.query('CREATE ROLE app_role LOGIN PASSWORD ' + pg.escapeLiteral(password) + " IN ROLE pg_read_all_stats");

@@ -88,9 +88,11 @@ test('native pure compilation returns PostgreSQL SQL without running or exposing
   assert.deepEqual(compiled.parameters,['true','2','0']);compiled.parameters.push('caller edit');
   assert.deepEqual(f.calls,[]);assert.deepEqual(f.controls,[]);
 });
-test('unavailable eager relations and explanation fail before any root statement runs',async t=>{
+test('eager compilation is pure while unavailable explanation fails before a root statement runs',async t=>{
   const f=await fixture(t);const children=hasMany(items,{localKey:items.col('id'),foreignKey:items.col('id')});
-  await assert.rejects(f.db.table(items).findMany({include:{children}}),code('QUERY'));
+  const compiled=f.db.table(items).compileSelect({select:['label'],include:{children}});
+  assert.deepEqual(Object.keys(compiled).sort(),['parameters','sql']);
+  assert.match(compiled.sql,/"label" AS "__rs_pg_0"/);assert.match(compiled.sql,/"id" AS "__rs_pg_1"/);
   await assert.rejects(f.db.table(items).explain(),code('QUERY'));
   assert.deepEqual(f.calls,[]);assert.deepEqual(f.controls,[]);
 });

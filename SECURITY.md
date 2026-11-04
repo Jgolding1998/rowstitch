@@ -44,6 +44,10 @@ The PostgreSQL entry never reads connection environment values or password files
 
 Session settings are confirmed by the server once, at open, and are not rechecked per operation. Values stay bound and identifiers stay validated and quoted, including in PostgreSQL's created defaults, which render validated literals because that syntax cannot be bound.
 
+Compiled native statements limit combined UTF-8 parameter payloads to 16 MiB, including writes, filters, relation keys and generated bounds. A larger statement is refused locally with constant `QUERY`; it is not sent. This is a stricter request limit introduced in 0.12, not a measurement of protocol framing or driver memory.
+
+Native eager reads use multiple statements and do not create an implicit graph snapshot. Use an explicit writable transaction for SERIALIZABLE isolation; read-only mode alone does not provide it. Separate fetched-row and returned-copy budgets, response wire limits and per-operation accounting bound admitted graph work. Accounting units are not heap bytes and cannot prevent allocations a driver or parser makes first. The [native relation guide](docs/native-eager.md) gives exact limits, error codes and concurrency rules.
+
 The database is a trusted input, not a sandbox. Roles, row-level security, triggers, rules, default expressions and CHECK constraints are honored but not verified by the library. A trigger can change returned values; a SECURITY DEFINER function runs with its owner's rights. `readOnly: true` is a transaction mode, not an authorization policy; use a restricted database role for that. Schema planning checks that a default exists, not its value, and it never alters an existing table. Compatible server versions from 12 are not refused, but only 18.6 is tested.
 
 Reaching a client deadline abandons the connection and asks the server to cancel. The statement may still finish. Nothing is replayed.
@@ -59,6 +63,8 @@ The studio binds only to `127.0.0.1`, serves a fixed asset allowlist and a ficti
 Trace imports are parsed and displayed in browser memory. Imported SQL is never executed. No browser storage, remote scripts, external fonts, analytics or AI provider is used. Initial installation still downloads development packages; a hosted static copy can have hosting access logs.
 
 Traces are bounded and hide bound values by default. They do not retain result rows or raw database errors. SQL text, identifiers, titles and literal defaults may still contain sensitive information. Redaction is not anonymization. A trace may name its database dialect; a trace that does not is read as legacy SQLite. Explicit exports preserve the trace you loaded; review them before sharing. Clear removes the current view and file reference, not operating-system or browser memory caches.
+
+Opting into `traceValues: true` can expose internally fetched relationship keys, even if those keys were excluded from selected output. Field selection is not an authorization or trace-redaction policy.
 
 Transaction-effect labels are bounded interpretations of the imported statement order. They are not authenticated evidence of a commit, the current database state or an application's success. A modified trace can misrepresent those outcomes without executing any SQL.
 

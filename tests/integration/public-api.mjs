@@ -212,7 +212,7 @@ export async function runPublicApiCases({ engine, sdk, openPostgresDatabase, ope
     const beforeUnsupported = db.exportTrace(), aggregate = { select: { n: agg.count() } }, group = { by: ['score'], ...aggregate };
     assert.deepEqual(Object.keys(filterRows.compileAggregate(aggregate)).sort(), ['parameters', 'sql']);
     assert.deepEqual(Object.keys(filterRows.compileGroupBy(group)).sort(), ['parameters', 'sql']);
-    await assert.rejects(filterRows.findMany({ include: { leaves } }), code('QUERY'));
+    assert.deepEqual(Object.keys(filterRows.compileSelect({ select: ['id'], include: { leaves } })).sort(), ['parameters', 'sql']);
     await assert.rejects(filterRows.explain(), code('QUERY'));
     await assert.rejects(filterRows.explainAggregate(aggregate), code('QUERY'));
     await assert.rejects(filterRows.explainGroupBy(group), code('QUERY'));
@@ -221,7 +221,7 @@ export async function runPublicApiCases({ engine, sdk, openPostgresDatabase, ope
     assert.deepEqual(await filterRows.aggregate(aggregate), { n: 8 });
     assert.deepEqual(await filterRows.groupBy(group), [null, 1, 2, 3, 5, 6, 7, 8].map(score => ({ score, n: 1 })));
     assert.equal(await filterRows.count(), 8, 'Refusals must leave the actual public connection usable.');
-    cases.push('native summary compilation is pure; COUNT and nullable grouping execute; eager includes/explains and empty text literals refuse before SQL');
+    cases.push('native summary and eager compilation are pure; COUNT and nullable grouping execute; explains and empty text literals refuse before SQL');
     await close(db);
 
     if (postgres) {

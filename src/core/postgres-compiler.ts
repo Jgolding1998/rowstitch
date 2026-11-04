@@ -6,6 +6,8 @@ import { compilePostgresControl } from './postgres-control.js';
 import type { PostgresOutputField } from './postgres-result.js';
 import { compilePostgresAggregate } from './postgres-aggregate.js';
 import type { PostgresAggregateProfile } from './postgres-aggregate-profile.js';
+import { compilePostgresRelation } from './postgres-relation.js';
+import type { PostgresRelationProfile } from './postgres-relation-profile.js';
 
 export interface CompiledPostgresQuery {
   sql: string;
@@ -16,6 +18,8 @@ export interface CompiledPostgresQuery {
   count?: true;
   /** Generated aggregate storage has a separate exact field/OID contract. */
   aggregate?: PostgresAggregateProfile;
+  /** Closed batched eager-window framing, separate from ordinary mapped rows. */
+  relation?: PostgresRelationProfile;
   /** This generated statement contains native finite real SUM arithmetic. */
   realAggregateRange?: true;
 }
@@ -23,6 +27,7 @@ export interface PostgresCompileOptions { schema?: string; only?: boolean }
 
 const CAST = Object.freeze({ integer: 'int8', bigint: 'int8', real: 'float8', text: 'text', boolean: 'bool', json: 'json' });
 const ROOT = '"__rs_pg_root"';
+const MAX_PARAMETER_BYTES = 16 * 1024 * 1024;
 const MIN_INT64 = -(2n ** 63n), MAX_INT64 = 2n ** 63n - 1n;
 const wireError = (): never => fail('VALIDATION', 'An encoded value is outside its PostgreSQL type contract.');
 const unsupported = (): never => fail('QUERY', 'This PostgreSQL query feature is not implemented yet.');
@@ -132,12 +137,16 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
   const schema = identifier((schemaOption === undefined ? 'public' : schemaOption) as string);
   const only = onlyOption === true;
   const parameters: (string | null)[] = [];
-  let aliasSequence = 0;
+  let aliasSequence = 0, parameterBytes = 0;
   const qualified = (table: TableModel): string => schema + '.' + identifier(table.name);
   const source = (table: TableModel): string => (only ? 'ONLY ' : '') + qualified(table);
   const append = (value: string | null, type: string): string => {
     // Query models budget 10,000 user bindings; SELECT adds its two compiler-owned page bounds.
     if (parameters.length >= MAX_REQUEST_PARAMETERS) fail('QUERY', 'The PostgreSQL statement exceeds its binding limit.');
+    // Include generated bounds and source keys. The cap is text payload, not a bound on protocol or heap bytes.
+    const bytes = value === null ? 0 : Buffer.byteLength(value, 'utf8');
+    if (bytes > MAX_PARAMETER_BYTES - parameterBytes) fail('QUERY', 'The PostgreSQL parameter data exceeds its byte limit.');
+    parameterBytes += bytes;
     parameters.push(value);
     return '$' + parameters.length + cast(type);
   };
@@ -211,8 +220,14 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
     sql, parameters: Object.freeze(parameters), outputs: Object.freeze(outputs.map(output => Object.freeze(output))), command, ...(count ? { count: true as const } : {}),
   });
   if (query.kind === 'transaction') return result(compilePostgresControl(query), [], null);
-  if (query.kind === 'explain' || query.kind === 'create-table' || query.kind === 'create-index' || query.kind === 'relation') return unsupported();
+  if (query.kind === 'explain' || query.kind === 'create-table' || query.kind === 'create-index') return unsupported();
   metadata(query.table);
+  if (query.kind === 'relation') {
+    const rendered = compilePostgresRelation(query, { source, kind: columnKind, predicate, order,
+      bindKey: (value, kind) => append(value, kind), textKey: value => encodedWire('text', value, false)!, bindInteger });
+    return Object.freeze({ sql: rendered.sql, parameters: Object.freeze(parameters), outputs: rendered.profile.outputs,
+      command: 'SELECT', relation: rendered.profile });
+  }
   if (query.kind === 'aggregate' || query.kind === 'group' || query.kind === 'select' && query.aggregates?.length) {
     const rendered = compilePostgresAggregate(query, { source, predicate, kind: columnKind, metadata, bindInteger });
     return Object.freeze({ sql: rendered.sql, parameters: Object.freeze(parameters), outputs: Object.freeze([]),

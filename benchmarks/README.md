@@ -169,3 +169,28 @@ node benchmarks/executor.mjs --baseline-dir /path/to/installed/rowstitch-0.8.0 -
 ```
 
 With `--baseline-dir`, the runner verifies every distribution file against the [pinned release manifest](executor-baseline.json) before importing it. The same observations must match that released Rowstitch 0.8.0 package exactly. A mismatch fails without writing a success report. Counts describe observations from this fixture, not independent datasets or a performance comparison. The async transaction protocol is tested separately with real SQLite and a controllable fault adapter. Those tests establish neither nonblocking execution nor a network driver's behavior.
+
+## Native PostgreSQL eager graphs
+
+The [recorded native graph comparison](native-eager-results.json) contains 13 cases and 39 tool observations on PostgreSQL 18.6, repeated with identical observations on Node 24.22.2 and 26.13.0. Rowstitch matched its 13 specified outcomes; Orange 5.5.1 recorded 9 common outcomes and 4 contract differences; Kysely 0.29.8 matched 13 through explicit caller recipes. These counts describe one fixed fictional dataset, not 13 separate user projects or a speed ranking. Application-value projections and original representations are retained separately in the JSON.
+
+```sh
+npm ci --ignore-scripts
+npm run build
+npm --prefix tests/integration ci --ignore-scripts
+npm --prefix tests/comparison ci --ignore-scripts
+node tests/integration/public-driver.mjs local --require-native --compare
+```
+
+This command requires a local Docker daemon. The runner validates its endpoint, creates one labelled, memory-bounded PostgreSQL fixture with a random loopback port, and removes only its own fixture. It also exercises the public PGlite worker. `--comparison-only` with `--require-native --compare` is a diagnostic subset: its skipped groups are explicitly listed as not executed, and it does not establish complete integration acceptance.
+
+The graph corpus covers empty parents, filtered children, selected fields, root and per-parent pages, NULL and tied ordering, nested children, mixed numeric key codecs, both singular relation kinds, exact int64 keys, ambiguity and detached JSON aliases. Kysely's recipes explicitly build batch/window queries, group children, guard singular cardinality, strip helper fields and clone output. Those are caller code, not automatic Kysely relations. Attempted SELECT counts are recorded with their instrumentation source; they are not timings or cross-request snapshot guarantees.
+
+Four Orange observations remain distinct:
+
+- Selected output retains identity keys even when the common name/label projection matches.
+- Native ascending PostgreSQL ordering puts NULL last. Rowstitch's documented ascending contract puts it first; the Kysely recipe specifies that explicitly.
+- An unpaginated mapped relation with a number-decoded parent key and bigint/string-decoded foreign key attached no children in this pinned fixture. A second, separately executed consistent-key mapping matched the safe 1..3 fixture values. That recipe must not convert arbitrary int64 keys to Number; a separate bigint-to-bigint case preserves extrema and neighboring values above 2^53.
+- Ambiguous `hasOne` returned the pinned Orange graph, while Rowstitch refused `RELATION_CARDINALITY` and the Kysely caller guard refused its own application error. The report preserves those outcomes rather than choosing an arbitrary child as a strict match.
+
+The common Orange fixture uses consistent safe key codecs; the original mixed-key mapping is exercised only in its explicit case and direct type control. No after-the-fact sort, identity-key removal or numeric precision loss conceals a complete-result difference. Full-source integration separately checks larger batches, collation equivalence, graph limits, cancellation and concurrent visibility. This small comparison does not establish complete Orange compatibility.

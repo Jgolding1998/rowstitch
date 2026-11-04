@@ -1,0 +1,5960 @@
+{
+  "format": "rowstitch-recorded-native-eager-comparison",
+  "rowstitch": "0.12.0 candidate",
+  "recorded": "2026-11-04",
+  "nodes": [
+    "24.22.2",
+    "26.13.0"
+  ],
+  "identicalObservationsAcrossBothNodes": true,
+  "comparisonHelperSha256": "bb7d39a83a11c3d433faab6045c7203fd11bd12cecc4d6c878fe28c7e2d1ce12",
+  "reproduce": "node tests/integration/public-driver.mjs local --require-native --compare",
+  "scope": "Fixed fictional PostgreSQL graph correctness corpus using native public APIs and documented reference/caller recipes. Application values and original representations are retained separately. Not a speed, complete API compatibility, reliability or universal superiority ranking.",
+  "comparison": {
+    "format": "rowstitch-public-postgres-eager-comparison",
+    "versions": {
+      "orange": "5.5.1",
+      "kysely": "0.29.8",
+      "pg": "8.23.1"
+    },
+    "cases": [
+      {
+        "name": "hasMany preserves empty parents and excludes the NULL-key orphan",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "11"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9223372036854775807"
+                    },
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "12"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-9223372036854775808"
+                    },
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "13"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "14"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-1"
+                    },
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "21"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740992"
+                    },
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "22"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "0"
+                    },
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "31"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "3"
+                    },
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "5"
+                    },
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": 1,
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": 1,
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": 2,
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": 2,
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": 3,
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "relation scope filters children without filtering their parents",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "11"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9223372036854775807"
+                    },
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "13"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "14"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-1"
+                    },
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "21"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740992"
+                    },
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "31"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "3"
+                    },
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "5"
+                    },
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": 1,
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": 1,
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": 2,
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": 3,
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "selected fields separate common values from retained identity keys",
+        "status": "difference",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "name": "Alpha",
+                "children": [
+                  {
+                    "label": "beta"
+                  },
+                  {
+                    "label": "alpha"
+                  },
+                  {
+                    "label": "tied"
+                  },
+                  {
+                    "label": null
+                  }
+                ]
+              },
+              {
+                "name": "Beta",
+                "children": [
+                  {
+                    "label": "gamma"
+                  },
+                  {
+                    "label": "delta"
+                  }
+                ]
+              },
+              {
+                "name": "Gamma",
+                "children": [
+                  {
+                    "label": "nullscore"
+                  }
+                ]
+              },
+              {
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "name": "Alpha",
+                "children": [
+                  {
+                    "label": "beta"
+                  },
+                  {
+                    "label": "alpha"
+                  },
+                  {
+                    "label": "tied"
+                  },
+                  {
+                    "label": null
+                  }
+                ]
+              },
+              {
+                "name": "Beta",
+                "children": [
+                  {
+                    "label": "gamma"
+                  },
+                  {
+                    "label": "delta"
+                  }
+                ]
+              },
+              {
+                "name": "Gamma",
+                "children": [
+                  {
+                    "label": "nullscore"
+                  }
+                ]
+              },
+              {
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "selectedFields": {
+              "root": [
+                "children",
+                "name"
+              ],
+              "child": [
+                "label"
+              ]
+            },
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "difference",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "name": "Alpha",
+                "children": [
+                  {
+                    "label": "beta"
+                  },
+                  {
+                    "label": "alpha"
+                  },
+                  {
+                    "label": "tied"
+                  },
+                  {
+                    "label": null
+                  }
+                ]
+              },
+              {
+                "name": "Beta",
+                "children": [
+                  {
+                    "label": "gamma"
+                  },
+                  {
+                    "label": "delta"
+                  }
+                ]
+              },
+              {
+                "name": "Gamma",
+                "children": [
+                  {
+                    "label": "nullscore"
+                  }
+                ]
+              },
+              {
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": 1,
+                    "label": "beta"
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": 1,
+                    "label": "alpha"
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": 1,
+                    "label": "tied"
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": 1,
+                    "label": null
+                  }
+                ],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": 2,
+                    "label": "gamma"
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": 2,
+                    "label": "delta"
+                  }
+                ],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": 3,
+                    "label": "nullscore"
+                  }
+                ],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "selectedFields": {
+              "root": [
+                "children",
+                "id",
+                "name"
+              ],
+              "child": [
+                "id",
+                "label",
+                "parent_id"
+              ]
+            },
+            "contractDifference": "The common projection intentionally reads name/label only. Pinned Orange retains primary keys for row identity; complete output objects are not declared equal.",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "name": "Alpha",
+                "children": [
+                  {
+                    "label": "beta"
+                  },
+                  {
+                    "label": "alpha"
+                  },
+                  {
+                    "label": "tied"
+                  },
+                  {
+                    "label": null
+                  }
+                ]
+              },
+              {
+                "name": "Beta",
+                "children": [
+                  {
+                    "label": "gamma"
+                  },
+                  {
+                    "label": "delta"
+                  }
+                ]
+              },
+              {
+                "name": "Gamma",
+                "children": [
+                  {
+                    "label": "nullscore"
+                  }
+                ]
+              },
+              {
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "name": "Alpha",
+                "children": [
+                  {
+                    "label": "beta"
+                  },
+                  {
+                    "label": "alpha"
+                  },
+                  {
+                    "label": "tied"
+                  },
+                  {
+                    "label": null
+                  }
+                ]
+              },
+              {
+                "name": "Beta",
+                "children": [
+                  {
+                    "label": "gamma"
+                  },
+                  {
+                    "label": "delta"
+                  }
+                ]
+              },
+              {
+                "name": "Gamma",
+                "children": [
+                  {
+                    "label": "nullscore"
+                  }
+                ]
+              },
+              {
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "selectedFields": {
+              "root": [
+                "children",
+                "name"
+              ],
+              "child": [
+                "label"
+              ]
+            },
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "per-parent offset and limit apply independently",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "12"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-9223372036854775808"
+                    },
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "13"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "22"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "0"
+                    },
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "children": [
+                  {
+                    "id": "12",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": 2,
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "root page retains each selected parent own child page",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              }
+            ],
+            "representation": [
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "21"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740992"
+                    },
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "31"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "3"
+                    },
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "5"
+                    },
+                    "payload": {}
+                  }
+                ]
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              }
+            ],
+            "representation": [
+              {
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": 2,
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": 3,
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ],
+                "id": 3,
+                "name": "Gamma"
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              }
+            ],
+            "representation": [
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              }
+            ],
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "NULL placement is disclosed and tied scores use explicit primary-key ordering",
+        "status": "difference",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  },
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "14"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-1"
+                    },
+                    "payload": null
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "12"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-9223372036854775808"
+                    },
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "13"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "11"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9223372036854775807"
+                    },
+                    "payload": {
+                      "n": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "22"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "0"
+                    },
+                    "payload": {
+                      "n": 5
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "21"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740992"
+                    },
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "31"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "3"
+                    },
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "5"
+                    },
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "difference",
+            "applicationMatched": false,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  },
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "children": [
+                  {
+                    "id": "12",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "11",
+                    "parent_id": 1,
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": 1,
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": 2,
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  },
+                  {
+                    "id": "21",
+                    "parent_id": 2,
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": 3,
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "contractDifference": "Pinned mapped OrderBy accepts column/ASC/DESC, retaining native PostgreSQL ASC NULLS LAST. Rowstitch ASC uses NULLS FIRST; the Kysely recipe states nullsFirst explicitly. No post-sort conceals the difference.",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  },
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  },
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "nested mapped hasMany has a separate first-note page for each child",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    },
+                    "notes": [
+                      {
+                        "id": "111",
+                        "text": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    },
+                    "notes": []
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    },
+                    "notes": [
+                      {
+                        "id": "131",
+                        "text": "c"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null,
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    },
+                    "notes": [
+                      {
+                        "id": "211",
+                        "text": "d"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    },
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {},
+                    "notes": [
+                      {
+                        "id": "311",
+                        "text": "e"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "11"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9223372036854775807"
+                    },
+                    "payload": {
+                      "n": 1
+                    },
+                    "notes": [
+                      {
+                        "id": 111,
+                        "text": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "12"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-9223372036854775808"
+                    },
+                    "payload": {
+                      "n": 2
+                    },
+                    "notes": []
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "13"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "payload": {
+                      "n": 3
+                    },
+                    "notes": [
+                      {
+                        "id": 131,
+                        "text": "c"
+                      }
+                    ]
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "14"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-1"
+                    },
+                    "payload": null,
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "21"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740992"
+                    },
+                    "payload": {
+                      "n": 4
+                    },
+                    "notes": [
+                      {
+                        "id": 211,
+                        "text": "d"
+                      }
+                    ]
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "22"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "0"
+                    },
+                    "payload": {
+                      "n": 5
+                    },
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "31"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "3"
+                    },
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "5"
+                    },
+                    "payload": {},
+                    "notes": [
+                      {
+                        "id": 311,
+                        "text": "e"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "attemptedSelectStatements": 3,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    },
+                    "notes": [
+                      {
+                        "id": "111",
+                        "text": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    },
+                    "notes": []
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    },
+                    "notes": [
+                      {
+                        "id": "131",
+                        "text": "c"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null,
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    },
+                    "notes": [
+                      {
+                        "id": "211",
+                        "text": "d"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    },
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {},
+                    "notes": [
+                      {
+                        "id": "311",
+                        "text": "e"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "children": [
+                  {
+                    "notes": [
+                      {
+                        "id": 111,
+                        "text": "a"
+                      }
+                    ],
+                    "id": "11",
+                    "parent_id": 1,
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "notes": [],
+                    "id": "12",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "notes": [
+                      {
+                        "id": 131,
+                        "text": "c"
+                      }
+                    ],
+                    "id": "13",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "notes": [],
+                    "id": "14",
+                    "parent_id": 1,
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [
+                  {
+                    "notes": [
+                      {
+                        "id": 211,
+                        "text": "d"
+                      }
+                    ],
+                    "id": "21",
+                    "parent_id": 2,
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "notes": [],
+                    "id": "22",
+                    "parent_id": 2,
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [
+                  {
+                    "notes": [
+                      {
+                        "id": 311,
+                        "text": "e"
+                      }
+                    ],
+                    "id": "31",
+                    "parent_id": 3,
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "attemptedSelectStatements": 3,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    },
+                    "notes": [
+                      {
+                        "id": "111",
+                        "text": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    },
+                    "notes": []
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    },
+                    "notes": [
+                      {
+                        "id": "131",
+                        "text": "c"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null,
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    },
+                    "notes": [
+                      {
+                        "id": "211",
+                        "text": "d"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    },
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {},
+                    "notes": [
+                      {
+                        "id": "311",
+                        "text": "e"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    },
+                    "notes": [
+                      {
+                        "id": 111,
+                        "text": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    },
+                    "notes": []
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    },
+                    "notes": [
+                      {
+                        "id": 131,
+                        "text": "c"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null,
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    },
+                    "notes": [
+                      {
+                        "id": 211,
+                        "text": "d"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    },
+                    "notes": []
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {},
+                    "notes": [
+                      {
+                        "id": 311,
+                        "text": "e"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "attemptedSelectStatements": 3,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "integer roots correlate with bigint foreign keys and exact neighboring int64 filters",
+        "status": "difference",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": []
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "11"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9223372036854775807"
+                    },
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "13"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": []
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "difference",
+            "applicationMatched": false,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": []
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": []
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "children": [],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "keyRepresentations": {
+              "rootId": {
+                "type": "number",
+                "decimal": "1"
+              },
+              "foreignKey": {
+                "type": "string",
+                "decimal": "1"
+              }
+            },
+            "recipeMatchedApplication": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": []
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "recipeRepresentation": [
+              {
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": 1,
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "contractDifference": "The pinned unpaginated mapped hasMany attaches no children with a numeric-decoded parent key and bigint/string-decoded foreign key. A separately executed consistent numeric-key mapping matches these safe1..3 foreign-key values. That recipe is not suitable for arbitrary int64 keys; the separate bigint-to-bigint extrema case preserves their exact representation.",
+            "attemptedSelectStatements": 6,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "children": []
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": []
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": []
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": []
+              }
+            ],
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "belongsTo includes matching parents and discloses missing versus NULL reference fields",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "11",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "12",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "13",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "14",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "21",
+                "parent_id": "2",
+                "parent": {
+                  "id": "2",
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "22",
+                "parent_id": "2",
+                "parent": {
+                  "id": "2",
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "31",
+                "parent_id": "3",
+                "parent": {
+                  "id": "3",
+                  "name": "Gamma"
+                }
+              },
+              {
+                "id": "99",
+                "parent_id": null,
+                "parent": null
+              }
+            ],
+            "representation": [
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "11"
+                },
+                "parent_id": {
+                  "type": "bigint",
+                  "decimal": "1"
+                },
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "12"
+                },
+                "parent_id": {
+                  "type": "bigint",
+                  "decimal": "1"
+                },
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "13"
+                },
+                "parent_id": {
+                  "type": "bigint",
+                  "decimal": "1"
+                },
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "14"
+                },
+                "parent_id": {
+                  "type": "bigint",
+                  "decimal": "1"
+                },
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "21"
+                },
+                "parent_id": {
+                  "type": "bigint",
+                  "decimal": "2"
+                },
+                "parent": {
+                  "id": 2,
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "22"
+                },
+                "parent_id": {
+                  "type": "bigint",
+                  "decimal": "2"
+                },
+                "parent": {
+                  "id": 2,
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "31"
+                },
+                "parent_id": {
+                  "type": "bigint",
+                  "decimal": "3"
+                },
+                "parent": {
+                  "id": 3,
+                  "name": "Gamma"
+                }
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "99"
+                },
+                "parent_id": null,
+                "parent": null
+              }
+            ],
+            "singularMissingRepresentation": [
+              {
+                "id": "99",
+                "ownProperty": true,
+                "valueType": "null"
+              }
+            ],
+            "normalization": "Only application absence is mapped to null; original own-property/null/undefined distinctions above remain part of the contract observation.",
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "11",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "12",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "13",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "14",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "21",
+                "parent_id": "2",
+                "parent": {
+                  "id": "2",
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "22",
+                "parent_id": "2",
+                "parent": {
+                  "id": "2",
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "31",
+                "parent_id": "3",
+                "parent": {
+                  "id": "3",
+                  "name": "Gamma"
+                }
+              },
+              {
+                "id": "99",
+                "parent_id": null,
+                "parent": null
+              }
+            ],
+            "representation": [
+              {
+                "id": "11",
+                "parent_id": 1,
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "12",
+                "parent_id": 1,
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "13",
+                "parent_id": 1,
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "14",
+                "parent_id": 1,
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "21",
+                "parent_id": 2,
+                "parent": {
+                  "id": 2,
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "22",
+                "parent_id": 2,
+                "parent": {
+                  "id": 2,
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "31",
+                "parent_id": 3,
+                "parent": {
+                  "id": 3,
+                  "name": "Gamma"
+                }
+              },
+              {
+                "id": "99",
+                "parent_id": null,
+                "parent": null
+              }
+            ],
+            "singularMissingRepresentation": [
+              {
+                "id": "99",
+                "ownProperty": true,
+                "valueType": "null"
+              }
+            ],
+            "normalization": "Only application absence is mapped to null; original own-property/null/undefined distinctions above remain part of the contract observation.",
+            "attemptedSelectStatements": 1,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "11",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "12",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "13",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "14",
+                "parent_id": "1",
+                "parent": {
+                  "id": "1",
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "21",
+                "parent_id": "2",
+                "parent": {
+                  "id": "2",
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "22",
+                "parent_id": "2",
+                "parent": {
+                  "id": "2",
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "31",
+                "parent_id": "3",
+                "parent": {
+                  "id": "3",
+                  "name": "Gamma"
+                }
+              },
+              {
+                "id": "99",
+                "parent_id": null,
+                "parent": null
+              }
+            ],
+            "representation": [
+              {
+                "id": "11",
+                "parent_id": "1",
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "12",
+                "parent_id": "1",
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "13",
+                "parent_id": "1",
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "14",
+                "parent_id": "1",
+                "parent": {
+                  "id": 1,
+                  "name": "Alpha"
+                }
+              },
+              {
+                "id": "21",
+                "parent_id": "2",
+                "parent": {
+                  "id": 2,
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "22",
+                "parent_id": "2",
+                "parent": {
+                  "id": 2,
+                  "name": "Beta"
+                }
+              },
+              {
+                "id": "31",
+                "parent_id": "3",
+                "parent": {
+                  "id": 3,
+                  "name": "Gamma"
+                }
+              },
+              {
+                "id": "99",
+                "parent_id": null,
+                "parent": null
+              }
+            ],
+            "singularMissingRepresentation": [
+              {
+                "id": "99",
+                "ownProperty": true,
+                "valueType": "null"
+              }
+            ],
+            "normalization": "Only application absence is mapped to null; original own-property/null/undefined distinctions above remain part of the contract observation.",
+            "attemptedSelectStatements": 1,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "hasOne returns its matching profile and discloses missing-profile representation",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "profile": {
+                  "id": "101",
+                  "note": "one"
+                }
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "profile": {
+                  "id": "102",
+                  "note": "two"
+                }
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "profile": null
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "profile": null
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "profile": {
+                  "id": 101,
+                  "note": "one"
+                }
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "profile": {
+                  "id": 102,
+                  "note": "two"
+                }
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "profile": null
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "profile": null
+              }
+            ],
+            "singularMissingRepresentation": [
+              {
+                "id": "3",
+                "ownProperty": true,
+                "valueType": "null"
+              },
+              {
+                "id": "4",
+                "ownProperty": true,
+                "valueType": "null"
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "profile": {
+                  "id": "101",
+                  "note": "one"
+                }
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "profile": {
+                  "id": "102",
+                  "note": "two"
+                }
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "profile": null
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "profile": null
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "profile": {
+                  "id": 101,
+                  "parent_id": 1,
+                  "note": "one"
+                }
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "profile": {
+                  "id": 102,
+                  "parent_id": 2,
+                  "note": "two"
+                }
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "profile": null
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "profile": null
+              }
+            ],
+            "singularMissingRepresentation": [
+              {
+                "id": "3",
+                "ownProperty": true,
+                "valueType": "null"
+              },
+              {
+                "id": "4",
+                "ownProperty": true,
+                "valueType": "null"
+              }
+            ],
+            "attemptedSelectStatements": 1,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "1",
+                "name": "Alpha",
+                "profile": {
+                  "id": "101",
+                  "note": "one"
+                }
+              },
+              {
+                "id": "2",
+                "name": "Beta",
+                "profile": {
+                  "id": "102",
+                  "note": "two"
+                }
+              },
+              {
+                "id": "3",
+                "name": "Gamma",
+                "profile": null
+              },
+              {
+                "id": "4",
+                "name": "Empty",
+                "profile": null
+              }
+            ],
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "profile": {
+                  "id": 101,
+                  "note": "one"
+                }
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "profile": {
+                  "id": 102,
+                  "note": "two"
+                }
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "profile": null
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "profile": null
+              }
+            ],
+            "singularMissingRepresentation": [
+              {
+                "id": "3",
+                "ownProperty": true,
+                "valueType": "null"
+              },
+              {
+                "id": "4",
+                "ownProperty": true,
+                "valueType": "null"
+              }
+            ],
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "int64 primary/foreign keys retain extrema and distinguish neighbors beyond 2^53",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "-9223372036854775808",
+                "name": "Minimum",
+                "children": [
+                  {
+                    "id": "3",
+                    "parent_id": "-9223372036854775808",
+                    "label": "min leaf"
+                  }
+                ]
+              },
+              {
+                "id": "9007199254740992",
+                "name": "Neighbor without child",
+                "children": []
+              },
+              {
+                "id": "9007199254740993",
+                "name": "Above safe",
+                "children": [
+                  {
+                    "id": "2",
+                    "parent_id": "9007199254740993",
+                    "label": "above leaf"
+                  }
+                ]
+              },
+              {
+                "id": "9223372036854775807",
+                "name": "Maximum",
+                "children": [
+                  {
+                    "id": "1",
+                    "parent_id": "9223372036854775807",
+                    "label": "max leaf"
+                  }
+                ]
+              }
+            ],
+            "representation": [
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "-9223372036854775808"
+                },
+                "name": "Minimum",
+                "children": [
+                  {
+                    "id": 3,
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "-9223372036854775808"
+                    },
+                    "label": "min leaf"
+                  }
+                ]
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "9007199254740992"
+                },
+                "name": "Neighbor without child",
+                "children": []
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "9007199254740993"
+                },
+                "name": "Above safe",
+                "children": [
+                  {
+                    "id": 2,
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "label": "above leaf"
+                  }
+                ]
+              },
+              {
+                "id": {
+                  "type": "bigint",
+                  "decimal": "9223372036854775807"
+                },
+                "name": "Maximum",
+                "children": [
+                  {
+                    "id": 1,
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "9223372036854775807"
+                    },
+                    "label": "max leaf"
+                  }
+                ]
+              }
+            ],
+            "normalization": "Lossless bigint/string/safe Number IDs become decimal strings; unsafe Numbers are rejected, never repaired.",
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "-9223372036854775808",
+                "name": "Minimum",
+                "children": [
+                  {
+                    "id": "3",
+                    "parent_id": "-9223372036854775808",
+                    "label": "min leaf"
+                  }
+                ]
+              },
+              {
+                "id": "9007199254740992",
+                "name": "Neighbor without child",
+                "children": []
+              },
+              {
+                "id": "9007199254740993",
+                "name": "Above safe",
+                "children": [
+                  {
+                    "id": "2",
+                    "parent_id": "9007199254740993",
+                    "label": "above leaf"
+                  }
+                ]
+              },
+              {
+                "id": "9223372036854775807",
+                "name": "Maximum",
+                "children": [
+                  {
+                    "id": "1",
+                    "parent_id": "9223372036854775807",
+                    "label": "max leaf"
+                  }
+                ]
+              }
+            ],
+            "representation": [
+              {
+                "children": [
+                  {
+                    "id": 3,
+                    "parent_id": "-9223372036854775808",
+                    "label": "min leaf"
+                  }
+                ],
+                "id": "-9223372036854775808",
+                "name": "Minimum"
+              },
+              {
+                "children": [],
+                "id": "9007199254740992",
+                "name": "Neighbor without child"
+              },
+              {
+                "children": [
+                  {
+                    "id": 2,
+                    "parent_id": "9007199254740993",
+                    "label": "above leaf"
+                  }
+                ],
+                "id": "9007199254740993",
+                "name": "Above safe"
+              },
+              {
+                "children": [
+                  {
+                    "id": 1,
+                    "parent_id": "9223372036854775807",
+                    "label": "max leaf"
+                  }
+                ],
+                "id": "9223372036854775807",
+                "name": "Maximum"
+              }
+            ],
+            "normalization": "Lossless bigint/string/safe Number IDs become decimal strings; unsafe Numbers are rejected, never repaired.",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "applicationValues": [
+              {
+                "id": "-9223372036854775808",
+                "name": "Minimum",
+                "children": [
+                  {
+                    "id": "3",
+                    "parent_id": "-9223372036854775808",
+                    "label": "min leaf"
+                  }
+                ]
+              },
+              {
+                "id": "9007199254740992",
+                "name": "Neighbor without child",
+                "children": []
+              },
+              {
+                "id": "9007199254740993",
+                "name": "Above safe",
+                "children": [
+                  {
+                    "id": "2",
+                    "parent_id": "9007199254740993",
+                    "label": "above leaf"
+                  }
+                ]
+              },
+              {
+                "id": "9223372036854775807",
+                "name": "Maximum",
+                "children": [
+                  {
+                    "id": "1",
+                    "parent_id": "9223372036854775807",
+                    "label": "max leaf"
+                  }
+                ]
+              }
+            ],
+            "representation": [
+              {
+                "id": "-9223372036854775808",
+                "name": "Minimum",
+                "children": [
+                  {
+                    "id": 3,
+                    "parent_id": "-9223372036854775808",
+                    "label": "min leaf"
+                  }
+                ]
+              },
+              {
+                "id": "9007199254740992",
+                "name": "Neighbor without child",
+                "children": []
+              },
+              {
+                "id": "9007199254740993",
+                "name": "Above safe",
+                "children": [
+                  {
+                    "id": 2,
+                    "parent_id": "9007199254740993",
+                    "label": "above leaf"
+                  }
+                ]
+              },
+              {
+                "id": "9223372036854775807",
+                "name": "Maximum",
+                "children": [
+                  {
+                    "id": 1,
+                    "parent_id": "9223372036854775807",
+                    "label": "max leaf"
+                  }
+                ]
+              }
+            ],
+            "normalization": "Lossless bigint/string/safe Number IDs become decimal strings; unsafe Numbers are rejected, never repaired.",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "singular ambiguity distinguishes built-in refusal from reference behavior and caller guard",
+        "status": "difference",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": null,
+            "outcome": "refused ambiguous singular graph",
+            "code": "RELATION_CARDINALITY",
+            "contract": "built-in singular cardinality contract",
+            "attemptedSelectStatements": 2,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "difference",
+            "applicationMatched": null,
+            "outcome": "returned a graph from an ambiguous mapped hasOne",
+            "representation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "profile": {
+                  "id": 101,
+                  "parent_id": 1,
+                  "note": "one"
+                }
+              },
+              {
+                "id": 1,
+                "name": "Alpha",
+                "profile": {
+                  "id": 103,
+                  "parent_id": 1,
+                  "note": "second match"
+                }
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "profile": {
+                  "id": 102,
+                  "parent_id": 2,
+                  "note": "two"
+                }
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "profile": null
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "profile": null
+              }
+            ],
+            "contractDifference": "This observation retains the exact pinned result; no arbitrary profile is normalized into a unique match or labeled a strict-cardinality success.",
+            "attemptedSelectStatements": 1,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": null,
+            "outcome": "refused ambiguous singular graph",
+            "code": "APP_RELATION_CARDINALITY",
+            "contract": "explicit caller grouping/cardinality guard, not a Kysely ORM feature",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      },
+      {
+        "name": "two aliases disclose JSON/object identity and the Kysely detached-copy recipe",
+        "status": "pass",
+        "observations": [
+          {
+            "tool": "rowstitch",
+            "status": "pass",
+            "applicationMatched": true,
+            "representationBeforeMutation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "11"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9223372036854775807"
+                    },
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "12"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-9223372036854775808"
+                    },
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "13"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "14"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-1"
+                    },
+                    "payload": null
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "11"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9223372036854775807"
+                    },
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "12"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-9223372036854775808"
+                    },
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "13"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740993"
+                    },
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "14"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "1"
+                    },
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "-1"
+                    },
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "21"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740992"
+                    },
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "22"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "0"
+                    },
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "21"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "9007199254740992"
+                    },
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "22"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "2"
+                    },
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "0"
+                    },
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "31"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "3"
+                    },
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "5"
+                    },
+                    "payload": {}
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": {
+                      "type": "bigint",
+                      "decimal": "31"
+                    },
+                    "parent_id": {
+                      "type": "bigint",
+                      "decimal": "3"
+                    },
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": {
+                      "type": "bigint",
+                      "decimal": "5"
+                    },
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": [],
+                "echo": []
+              }
+            ],
+            "identity": {
+              "distinctArrays": true,
+              "distinctObjects": true,
+              "distinctJson": true,
+              "echoUnaffected": true
+            },
+            "recipe": null,
+            "contract": "Returned identity/mutation behavior is measured separately from matching initial values; Kysely detachment is explicit application structuredClone work.",
+            "attemptedSelectStatements": 3,
+            "countSource": "public exportTrace operation=select"
+          },
+          {
+            "tool": "orange-orm@5.5.1",
+            "status": "pass",
+            "applicationMatched": true,
+            "representationBeforeMutation": [
+              {
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": 1,
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": 1,
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": "11",
+                    "parent_id": 1,
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": 1,
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": 1,
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ],
+                "id": 1,
+                "name": "Alpha"
+              },
+              {
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": 2,
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": 2,
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": "21",
+                    "parent_id": 2,
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": 2,
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ],
+                "id": 2,
+                "name": "Beta"
+              },
+              {
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": 3,
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": "31",
+                    "parent_id": 3,
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ],
+                "id": 3,
+                "name": "Gamma"
+              },
+              {
+                "children": [],
+                "echo": [],
+                "id": 4,
+                "name": "Empty"
+              }
+            ],
+            "identity": {
+              "distinctArrays": true,
+              "distinctObjects": true,
+              "distinctJson": true,
+              "echoUnaffected": true
+            },
+            "recipe": null,
+            "contract": "Returned identity/mutation behavior is measured separately from matching initial values; Kysely detachment is explicit application structuredClone work.",
+            "attemptedSelectStatements": 3,
+            "countSource": "documented orange query event; SELECT/WITH SQL prefix only"
+          },
+          {
+            "tool": "kysely@0.29.8",
+            "status": "pass",
+            "applicationMatched": true,
+            "representationBeforeMutation": [
+              {
+                "id": 1,
+                "name": "Alpha",
+                "children": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": "11",
+                    "parent_id": "1",
+                    "score": 2,
+                    "label": "beta",
+                    "active": true,
+                    "wide": "9223372036854775807",
+                    "payload": {
+                      "n": 1
+                    }
+                  },
+                  {
+                    "id": "12",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "alpha",
+                    "active": false,
+                    "wide": "-9223372036854775808",
+                    "payload": {
+                      "n": 2
+                    }
+                  },
+                  {
+                    "id": "13",
+                    "parent_id": "1",
+                    "score": 1,
+                    "label": "tied",
+                    "active": true,
+                    "wide": "9007199254740993",
+                    "payload": {
+                      "n": 3
+                    }
+                  },
+                  {
+                    "id": "14",
+                    "parent_id": "1",
+                    "score": null,
+                    "label": null,
+                    "active": true,
+                    "wide": "-1",
+                    "payload": null
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "name": "Beta",
+                "children": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": "21",
+                    "parent_id": "2",
+                    "score": 3,
+                    "label": "gamma",
+                    "active": true,
+                    "wide": "9007199254740992",
+                    "payload": {
+                      "n": 4
+                    }
+                  },
+                  {
+                    "id": "22",
+                    "parent_id": "2",
+                    "score": 1,
+                    "label": "delta",
+                    "active": false,
+                    "wide": "0",
+                    "payload": {
+                      "n": 5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "name": "Gamma",
+                "children": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ],
+                "echo": [
+                  {
+                    "id": "31",
+                    "parent_id": "3",
+                    "score": null,
+                    "label": "nullscore",
+                    "active": true,
+                    "wide": "5",
+                    "payload": {}
+                  }
+                ]
+              },
+              {
+                "id": 4,
+                "name": "Empty",
+                "children": [],
+                "echo": []
+              }
+            ],
+            "identity": {
+              "distinctArrays": true,
+              "distinctObjects": true,
+              "distinctJson": true,
+              "echoUnaffected": true
+            },
+            "recipe": "explicit batched window queries, key grouping, selected-field removal and structuredClone",
+            "contract": "Returned identity/mutation behavior is measured separately from matching initial values; Kysely detachment is explicit application structuredClone work.",
+            "attemptedSelectStatements": 2,
+            "countSource": "documented Kysely query log; SELECT/WITH SQL prefix only"
+          }
+        ]
+      }
+    ],
+    "cleanup": {
+      "openedHandles": 4,
+      "closedHandles": 4,
+      "schemasDropped": 3,
+      "queryListenerRemoved": true,
+      "numericParserRestored": true
+    },
+    "apiSources": [
+      "orange-orm@5.5.1 README.md: Table mapping, Fetching rows, Relation filters and Logging; src/map2.d.ts: FetchStrategy/OrderBy/TableClient",
+      "kysely@0.29.8 dist/query-builder/over-builder.d.ts and aggregate-function-builder.d.ts; dist/helpers/postgres.d.ts documents JSON helper and dialect parsing limitations"
+    ],
+    "limits": [
+      "One deterministic fictional dataset on the same PostgreSQL server, using separate equivalent schemas. No speed, AI-cost, full-parity or universal ranking claim.",
+      "Common application projections explicitly convert only lossless integer representations to decimal strings. Original representations, selected extra fields and missing/null singular values are reported separately.",
+      "Kysely is used through explicit caller-authored batch/window, LEFT JOIN, grouping/cardinality and detached-copy recipes; these are not claimed automatic ORM features.",
+      "Native NULL ordering, primary-key retention, singular ambiguity and object identity may intentionally differ. Application-value matching does not imply complete result-contract equality.",
+      "SELECT counts come from each tool actual query-event/trace/log mechanism, include this caller recipe work and count attempts. They are not timings or a concurrency/snapshot guarantee.",
+      "The 400/200 parent batching boundaries, four-level depth, graph budgets, writes and other engines are covered separately, not by this small graph corpus."
+    ],
+    "server": {
+      "version": "18.6",
+      "encoding": "UTF8"
+    },
+    "nativeControls": {
+      "schemasWithIdenticalExactInt64Readback": 3,
+      "parentRows": 4,
+      "childRows": 8,
+      "emptyParentId": "4",
+      "nullableOrphanChildId": "99"
+    },
+    "contractDifferences": [
+      {
+        "case": "selected fields separate common values from retained identity keys",
+        "tool": "orange-orm@5.5.1",
+        "applicationMatched": true,
+        "detail": "The common projection intentionally reads name/label only. Pinned Orange retains primary keys for row identity; complete output objects are not declared equal."
+      },
+      {
+        "case": "NULL placement is disclosed and tied scores use explicit primary-key ordering",
+        "tool": "orange-orm@5.5.1",
+        "applicationMatched": false,
+        "detail": "Pinned mapped OrderBy accepts column/ASC/DESC, retaining native PostgreSQL ASC NULLS LAST. Rowstitch ASC uses NULLS FIRST; the Kysely recipe states nullsFirst explicitly. No post-sort conceals the difference."
+      },
+      {
+        "case": "integer roots correlate with bigint foreign keys and exact neighboring int64 filters",
+        "tool": "orange-orm@5.5.1",
+        "applicationMatched": false,
+        "detail": "The pinned unpaginated mapped hasMany attaches no children with a numeric-decoded parent key and bigint/string-decoded foreign key. A separately executed consistent numeric-key mapping matches these safe1..3 foreign-key values. That recipe is not suitable for arbitrary int64 keys; the separate bigint-to-bigint extrema case preserves their exact representation."
+      },
+      {
+        "case": "singular ambiguity distinguishes built-in refusal from reference behavior and caller guard",
+        "tool": "orange-orm@5.5.1",
+        "applicationMatched": null,
+        "detail": "This observation retains the exact pinned result; no arbitrary profile is normalized into a unique match or labeled a strict-cardinality success."
+      }
+    ],
+    "recipeRequirements": [
+      {
+        "tool": "rowstitch",
+        "recipe": "Built-in mapped graph loader, singular cardinality refusal and detached output copies."
+      },
+      {
+        "tool": "orange-orm@5.5.1",
+        "recipe": "Documented mapped fetching strategies with consistent safe logical key codecs for the common fixture; a second client explicitly tests mixed numeric/bigint key attachment. Identity keys and native NULL placement are retained as contract observations."
+      },
+      {
+        "tool": "kysely@0.29.8",
+        "recipe": "Caller constructs root/child window pages, binds keys, groups results, maps nullable LEFT JOINs, checks singular counts, removes helper/hidden fields and explicitly clones alias values. No automatic relations are inferred."
+      }
+    ],
+    "summary": {
+      "cases": 13,
+      "observations": 39,
+      "pass": 35,
+      "difference": 4,
+      "fail": 0,
+      "unsupported": 0
+    }
+  }
+}

@@ -92,11 +92,11 @@ Confirmation happens once, at open. These settings are not checked again on each
 
 ### Transactions and read-only mode
 
-`db.transaction` and each single write run in `BEGIN ISOLATION LEVEL SERIALIZABLE`. A plain read outside a transaction runs alone. `SERIALIZATION_FAILURE` and `DEADLOCK` are reported and never retried, since your callback may have other effects. Nested transactions use savepoints.
+`db.transaction` and each single write run in `BEGIN ISOLATION LEVEL SERIALIZABLE`. A plain read outside a transaction runs alone. Eager relations in 0.12 issue a root statement followed by bounded child statements; they do not create an implicit whole-graph transaction or snapshot. Use the callback's handle inside an explicit writable transaction when the graph needs SERIALIZABLE isolation. `SERIALIZATION_FAILURE` and `DEADLOCK` are reported and never retried, since your callback may have other effects. Nested transactions use savepoints.
 
 A failed statement aborts a PostgreSQL transaction until it rolls back. A write has its own savepoint, so a caught failed write can continue. A read on a transaction handle has none, so a failed read ends the transaction, and its later COMMIT reports `TRANSACTION_ABORTED`.
 
-`readOnly: true` refuses library writes and wraps work in `BEGIN READ ONLY`, at PostgreSQL's default isolation. It is a transaction mode, not a role or authorization policy.
+`readOnly: true` refuses library writes. Outside an explicit callback it wraps each statement separately in `BEGIN READ ONLY`; an explicit read-only callback also keeps the server's default isolation, rather than forcing SERIALIZABLE. At the tested READ COMMITTED default, successive graph statements can see different committed data. This is a transaction mode, not a role, authorization policy or snapshot guarantee.
 
 ### Schema planning
 
@@ -112,11 +112,15 @@ Roles, row-level security, triggers, rules, defaults and CHECK constraints apply
 
 ### Feature limits
 
+Compiled native statements share a 16 MiB UTF-8 parameter payload budget. It includes values from writes, filters, relation keys and generated page bounds; NULL contributes no payload bytes. A request over this limit raises constant `QUERY` before that statement is sent. This is separate from result limits, protocol overhead and driver memory. Known oversized child filters are checked before the root read; actual child keys are only known later.
+
 Native summary methods are available from version 0.11.0. Their numeric, transaction and result limits are described in the [native summary guide](native-aggregates.md).
 
 Available: root CRUD, `insertMany`, `count`, value filters, `and`/`or`/`not`, literal text searches, ranges, `inArray`, same-table column comparisons, read-only relation filters, selection, ordering, pagination, version-guarded updates, transactions, schema planning, inspection and traces. Native summaries include `aggregate`, `groupBy`, related selectors and their pure compilation methods. Text searches are literal and independent of the database's collation; `ascii-insensitive` folds A-Z only. Ordering otherwise follows the database's collation. NULL ordering matches the SQLite path.
 
-Refused with `QUERY`: eager loading through `include`, `explain`, `explainAggregate` and `explainGroupBy`. They are refused before a statement is built, and the connection stays usable. The methods exist on the shared `AsyncDatabase` type, so TypeScript does not catch these dialect limits yet. Only a runtime error does.
+Version 0.12 adds eager loading through `include` on `findMany` and `findFirst`. Use `hasMany`, `hasOne` and `belongsTo` with per-relation filters, selection, ordering and nested includes. A `hasMany` page defaults to 100 rows per parent and accepts a limit up to 1,000. The [native relation guide](native-eager.md) covers batching, key collations, the two 10,000-row graph limits and native resource accounting. Version 0.11 refuses nonempty native `include` with `QUERY`.
+
+Refused with `QUERY`: `explain`, `explainAggregate` and `explainGroupBy`. They are refused before a statement is built, and the connection stays usable. These methods exist on the shared `AsyncDatabase` type, so TypeScript does not catch those dialect limits yet. Only a runtime error does.
 
 Relation filters in `update` and `delete` are refused with `UNSAFE_WRITE`, including inside `and`, `or` and `not`, by the same check SQLite uses.
 

@@ -15,7 +15,7 @@ This release includes the 0.7.1 correction for related summaries with different 
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.11.0/rowstitch-0.11.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.12.0/rowstitch-0.12.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -37,7 +37,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.11.0/rowstitch-0.11.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.12.0/rowstitch-0.12.0.tgz
 ```
 
 ```ts
@@ -94,6 +94,8 @@ Await each write inside a transaction, or use `insertMany` for a batch. Concurre
 
 Version 0.11 adds native totals, averages, grouped results and related summaries. See the [native summary guide](docs/native-aggregates.md) and [runnable example](examples/native-aggregates.mjs).
 
+Version 0.12 also loads connected records through `include`, using `hasMany`, `hasOne` and `belongsTo`. It supports selected fields, nested relations and a separate page for each parent. See the [native relation guide](docs/native-eager.md) and [runnable example](examples/native-eager.mjs).
+
 Both are optional. Your SQLite code keeps working with neither installed, and you only install the one you use. Each uses the same `defineTable` mappings, and returns the same `AsyncDatabase` you get from `openAsyncDatabase`, so await its operations and close it when finished.
 
 | | PostgreSQL | PGlite |
@@ -138,11 +140,12 @@ A connection string works too: `postgres://app_user:password@db.example.test:543
 
 Set `schema` to use a PostgreSQL namespace other than `public`. It must already exist.
 
-### What works today
+### What works in version 0.12
 
 | Available | Not available yet on PostgreSQL or PGlite |
 | --- | --- |
-| `insert`, `insertMany`, `findMany`, `findFirst`, `count` | Eager relations through `include` |
+| `insert`, `insertMany`, `findMany`, `findFirst`, `count` | |
+| Eager relations through `include`: `hasMany`, `hasOne`, `belongsTo` | Active Record graph saves and change tracking |
 | `update`, `delete`, `updateVersion` with their guards | |
 | Value filters, `and`/`or`/`not`, literal text searches, column comparisons | `explain` and query plans |
 | Relation filters in reads: `some`, `none`, `every`, `countRelated` | |
@@ -161,6 +164,7 @@ Filters were checked against small fixed fictional datasets on PostgreSQL 18.6 a
 - **Your database rules still apply.** Roles, row-level security, triggers and CHECK constraints stay in charge and can change what a write returns. Rowstitch does not verify them, and the database is not a sandbox for this library or for your code.
 - **Serializable transactions:** `db.transaction` runs at SERIALIZABLE, and a conflict raises `SERIALIZATION_FAILURE`. Nothing is retried for you, because your callback may have other side effects. If `COMMIT_UNCONFIRMED` appears, check the saved data first.
 - **Integers:** `column.integer()` returns JavaScript numbers and raises `DATA` on a stored value beyond the safe range. Use `column.bigint()` for those.
+- **Native request size:** version 0.12 adds a 16 MiB UTF-8 parameter payload limit per compiled statement, including filters, writes and generated bounds. Larger requests that version 0.11 sent now raise local `QUERY`. Split large writes or narrow the request; result and graph limits remain separate.
 
 See [examples/pglite.mjs](examples/pglite.mjs), [examples/postgres.mjs](examples/postgres.mjs) and the [driver guide](docs/async-drivers.md#native-postgresql-and-pglite) for options and deadlines.
 
@@ -172,7 +176,9 @@ Use `hasMany` for a list, `hasOne` for a single owned record, and `belongsTo` to
 
 Literal selection tuples infer exactly those fields. When the selection is a dynamic array or a tuple slot can name different fields, TypeScript marks uncertain fields optional. Check those fields before using them; a field listed in the array's type is not necessarily present in its value.
 
-Text-key relationships retain SQLite's comparison rules, including existing `NOCASE` and `RTRIM` collations. Matching and per-parent pagination happen in SQL; hidden correlation keys are removed from returned records. One child can match multiple parent keys under a collation, and each returned match counts toward the related-row limits.
+Text-key relationships retain the related column's comparison rules: SQLite supports its existing `NOCASE` and `RTRIM` collations, while native relations in 0.12 use PostgreSQL's column collation. Matching and per-parent pagination happen in SQL; hidden correlation keys are removed from returned records. One child can match multiple parent keys under a collation, and each returned match counts toward the related-row limits.
+
+Native relations use several statements. A plain call can see a later database change in a child query. Use an explicit writable `db.transaction(async tx => ...)` when the graph needs PostgreSQL's SERIALIZABLE transaction; `readOnly: true` alone does not provide that isolation. See the [native relation guide](docs/native-eager.md) for page limits, resource guards and snapshot behavior.
 
 ## Filter by related records
 
