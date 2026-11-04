@@ -237,9 +237,18 @@ test('missing kind/nullability metadata, injection identifiers and unsupported o
 });
 test('unsupported query families and unsafe writes never masquerade as SQLite SQL',()=>{
   assert.throws(()=>compilePostgres(queryModel.explain({query:select()})),code('QUERY'));
-  assert.throws(()=>compilePostgres(queryModel.aggregate({table,select:[{alias:'total',operation:'count'}]})),code('QUERY'));
   assert.throws(()=>compilePostgres(queryModel.createIndex({table,name:'sample_index',columns:['id']})),code('QUERY'));
   assert.throws(()=>compilePostgres(queryModel.relation({table,columns:['id'],partitionBy:'id',keys:[1],orderBy:[],offset:0,limit:1,readLimit:2})),code('QUERY'));
   assert.throws(()=>compilePostgres({kind:'update',table,assignments:[{column:'label',value:'x'}],where:{kind:'logic',operator:'AND',children:[]}}),code('UNSAFE_WRITE'));
   assert.throws(()=>compilePostgres({kind:'delete',table}),code('UNSAFE_WRITE'));
+});
+
+test('native summaries advertise their distinct aggregate contract while ordinary counts keep their own',()=>{
+  const compiled=compilePostgres(queryModel.aggregate({table,select:[{alias:'total',operation:'count'}]}));
+  assert.equal(compiled.command,'SELECT');assert.equal(compiled.aggregate.mode,'aggregate');
+  assert.deepEqual(compiled.aggregate.fields,[{alias:'__rs_pg_0',kind:'count',target:'__rs_agg_0'},{alias:'__rs_pg_1',kind:'guard',target:'__rs_bad'}]);
+  assert.equal(compiled.count,undefined);assert.equal(compiled.realAggregateRange,undefined);
+  assert.deepEqual(compiled.outputs,[]);
+  assert.ok(Object.isFrozen(compiled.aggregate));assert.ok(Object.isFrozen(compiled.aggregate.fields[0]));
+  assert.equal(compilePostgres(count()).aggregate,undefined);
 });

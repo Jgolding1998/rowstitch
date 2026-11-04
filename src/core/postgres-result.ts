@@ -27,7 +27,10 @@ const TYPES = Object.freeze({
 } as const);
 const MIN_INT64 = -(2n ** 63n), MAX_INT64 = 2n ** 63n - 1n;
 const MAX_ROW_COUNT = 2n ** 64n - 1n;
-const MAX_FIELDS = 512, MAX_ROWS = 100_000, MAX_CELLS = 1_000_000;
+// A public projected page may return 100 mapped columns,32 native summary fields and one guard for10,000 rows.
+// The transport budget must admit that valid page; malformed responses above it still make execution unconfirmed.
+export const POSTGRES_MAX_RESULT_CELLS = 1_330_000;
+const MAX_FIELDS = 512, MAX_ROWS = 100_000, MAX_CELLS = POSTGRES_MAX_RESULT_CELLS;
 const snapshots = new WeakSet<object>();
 /** Shape identity only. This never acknowledges execution or proves that a value came from an engine. */
 export function isPostgresRawResult(value: unknown): value is PostgresRawResult {

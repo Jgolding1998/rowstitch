@@ -32,6 +32,8 @@ export interface Step {
   readonly explain?: boolean; readonly metadata?: boolean; readonly control?: boolean;
   /** Trusted compiler result contract, evaluated before any logical row is exposed. */
   readonly decode?: (result: unknown) => Rows;
+  /** Internal dialect classification, evaluated after session acknowledgment and trace bookkeeping. */
+  readonly mapError?: (error: unknown) => unknown;
 }
 export type Work<R> = Generator<Step, R, Rows>;
 export function* request(step: Step): Work<Rows> { return yield step; }

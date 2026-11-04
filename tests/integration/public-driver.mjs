@@ -13,6 +13,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { runPublicApiCases } from './public-api.mjs';
 import { runPublicComparisonCases } from './public-compare.mjs';
+import { runPublicAggregateCases } from './public-aggregates.mjs';
+import { runPublicAggregateComparisonCases } from './public-aggregate-compare.mjs';
+import { runAggregateGuardCases } from './aggregate-guards.mjs';
+import { runAggregateOperatorCases } from './aggregate-operators.mjs';
+import { runAggregateCapacityCases } from './aggregate-capacity.mjs';
+import { connectPgliteTransport } from './glue.mjs';
 
 const args = process.argv.slice(2), knownFlags = new Set(['--no-docker', '--require-native', '--compare']);
 for (const arg of args.filter(arg => arg.startsWith('--'))) assert.ok(knownFlags.has(arg), 'Unknown integration flag');
@@ -91,6 +97,11 @@ const { isPostgresRawResult } = await fromConsumer('core/postgres-result.js');
 const sdk = await fromConsumer('index.js');
 const { openPostgresDatabase } = await fromConsumer('postgres.js');
 const { openPgliteDatabase } = await fromConsumer('pglite.js');
+const { createPostgresExecutor } = await fromConsumer('core/postgres-executor.js');
+const { captureNativeOpen } = await fromConsumer('core/native-open.js');
+const { openPreparedAsyncDatabase } = await fromConsumer('core/async-database.js');
+const { RepositoryCore } = await fromConsumer('core/repository-core.js');
+const { createPostgresDialect } = await fromConsumer('core/postgres-dialect.js');
 const hashOf = file => createHash('sha256').update(readFileSync(file)).digest('hex');
 function treeHashes(directory, suffix) {
   const entries = [];
@@ -106,16 +117,23 @@ function treeHashes(directory, suffix) {
 const sourceHashes = treeHashes(join(checkout, 'src'), '.ts');
 const compiledHashes = treeHashes(join(consumer, 'dist'), '.js');
 assert.deepEqual(compiledHashes, treeHashes(distSource, '.js'), 'The consumer must hold the exact current compiled source');
-const harnessNames = ['public-driver.mjs', 'public-api.mjs', 'public-compare.mjs'];
+const harnessNames = ['public-driver.mjs', 'public-api.mjs', 'public-compare.mjs', 'public-aggregates.mjs',
+  'public-aggregate-compare.mjs', 'aggregate-guards.mjs', 'aggregate-operators.mjs', 'aggregate-capacity.mjs', 'glue.mjs'];
 const harnessHashes = Object.fromEntries(harnessNames.map(name => [name, hashOf(fileURLToPath(new URL(name, import.meta.url)))]));
 const adapterHashes = Object.fromEntries(readdirSync(join(consumer, 'dist/adapters')).filter(name => name.endsWith('.js')).sort().map(name => [name, hashOf(join(consumer, 'dist/adapters', name))]));
 const report = { format: 'rowstitch-public-driver-checks', label, node: process.version, packages: { pg: '8.23.1', pglite: '0.5.15' }, imageDigest, adapterHashes, passed: [], skipped: [], failed: [],
-  sourceHashes, compiledHashes, harnessHashes, requireNative, compare, publicApi: {}, cleanup: {},
-  scope: 'Adapter boundary plus limited actual public scalar ORM APIs on fixed fictional fixtures, including native PostgreSQL trigger/partition/restricted-login RLS controls. Not full ORM parity, pools, replicas, managed services or a performance or reliability claim.' };
+  sourceHashes, compiledHashes, harnessHashes, requireNative, compare, publicApi: {}, publicAggregates: {}, aggregateGuards: {}, aggregateOperators: {}, aggregateCapacity: {}, cleanup: {},
+  scope: 'Adapter boundary and actual public scalar/aggregate/group/projected ORM APIs on fictional fixtures, native PostgreSQL trigger/partition/restricted-login RLS controls, and explicitly separate inline PGlite malformed-storage/operator controls. Not full ORM parity, pools, replicas, managed services or a performance or reliability claim.' };
 const password = randomBytes(32).toString('base64url');
 const pause = ms => new Promise(ok => setTimeout(ok, ms));
 const code = wanted => error => { assert.equal(error.code, wanted); return true; };
 const acknowledged = wanted => error => { assert.equal(error.code, wanted); assert.ok(isAcknowledgedRejection(error), 'Must be an acknowledged rejection'); return true; };
+function checkedOperators(result) {
+  assert.equal(result.status, 'passed'); assert.equal(result.setupError, undefined);
+  assert.equal(result.failures.length, 0); assert.equal(result.cases.length, 13);
+  assert.deepEqual(result.cleanup, { createdSchemas: 2, droppedSchemas: 2, searchPathRestored: true });
+  return result;
+}
 const unconfirmed = error => { assert.ok(!isAcknowledgedRejection(error), 'Must not be acknowledged'); return true; };
 const safe = error => { const text = String(error?.message) + String(error?.stack) + JSON.stringify(error ?? null); assert.ok(!text.includes(password), 'Must not expose the password'); assert.equal(error.cause, undefined); return true; };
 async function step(name, fn) {
@@ -135,6 +153,46 @@ await step('pglite public API: actual factory, scalar CRUD/filters/relations and
   assert.equal(result.cases.length, 10);
   assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases);
   report.publicApi.pglite = result;
+});
+await step('pglite public summaries: actual worker factory, root/group/related/projection and numeric boundaries', async () => {
+  const result = await runPublicAggregateCases({ engine: 'pglite', sdk, openPgliteDatabase });
+  assert.equal(result.cases.length, 17);
+  assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases); assert.equal(result.cleanup.schemaDropped, true);
+  report.publicAggregates.pglite = result;
+});
+await step('pglite inline native controls: malformed mapped storage, input guards and hostile operator lookup', async () => {
+  const transport = await connectPgliteTransport();
+  try {
+    const executor = createPostgresExecutor(transport);
+    // The fixture owns the physical connection; each ORM session borrows it until its namespace has been dropped.
+    const borrowed = { all: (...args) => executor.all(...args), exec: (...args) => executor.exec(...args),
+      inTransaction: () => executor.inTransaction(), async close() {} };
+    const openDatabase = options => {
+      const captured = captureNativeOpen(options, []);
+      return openPreparedAsyncDatabase(borrowed, captured.database, captured.runtime);
+    };
+    const guarded = await runAggregateGuardCases({ engine: 'pglite-inline', sdk, openDatabase, admin: transport });
+    assert.equal(guarded.cases.length, 14); assert.equal(guarded.cleanup.schemaDropped, true);
+    assert.equal(guarded.cleanup.openedHandles, guarded.cleanup.closedHandles);
+    report.aggregateGuards.pglite = guarded;
+    report.aggregateOperators.pglite = checkedOperators(await runAggregateOperatorCases({ engine: 'pglite', sdk, RepositoryCore, createPostgresDialect, admin: transport }));
+  } finally { await transport.close(); }
+});
+await step('pglite worker capacity: exact 10000-row ordinary and projected field boundaries', async () => {
+  const executor = await openPgliteExecutor();
+  try {
+    const borrowed = { all: (...args) => executor.all(...args), exec: (...args) => executor.exec(...args),
+      inTransaction: () => executor.inTransaction(), async close() {} };
+    const openDatabase = options => {
+      const captured = captureNativeOpen(options, []);
+      return openPreparedAsyncDatabase(borrowed, captured.database, captured.runtime);
+    };
+    const result = await runAggregateCapacityCases({ engine: 'pglite-worker-adapter', sdk, openDatabase,
+      admin: { query: (sql, parameters = []) => executor.all(sql, parameters) } });
+    assert.equal(result.cases.length, 8); assert.equal(result.maxRawCells, 1_330_000);
+    assert.deepEqual(result.cleanup, { schemaDropped: true, openedHandles: 1, closedHandles: 1 });
+    report.aggregateCapacity.pglite = result;
+  } finally { await executor.close(); }
 });
 await step('pglite: CRUD through the worker, with values read back through the same connection', async () => {
   const db = await openPgliteExecutor();
@@ -533,6 +591,29 @@ async function native() {
     assert.equal(result.cleanup.schemaDropped, true); assert.equal(result.cleanup.roleDropped, true);
     report.publicApi.postgresql = result;
   });
+  await step('native public summaries: actual PostgreSQL factory, root/group/related/projection and numeric boundaries', async () => {
+    report.publicAggregates.postgresql = await runPublicAggregateCases({ engine: 'postgresql', sdk, openPostgresDatabase,
+      postgresOptions: { ...options, ssl: false }, admin: publicAdmin });
+    assert.equal(report.publicAggregates.postgresql.cases.length, 18);
+    assert.equal(report.publicAggregates.postgresql.cleanup.openedDatabases, report.publicAggregates.postgresql.cleanup.closedDatabases);
+    assert.equal(report.publicAggregates.postgresql.cleanup.schemaDropped, true);
+  });
+  await step('native aggregate controls: malformed mapped storage and hidden invalid inputs', async () => {
+    const result = await runAggregateGuardCases({ engine: 'postgresql', sdk,
+      openDatabase: orm => openPostgresDatabase({ ...options, ssl: false, ...orm }), admin: publicAdmin });
+    assert.equal(result.cases.length, 14); assert.equal(result.cleanup.schemaDropped, true);
+    assert.equal(result.cleanup.openedHandles, result.cleanup.closedHandles); report.aggregateGuards.postgresql = result;
+  });
+  await step('native aggregate controls: hostile operators and declared text collation', async () => {
+    report.aggregateOperators.postgresql = checkedOperators(await runAggregateOperatorCases({ engine: 'postgresql', sdk, RepositoryCore, createPostgresDialect, admin: publicAdmin }));
+  });
+  await step('native aggregate capacity: exact 10000-row ordinary and projected field boundaries', async () => {
+    const result = await runAggregateCapacityCases({ engine: 'postgresql', sdk,
+      openDatabase: orm => openPostgresDatabase({ ...options, ssl: false, ...orm }), admin: publicAdmin });
+    assert.equal(result.cases.length, 8); assert.equal(result.maxRawCells, 1_330_000);
+    assert.deepEqual(result.cleanup, { schemaDropped: true, openedHandles: 1, closedHandles: 1 });
+    report.aggregateCapacity.postgresql = result;
+  });
   if (compare) await step('native comparison: pinned Orange ORM and Kysely on the same owned PostgreSQL engine', async () => {
     // References have their own peer tree: Orange's older optional PGlite peer must not replace the tested 0.5.15 peer.
     const references = createRequire(new URL('../comparison/package.json', import.meta.url));
@@ -557,8 +638,15 @@ async function native() {
     report.comparison = result;
     assert.equal(comparisonPg.types.getTypeParser(1700, 'text'), parser, 'Reference NUMERIC parser must be restored');
     assert.equal(result.cases.length, 42);
-    assert.deepEqual(result.summary, { pass: 39, difference: 2, fail: 0, unsupported: 1 });
+    assert.deepEqual(result.summary, { pass: 40, difference: 2, fail: 0, unsupported: 0 });
     assert.deepEqual(result.cleanup, { openedHandles: 3, closedHandles: 3, schemasDropped: 3 });
+    const aggregateResult = await runPublicAggregateComparisonCases({ sdk, openPostgresDatabase,
+      postgresOptions: { ...options, ssl: false }, admin: publicAdmin, orange, kysely, pg: comparisonPg, versions });
+    report.aggregateComparison = aggregateResult;
+    assert.equal(comparisonPg.types.getTypeParser(1700, 'text'), parser, 'Aggregate comparison must restore the reference NUMERIC parser');
+    assert.equal(aggregateResult.cases.length, 30);
+    assert.deepEqual(aggregateResult.summary, { pass: 20, difference: 10, fail: 0 });
+    assert.deepEqual(aggregateResult.cleanup, { openedHandles: 3, closedHandles: 3, schemasDropped: 3 });
   });
   await admin.query('CREATE TABLE ledger (id int8 PRIMARY KEY, note text)');
   await admin.query('CREATE ROLE app_role LOGIN PASSWORD ' + pg.escapeLiteral(password) + " IN ROLE pg_read_all_stats");
@@ -840,7 +928,9 @@ try {
   assert.deepEqual(Object.fromEntries(harnessNames.map(name => [name, hashOf(fileURLToPath(new URL(name, import.meta.url)))])), harnessHashes, 'Harness changed during the proof');
   report.hashesStable = true;
 } catch (error) { report.failed.push('proof coherence: ' + String(error?.message).slice(0, 200)); }
-const serialized = JSON.stringify(report, null, 1);
+const serialized = JSON.stringify(report, (_key, value) => typeof value === 'bigint' ? { type: 'bigint', decimal: value.toString() }
+  : typeof value === 'number' && (!Number.isFinite(value) || Object.is(value, -0))
+    ? { type: 'number', value: Number.isNaN(value) ? 'NaN' : Object.is(value, -0) ? '-0' : String(value) } : value, 1);
 assert.ok(!serialized.includes(password), 'The report must not contain the password');
 const out = join(realpathSync(outputDir), 'result.json');
 writeFileSync(out, serialized + '\n');

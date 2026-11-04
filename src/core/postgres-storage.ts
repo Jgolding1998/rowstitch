@@ -5,7 +5,8 @@ import { decode, identifier, type Kind } from './schema.js';
 import { isPostgresRawResult, snapshotPostgresResult, type PostgresOutputField, type PostgresRawResult } from './postgres-result.js';
 
 type Command = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
-const MAX_FIELDS = 512, MAX_ROWS = 100_000, MAX_CELLS = 1_000_000;
+export const POSTGRES_MAX_MAPPED_CELLS = 1_000_000;
+const MAX_FIELDS = 512, MAX_ROWS = 100_000, MAX_CELLS = POSTGRES_MAX_MAPPED_CELLS;
 const SAFE_MAX = BigInt(Number.MAX_SAFE_INTEGER), SAFE_MIN = BigInt(Number.MIN_SAFE_INTEGER);
 const INT64_MIN = -(2n ** 63n), INT64_MAX = 2n ** 63n - 1n;
 const { isProxy } = types;
@@ -135,6 +136,8 @@ export function decodePostgresStorage(value: unknown, outputs: readonly Postgres
     }
     if (count && command !== 'SELECT') return bad();
     const fields = outputsOf(outputs, count), raw = snapshot(value);
+    // Branded snapshots also serve wider aggregate results. Keep this scalar codec's original cell budget.
+    if (raw.fields.length > MAX_FIELDS || raw.rows.length > MAX_ROWS || raw.rows.length * raw.fields.length > MAX_CELLS) return bad();
     if (raw.command !== command || raw.rowCount === null || raw.rowCount !== BigInt(raw.rows.length)
       || raw.fields.length !== fields.length || count && raw.rows.length !== 1) return bad();
     fields.forEach((field, i) => {

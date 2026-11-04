@@ -2,7 +2,7 @@
 import { once } from 'node:events';
 import { NODE_REQUIREMENT, supportedNode } from './runtime.js';
 
-const help = `Rowstitch 0.10.0
+const help = `Rowstitch 0.11.0
 
 Usage:
   rowstitch demo [--port 4317]   Open a local, read-only SQL inspector with fictional data
@@ -21,7 +21,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (!command || command === '--help' || command === '-h') { process.stdout.write(help); return; }
   if (command === '--version') {
     if (rest.length) throw new Error('Use rowstitch --version without extra arguments.');
-    process.stdout.write('0.10.0\n'); return;
+    process.stdout.write('0.11.0\n'); return;
   }
   if (!supportedNode(process.versions.node)) {
     throw new Error('Use ' + NODE_REQUIREMENT + '.');

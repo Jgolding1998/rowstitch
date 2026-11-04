@@ -1,6 +1,7 @@
 /** Internal, dedicated-connection PostgreSQL protocol adapter. Not exported from the SDK. */
 import { RowstitchError } from './errors.js';
 import { acknowledgedRejection, type AsyncExecutor } from './executor.js';
+import { acknowledgedPostgresRejection } from './postgres-acknowledgment.js';
 import { snapshotPostgresResult, type PostgresRawField, type PostgresRawResult } from './postgres-result.js';
 import { MAX_REQUEST_PARAMETERS } from './query-model.js';
 import type { Parameter } from './schema.js';
@@ -182,7 +183,7 @@ export function createPostgresExecutor(transport: PostgresTransport, options: Po
       if (UNRESOLVED_STATE.test(state) || (commit || implicitCommit) && !DEFINITE_COMMIT_STATE.test(state)) throw uncertain();
       // A rejection is definite only if the connection then reports the state that this rejection leaves.
       if (readStatus() !== rejection[before]) throw uncertain();
-      throw acknowledgedRejection(new RowstitchError(errorCode(state), 'A PostgreSQL engine response rejected this operation.'));
+      throw acknowledgedPostgresRejection(errorCode(state), state);
     } finally { clearTimeout(timer); }
     // Validation is outside the ErrorResponse handling: malformed success is not an acknowledged rejection.
     try { return rawResult(result); } catch { throw uncertain(); }

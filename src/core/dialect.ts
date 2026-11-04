@@ -7,6 +7,8 @@ export interface DialectQuery {
   readonly parameters: readonly Parameter[];
   /** Validate native metadata, then return the shared codec's storage representation, not logical values. */
   readonly decode?: (result: unknown) => Record<string, unknown>[];
+  /** Narrow classification of an already processed engine error, without changing connection/session state. */
+  readonly mapError?: (error: unknown) => unknown;
 }
 export interface RepositoryDialect {
   readonly name: 'sqlite' | 'postgresql';

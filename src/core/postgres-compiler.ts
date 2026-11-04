@@ -4,6 +4,8 @@ import { encode, identifier, plainRecord, type Kind, type Parameter } from './sc
 import { MAX_REQUEST_PARAMETERS, normalizeQueryModel, type ColumnComparisonOperator, type OrderModel, type PredicateModel, type QueryModel, type TableModel } from './query-model.js';
 import { compilePostgresControl } from './postgres-control.js';
 import type { PostgresOutputField } from './postgres-result.js';
+import { compilePostgresAggregate } from './postgres-aggregate.js';
+import type { PostgresAggregateProfile } from './postgres-aggregate-profile.js';
 
 export interface CompiledPostgresQuery {
   sql: string;
@@ -12,6 +14,10 @@ export interface CompiledPostgresQuery {
   command: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE' | null;
   /** A count has its own exact int8, one-row, nonnegative safe-integer result contract. */
   count?: true;
+  /** Generated aggregate storage has a separate exact field/OID contract. */
+  aggregate?: PostgresAggregateProfile;
+  /** This generated statement contains native finite real SUM arithmetic. */
+  realAggregateRange?: true;
 }
 export interface PostgresCompileOptions { schema?: string; only?: boolean }
 
@@ -205,10 +211,13 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
     sql, parameters: Object.freeze(parameters), outputs: Object.freeze(outputs.map(output => Object.freeze(output))), command, ...(count ? { count: true as const } : {}),
   });
   if (query.kind === 'transaction') return result(compilePostgresControl(query), [], null);
-  if (query.kind === 'explain' || query.kind === 'create-table' || query.kind === 'create-index' || query.kind === 'relation'
-      || query.kind === 'aggregate' || query.kind === 'group') return unsupported();
+  if (query.kind === 'explain' || query.kind === 'create-table' || query.kind === 'create-index' || query.kind === 'relation') return unsupported();
   metadata(query.table);
-  if (query.kind === 'select' && query.aggregates?.length) return unsupported();
+  if (query.kind === 'aggregate' || query.kind === 'group' || query.kind === 'select' && query.aggregates?.length) {
+    const rendered = compilePostgresAggregate(query, { source, predicate, kind: columnKind, metadata, bindInteger });
+    return Object.freeze({ sql: rendered.sql, parameters: Object.freeze(parameters), outputs: Object.freeze([]),
+      command: 'SELECT', aggregate: rendered.profile, ...(rendered.realRange ? { realAggregateRange: true as const } : {}) });
+  }
   const outputs: PostgresOutputField[] = query.kind === 'count'
     ? [{ alias: '__rs_pg_count', property: 'n', kind: 'bigint', nullable: false }]
     : (query.kind === 'select' ? query.columns : query.table.columns).map((property, index) => ({ alias: '__rs_pg_' + index, property,

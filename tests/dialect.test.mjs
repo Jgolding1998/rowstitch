@@ -9,6 +9,7 @@ const { openAsyncDatabaseWithDialect }=await import(new URL('core/async-database
 const { createPostgresDialect }=await import(new URL('core/postgres-dialect.js',build));
 const { decodePostgresDDL }=await import(new URL('core/postgres-ddl.js',build));
 const { isPostgresRawResult, snapshotPostgresResult }=await import(new URL('core/postgres-result.js',build));
+const { acknowledgedPostgresRejection }=await import(new URL('core/postgres-acknowledgment.js',build));
 
 const items=defineTable('sample_rows',{
   id:column.integer().primaryKey(),label:column.text(),active:column.boolean(),payload:column.json(),score:column.real().nullable(),version:column.integer().default(1),
@@ -87,12 +88,30 @@ test('native pure compilation returns PostgreSQL SQL without running or exposing
   assert.deepEqual(compiled.parameters,['true','2','0']);compiled.parameters.push('caller edit');
   assert.deepEqual(f.calls,[]);assert.deepEqual(f.controls,[]);
 });
-test('unavailable eager relations and aggregates fail before any root statement runs',async t=>{
+test('unavailable eager relations and explanation fail before any root statement runs',async t=>{
   const f=await fixture(t);const children=hasMany(items,{localKey:items.col('id'),foreignKey:items.col('id')});
   await assert.rejects(f.db.table(items).findMany({include:{children}}),code('QUERY'));
-  await assert.rejects(f.db.table(items).aggregate({select:{n:agg.count()}}),code('QUERY'));
-  assert.throws(()=>f.db.table(items).compileAggregate({select:{n:agg.count()}}),code('QUERY'));
+  await assert.rejects(f.db.table(items).explain(),code('QUERY'));
   assert.deepEqual(f.calls,[]);assert.deepEqual(f.controls,[]);
+});
+
+test('native summary compilation is pure and its result reaches the shared logical decoder',async t=>{
+  const result=snapshotPostgresResult({command:'SELECT',rowCount:1n,
+    fields:[{name:'__rs_pg_0',typeOid:20},{name:'__rs_pg_1',typeOid:23}],rows:[['7','0']]});
+  const f=await fixture(t,[result]),repo=f.db.table(items),options={select:{n:agg.count()}};
+  const compiled=repo.compileAggregate(options);
+  assert.deepEqual(Object.keys(compiled).sort(),['parameters','sql']);assert.deepEqual(f.calls,[]);
+  assert.deepEqual(await repo.aggregate(options),{n:7});assert.equal(f.calls.length,1);assert.deepEqual(f.controls,[]);
+});
+
+test('summary range classification follows session processing and keeps engine details out of public errors and traces',async t=>{
+  const failure=()=>{throw acknowledgedPostgresRejection('DATABASE_ERROR','22003');};
+  const f=await fixture(t,[failure,count(1),failure]);
+  await assert.rejects(f.db.table(items).aggregate({select:{total:agg.sum(items.col('score'))}}),error=>
+    error.code==='AGGREGATE_RANGE'&&!error.message.includes('22003'));
+  assert.equal(await f.db.table(items).count(),1,'confirmed idle error does not poison session');
+  await assert.rejects(f.db.table(items).aggregate({select:{low:agg.min(items.col('score'))}}),code('DATABASE_ERROR'));
+  const trace=JSON.stringify(f.db.exportTrace());assert.ok(!trace.includes('22003'));assert.equal(f.calls.length,3);
 });
 test('native value parameters and rejected results stay out of default traces',async t=>{
   const marker='FICTIONAL_PRIVATE_VALUE';const f=await fixture(t,[raw('INSERT',[['1',marker,'t','{}',null,'1']])]);

@@ -132,7 +132,7 @@ export class AsyncDatabase {
         recordTrace(this.#state, { operation: step.operation, table: step.table, sql: step.sql, parameters: step.parameters, start, rowCount: 0,
           transactionId: this.#transactionId(), status: 'error' });
       }
-      throw safe(error);
+      throw safe(step.mapError ? step.mapError(error) : error);
     }
   }
 

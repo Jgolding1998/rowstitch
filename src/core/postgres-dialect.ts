@@ -6,6 +6,8 @@ import type { RepositoryDialect } from './dialect.js';
 import type { QueryModel } from './query-model.js';
 import { compilePostgres, type PostgresCompileOptions } from './postgres-compiler.js';
 import { decodePostgresStorage } from './postgres-storage.js';
+import { decodePostgresAggregateStorage } from './postgres-aggregate-storage.js';
+import { postgresRealAggregateError } from './postgres-acknowledgment.js';
 
 export function createPostgresDialect(options: PostgresCompileOptions = {}): RepositoryDialect {
   assertOptions(options, ['schema', 'only']);
@@ -22,7 +24,9 @@ export function createPostgresDialect(options: PostgresCompileOptions = {}): Rep
       const command = query.command;
       return {
         sql: query.sql, parameters: query.parameters,
-        decode: (result: unknown) => decodePostgresStorage(result, query.outputs, command, query.count ? { count: true } : {}),
+        ...(query.realAggregateRange ? { mapError: postgresRealAggregateError } : {}),
+        decode: (result: unknown) => query.aggregate ? decodePostgresAggregateStorage(result, query.aggregate)
+          : decodePostgresStorage(result, query.outputs, command, query.count ? { count: true } : {}),
       };
     },
   });

@@ -1,6 +1,6 @@
 {
   "name": "rowstitch",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "A TypeScript ORM with guarded writes, optional PostgreSQL adapters and a local SQL inspector.",
   "type": "module",
   "license": "MIT",
@@ -17,7 +17,7 @@
   },
   "types": "./dist/index.d.ts",
   "bin": { "rowstitch": "./dist/cli.js" },
-  "files": ["dist", "studio", "README.md", "LICENSE", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "docs/agent-instructions.md", "docs/research.md", "docs/compatibility.md", "docs/async-drivers.md", "docs/images/studio.png", "examples"],
+  "files": ["dist", "studio", "README.md", "LICENSE", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "docs/agent-instructions.md", "docs/research.md", "docs/compatibility.md", "docs/async-drivers.md", "docs/native-aggregates.md", "docs/images/studio.png", "examples"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test tests/*.test.mjs",

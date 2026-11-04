@@ -87,6 +87,14 @@ test('global grouped guard survives pagination and includes damaged group keys',
   assert.deepEqual(repo.groupBy({ ...options, offset: 99 }), [], 'empty pages deliberately make no storage assertion');
 });
 
+test('SQLite rejects a real range result only when its group is returned, unlike native engine aggregation errors', t => {
+  const { table, repo } = stored(t, [{ id: 1, bucket: 'a', ratio: 1 },
+    { id: 2, bucket: 'b', ratio: Number.MAX_VALUE }, { id: 3, bucket: 'b', ratio: Number.MAX_VALUE }]);
+  const options = { by: ['bucket'], select: { total: agg.sum(table.col('ratio')) }, orderBy: [{ field: 'bucket', direction: 'asc' }] };
+  assert.deepEqual(repo.groupBy({ ...options, limit: 1 }), [{ bucket: 'a', total: 1 }]);
+  assert.throws(() => repo.groupBy(options), coded('AGGREGATE_RANGE'));
+});
+
 test('empty root aggregates keep nullable outputs for non-null source columns', t => {
   const { table, repo } = memory(t);
   assert.deepEqual(repo.aggregate({ select: { rows: agg.count(), present: agg.count(table.col('amount')), total: agg.sum(table.col('amount')),

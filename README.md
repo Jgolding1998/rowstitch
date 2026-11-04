@@ -15,7 +15,7 @@ This release includes the 0.7.1 correction for related summaries with different 
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.10.0/rowstitch-0.10.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.11.0/rowstitch-0.11.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -37,7 +37,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.10.0/rowstitch-0.10.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.11.0/rowstitch-0.11.0.tgz
 ```
 
 ```ts
@@ -92,6 +92,8 @@ Await each write inside a transaction, or use `insertMany` for a batch. Concurre
 
 ## Use PostgreSQL or PGlite
 
+Version 0.11 adds native totals, averages, grouped results and related summaries. See the [native summary guide](docs/native-aggregates.md) and [runnable example](examples/native-aggregates.mjs).
+
 Both are optional. Your SQLite code keeps working with neither installed, and you only install the one you use. Each uses the same `defineTable` mappings, and returns the same `AsyncDatabase` you get from `openAsyncDatabase`, so await its operations and close it when finished.
 
 | | PostgreSQL | PGlite |
@@ -141,9 +143,10 @@ Set `schema` to use a PostgreSQL namespace other than `public`. It must already 
 | Available | Not available yet on PostgreSQL or PGlite |
 | --- | --- |
 | `insert`, `insertMany`, `findMany`, `findFirst`, `count` | Eager relations through `include` |
-| `update`, `delete`, `updateVersion` with their guards | `aggregate`, `groupBy` and `agg.related` |
+| `update`, `delete`, `updateVersion` with their guards | |
 | Value filters, `and`/`or`/`not`, literal text searches, column comparisons | `explain` and query plans |
 | Relation filters in reads: `some`, `none`, `every`, `countRelated` | |
+| `aggregate`, `groupBy`, related row summaries and their compile methods | HAVING, DISTINCT and window functions |
 | `select`, ordering, `limit`, `offset` | Pools, replicas, migrations |
 | Transactions and nested savepoints, `ensureSchema`, `planSchema`, `inspectSchema`, traces | |
 

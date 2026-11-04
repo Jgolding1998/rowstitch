@@ -141,7 +141,7 @@ export async function runPublicComparisonCases({sdk,openPostgresDatabase,postgre
         assert.deepEqual((await native('SELECT note FROM '+quote(schema)+'.items WHERE active ORDER BY id')).rows,[[null],['note']]);return {semantics:tool.guardKind};});
       await check(tool,'stale update preserves the winning write',async()=>{await tool.insert({...seed[0],id:20,label:'Versioned'});await tool.version();
         assert.deepEqual((await native('SELECT label,version::text FROM '+quote(schema)+'.items WHERE id=20')).rows,[['Winner','2']]);await tool.remove(20);return {semantics:tool.versionKind};});
-      await check(tool,'root sum aggregate',async()=>{assert.equal(await tool.aggregate(),60n);},tool.name==='rowstitch'?'QUERY':undefined);
+      await check(tool,'root sum aggregate',async()=>{assert.equal(await tool.aggregate(),60n);});
     }
   }finally{
     let cleanupFailed=false;
