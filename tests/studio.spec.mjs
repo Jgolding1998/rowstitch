@@ -1647,6 +1647,16 @@ for (const [label, width, height] of [['desktop', 1440, 1000], ['narrow', 390, 8
     await expect(orders.locator('.ident-length').first()).toContainText('characters, shortened');
     const cardFits = await page.locator('.table-card').evaluateAll(cards => cards.every(node => node.scrollWidth <= node.clientWidth + 1));
     expect(cardFits).toBe(true);
+    // System fonts differ by platform, so widen every glyph: a card's fixed copy has to reflow on any of them, not only the local one.
+    const cardFitsWideText = await page.locator('.table-card').evaluateAll(cards => {
+      const wide = new CSSStyleSheet();
+      wide.replaceSync('.table-card, .table-card button { letter-spacing: 1.5px; }');
+      document.adoptedStyleSheets = [wide];
+      const fits = cards.every(node => node.scrollWidth <= node.clientWidth + 1);
+      document.adoptedStyleSheets = [];
+      return fits;
+    });
+    expect(cardFitsWideText).toBe(true);
     const summary = orders.locator('.exact-summary');
     // Arrive by keyboard, so the focus ring reflects keyboard use rather than the earlier click.
     await summary.focus();

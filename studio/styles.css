@@ -437,7 +437,9 @@ tbody tr:last-child td { border-bottom: 0; }
 .table-card, .result, .facts, .privacy {
   padding: 16px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow);
 }
-.table-card { display: grid; gap: 12px; justify-items: start; min-width: 0; }
+/* A zero-minimum track, so no child's single-line width can stretch the card. The padding keeps a one-line button at its 32px. */
+.table-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; justify-items: start; min-width: 0; }
+.table-card .btn { max-width: 100%; padding-block: 5px; white-space: normal; }
 .table-card .columns { width: 100%; }
 .table-card td { overflow-wrap: break-word; }
 .table-card { overflow-x: auto; }
