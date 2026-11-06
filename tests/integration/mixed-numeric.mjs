@@ -1,5 +1,6 @@
-// Native, CI-sized exact mixed-column regressions. Only fictional connection-local temporary fixtures are created.
+// Native, CI-sized exact mixed-column regressions. All fictional fixtures live in one owned schema.
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { compilePostgres } from '../../dist/core/postgres-compiler.js';
 import { decodePostgresStorage } from '../../dist/core/postgres-storage.js';
 import { MAX_BOUND_PARAMETERS, MAX_REQUEST_PARAMETERS, queryModel, tableModel } from '../../dist/core/query-model.js';
@@ -44,22 +45,24 @@ function numericLiteral(number,type){
 /** openTransport supplies a fresh dedicated transport. This function owns it and always attempts orderly close. */
 export async function runMixedNumericCases(openTransport){
   const cases=[],cleanup={ownedTransportClosed:false,transactionEnded:false,temporaryObjectsDropped:false,temporaryObjectsCreated:0};
-  let transport,executor,session,original,requests=0,closeCalls=0;const objects=[];
+  let transport,executor,session,original,requests=0,closeCalls=0,schemaCreated=false;const objects=[];
+  const schema='rs_mixed_'+randomBytes(8).toString('hex'),compileOptions={schema};
+  const qualify=name=>schema+'.'+name;
   const report={cases,comparisons:0,rootSelects:0,rootCounts:0,cleanup};
   const own=async(type,name,sql)=>{
     assert.match(name,/^rs_mixed_[a-z0-9_]+$/);const result=await executor.all(sql,[]);
-    assert.equal(result.command,'CREATE');assert.equal(result.rowCount,null);assert.deepEqual(result.fields,[]);assert.deepEqual(result.rows,[]);
     objects.push({type,name});cleanup.temporaryObjectsCreated++;
+    assert.equal(result.command,'CREATE');assert.equal(result.rowCount,null);assert.deepEqual(result.fields,[]);assert.deepEqual(result.rows,[]);
   };
   const run=async model=>{
-    const compiled=compilePostgres(model,{schema:'pg_temp'}),raw=await executor.all(compiled.sql,compiled.parameters);
+    const compiled=compilePostgres(model,compileOptions),raw=await executor.all(compiled.sql,compiled.parameters);
     return {compiled,rows:decodePostgresStorage(raw,compiled.outputs,compiled.command,compiled.count?{count:true}:{})};
   };
   const insertValues=async(name,type,values)=>{
-    await own('TABLE',name,'CREATE TEMP TABLE '+name+'(id int4 PRIMARY KEY,v "pg_catalog"."'+type+'")');
+    await own('TABLE',name,'CREATE TABLE '+qualify(name)+'(id int4 PRIMARY KEY,v "pg_catalog"."'+type+'")');
     const parameters=[],tuples=values.map((v,index)=>{parameters.push(String(index),wire(v));return '($'+(parameters.length-1)+'::int4,$'+parameters.length+'::"pg_catalog"."'+type+'")';});
-    await executor.all('INSERT INTO pg_temp.'+name+' VALUES '+tuples.join(','),parameters);
-    const actual=await executor.all('SELECT v::"pg_catalog"."'+(type.startsWith('int')?'int8':'float8')+'" FROM pg_temp.'+name+' ORDER BY id',[]);
+    await executor.all('INSERT INTO '+qualify(name)+' VALUES '+tuples.join(','),parameters);
+    const actual=await executor.all('SELECT v::"pg_catalog"."'+(type.startsWith('int')?'int8':'float8')+'" FROM '+qualify(name)+' ORDER BY id',[]);
     actual.rows.forEach((row,index)=>assert.ok(Object.is(row[0]===null?null:type.startsWith('int')?BigInt(row[0]):Number(row[0]),values[index]),'Stored native vector differs from oracle'));
   };
   try{
@@ -72,6 +75,9 @@ export async function runMixedNumericCases(openTransport){
     await transport.query('SET extra_float_digits=3',[]); // Setup of this owned connection, before the executor takes control.
     executor=createPostgresExecutor(transport);
     assert.equal(await executor.inTransaction(),false);
+    const createdSchema=await executor.all('CREATE SCHEMA '+schema,[]);
+    schemaCreated=true;
+    assert.equal(createdSchema.command,'CREATE');
     assert.equal(relation(9007199254740993n,2**53),1);assert.equal(relation(-(2n**63n),-(2**63)),0);
     assert.equal(relation(0n,Number.MIN_VALUE),-1);assert.equal(relation(0n,-Number.MIN_VALUE),1);
     const vectors={
@@ -85,7 +91,7 @@ export async function runMixedNumericCases(openTransport){
     let naiveMismatches=0;
     for(const ikey of ['i8','i4','i2'])for(const rkey of ['f8','f4']){
       const ints=vectors[ikey],reals=vectors[rkey],table=mapped('rs_mixed_'+ikey+'_'+rkey,ikey==='i8'?'bigint':'integer');
-      await own('VIEW',table.name,'CREATE TEMP VIEW '+table.name+' AS SELECT (a.id*1000+b.id)::int4 AS id,a.v AS i,b.v AS r,\'Sample\'::text AS label,1::int4 AS version FROM pg_temp.rs_mixed_'+ikey+' a CROSS JOIN pg_temp.rs_mixed_'+rkey+' b');
+      await own('VIEW',table.name,'CREATE VIEW '+qualify(table.name)+' AS SELECT (a.id*1000+b.id)::int4 AS id,a.v AS i,b.v AS r,\'Sample\'::text AS label,1::int4 AS version FROM '+qualify('rs_mixed_'+ikey)+' a CROSS JOIN '+qualify('rs_mixed_'+rkey)+' b');
       const before=report.comparisons;
       for(const operator of OPERATORS)for(const reverse of [false,true]){
         const yes=[],no=[];
@@ -97,7 +103,7 @@ export async function runMixedNumericCases(openTransport){
       }
       if(ikey==='i8'&&rkey==='f8'){
         const i=ints.indexOf(9007199254740993n),r=reals.indexOf(2**53),id=i*1000+r;
-        const naive=await executor.all('SELECT i::float8 OPERATOR("pg_catalog".=) r FROM pg_temp.'+table.name+' WHERE id=$1::int4',[String(id)]);
+        const naive=await executor.all('SELECT i::float8 OPERATOR("pg_catalog".=) r FROM '+qualify(table.name)+' WHERE id=$1::int4',[String(id)]);
         assert.deepEqual(naive.rows,[['t']]);assert.equal(expected(9007199254740993n,2**53,'='),false);naiveMismatches++;
         const zero=ints.indexOf(0n),good=zero*1000+reals.indexOf(.5),bad=zero*1000+reals.indexOf(-.5);
         const compose={kind:'logic',operator:'AND',children:[value('label','=', ['Sample']),value('id','IN',[good,bad]),cmp('<')]};
@@ -112,9 +118,9 @@ export async function runMixedNumericCases(openTransport){
     let folded=0;
     for(let index=0;index<constants.length;index++){
       const [i,r]=constants[index],table=mapped('rs_mixed_constant_'+index);
-      await own('VIEW',table.name,'CREATE TEMP VIEW '+table.name+' AS SELECT '+index+'::int4 AS id,'+numericLiteral(i,'int8')+' AS i,'+numericLiteral(r,'float8')+' AS r,\'Sample\'::text AS label,1::int4 AS version');
+      await own('VIEW',table.name,'CREATE VIEW '+qualify(table.name)+' AS SELECT '+index+'::int4 AS id,'+numericLiteral(i,'int8')+' AS i,'+numericLiteral(r,'float8')+' AS r,\'Sample\'::text AS label,1::int4 AS version');
       for(const operator of OPERATORS)for(const reverse of [false,true]){
-        const where={kind:'logic',operator:'AND',children:[cmp(operator,reverse),value('id','=',[index])]},q=compilePostgres(select(table,where,1),{schema:'pg_temp'});
+        const where={kind:'logic',operator:'AND',children:[cmp(operator,reverse),value('id','=',[index])]},q=compilePostgres(select(table,where,1),compileOptions);
         assert.deepEqual(q.parameters,[String(index),'1','0']);const actual=decodePostgresStorage(await executor.all(q.sql,q.parameters),q.outputs,q.command);
         assert.deepEqual(actual.map(row=>row.id),expected(i,r,operator,reverse)===true?[BigInt(index)]:[]);report.rootSelects++;
         if(operator==='='&&!reverse){const plan=await executor.all('EXPLAIN (VERBOSE TRUE,COSTS FALSE,FORMAT JSON) '+q.sql,q.parameters),text=JSON.stringify(JSON.parse(plan.rows[0][0]));assert.ok(!text.includes('CASE')&&!text.includes('trunc'));folded++;}
@@ -122,11 +128,11 @@ export async function runMixedNumericCases(openTransport){
     }
     cases.push({name:'constant views fold guarded casts safely at int64 bounds, subnormal, null and nonfinite values',views:constants.length,foldedPlans:folded});
     const writes=mapped('rs_mixed_writes'),samples=[[-(2n**63n),-(2**63)],[2n**63n-1n,2**63],[9007199254740993n,2**53],[0n,.5],[0n,-.5],[0n,-0],[0n,Number.MIN_VALUE],[null,1],[1n,null]];
-    await own('TABLE',writes.name,'CREATE TEMP TABLE '+writes.name+'(id int4 PRIMARY KEY,i int8,r float8,label text NOT NULL,version int4 NOT NULL)');
+    await own('TABLE',writes.name,'CREATE TABLE '+qualify(writes.name)+'(id int4 PRIMARY KEY,i int8,r float8,label text NOT NULL,version int4 NOT NULL)');
     const reset=async()=>{
-      await executor.all('TRUNCATE pg_temp.'+writes.name,[]);
+      await executor.all('TRUNCATE '+qualify(writes.name),[]);
       const parameters=[],rows=samples.map(([i,r],id)=>{parameters.push(String(id),wire(i),wire(r));return '($'+(parameters.length-2)+'::int4,$'+(parameters.length-1)+'::int8,$'+parameters.length+'::float8,\'Sample\',1)';});
-      await executor.all('INSERT INTO pg_temp.'+writes.name+' VALUES '+rows.join(','),parameters);
+      await executor.all('INSERT INTO '+qualify(writes.name)+' VALUES '+rows.join(','),parameters);
     };
     let updates=0,refused=0;
     for(const operator of OPERATORS)for(const reverse of [false,true]){
@@ -143,22 +149,22 @@ export async function runMixedNumericCases(openTransport){
       }
     }
     cases.push({name:'count and guarded UPDATE agree exactly before commit; too-small guards change no rows',updates,guardRefusals:refused});
-    await reset();await executor.all('INSERT INTO pg_temp.'+writes.name+' VALUES(999,0,\'Infinity\'::float8,\'Sample\',1)',[]);
+    await reset();await executor.all('INSERT INTO '+qualify(writes.name)+' VALUES(999,0,\'Infinity\'::float8,\'Sample\',1)',[]);
     const nonfinite={kind:'logic',operator:'AND',children:[cmp('<'),value('id','=',[999])]};
     await executor.exec('BEGIN ISOLATION LEVEL SERIALIZABLE');const count=await run(queryModel.count({table:writes,where:nonfinite}));assert.equal(count.rows[0].n,1n);
     await assert.rejects(run(queryModel.update({table:writes,where:nonfinite,assignments:[{column:'label',value:'Changed'}]})),error=>error?.code==='DATA');
     await executor.exec('ROLLBACK');const unchanged=await run(queryModel.count({table:writes,where:{kind:'logic',operator:'AND',children:[value('id','=',[999]),value('label','=', ['Sample'])]}}));assert.equal(unchanged.rows[0].n,1n);
     cases.push({name:'native nonfinite predicate order is separate from finite-return codec; decode refusal rolls back a write'});
-    for(const name of ['rs_mixed_r_sequence','rs_mixed_i_sequence'])await own('SEQUENCE',name,'CREATE TEMP SEQUENCE '+name+' START 1');
+    for(const name of ['rs_mixed_r_sequence','rs_mixed_i_sequence'])await own('SEQUENCE',name,'CREATE SEQUENCE '+qualify(name)+' START 1');
     let volatileQueries=0;
     for(const mode of ['real','integer','both']){
-      const table=mapped('rs_mixed_volatile_'+mode),i=mode==='real'?'0::int8':"(pg_catalog.nextval('pg_temp.rs_mixed_i_sequence')-1)",r=mode==='integer'?'0.5::float8':"(pg_catalog.nextval('pg_temp.rs_mixed_r_sequence')::float8/2)";
-      await own('VIEW',table.name,'CREATE TEMP VIEW '+table.name+' AS SELECT 1::int4 AS id,'+i+' AS i,'+r+' AS r,\'Sample\'::text AS label,1::int4 AS version');
+      const table=mapped('rs_mixed_volatile_'+mode),i=mode==='real'?'0::int8':"(pg_catalog.nextval('"+qualify('rs_mixed_i_sequence')+"')-1)",r=mode==='integer'?'0.5::float8':"(pg_catalog.nextval('"+qualify('rs_mixed_r_sequence')+"')::float8/2)";
+      await own('VIEW',table.name,'CREATE VIEW '+qualify(table.name)+' AS SELECT 1::int4 AS id,'+i+' AS i,'+r+' AS r,\'Sample\'::text AS label,1::int4 AS version');
       for(const operator of ['<','>='])for(const reverse of [false,true])for(const family of ['count','select']){
-        for(const key of ['r','i'])await executor.all('ALTER SEQUENCE pg_temp.rs_mixed_'+key+'_sequence RESTART WITH 1',[]);
+        for(const key of ['r','i'])await executor.all('ALTER SEQUENCE '+qualify('rs_mixed_'+key+'_sequence')+' RESTART WITH 1',[]);
         const where=cmp(operator,reverse),q=family==='count'?queryModel.count({table,where}):select(table,where,1),actual=await run(q),yes=expected(0n,.5,operator,reverse)===true;
         assert.deepEqual(family==='count'?actual.rows[0].n:actual.rows.map(row=>row.id),family==='count'?BigInt(yes):yes?[1n]:[]);
-        for(const key of mode==='real'?['r']:mode==='integer'?['i']:['r','i'])assert.deepEqual((await executor.all("SELECT pg_catalog.currval('pg_temp.rs_mixed_"+key+"_sequence')",[])).rows,[['1']]);
+        for(const key of mode==='real'?['r']:mode==='integer'?['i']:['r','i'])assert.deepEqual((await executor.all("SELECT pg_catalog.currval('"+qualify('rs_mixed_'+key+'_sequence')+"')",[])).rows,[['1']]);
         volatileQueries++;
       }
     }
@@ -168,19 +174,19 @@ export async function runMixedNumericCases(openTransport){
     assert.equal(MAX_BOUND_PARAMETERS,10_000);assert.equal(MAX_REQUEST_PARAMETERS,10_403);
     const columns=['id',...Array.from({length:99},(_,i)=>'c'+i)],wide=tableModel({name:'rs_mixed_budget',columns,primaryKey:['id'],
       kinds:Object.fromEntries(columns.map(column=>[column,'integer'])),nullable:Object.fromEntries(columns.map(column=>[column,false]))});
-    await own('TABLE',wide.name,'CREATE TEMP TABLE '+wide.name+'(id int4 PRIMARY KEY,'+columns.slice(1).map(column=>column+' int4 NOT NULL DEFAULT 0').join(',')+')');
-    await executor.all('INSERT INTO pg_temp.'+wide.name+'(id) VALUES(1)',[]);
+    await own('TABLE',wide.name,'CREATE TABLE '+qualify(wide.name)+'(id int4 PRIMARY KEY,'+columns.slice(1).map(column=>column+' int4 NOT NULL DEFAULT 0').join(',')+')');
+    await executor.all('INSERT INTO '+qualify(wide.name)+'(id) VALUES(1)',[]);
     session=createAsyncSession(executor,{dialect:'postgresql',isResult:isPostgresRawResult});
     const fullWhere={kind:'logic',operator:'OR',children:Array.from({length:10},()=>value('id','IN',Array.from({length:1000},(_,i)=>i)))};
     const overWhere={kind:'logic',operator:'OR',children:[...fullWhere.children,value('id','=',[1])]};
     assert.throws(()=>queryModel.count({table:wide,where:overWhere}),error=>error?.code==='QUERY');
     const decode=(raw,q)=>decodePostgresStorage(raw,q.outputs,q.command,q.count?{count:true}:{});
-    const page=compilePostgres(select(wide,fullWhere,1),{schema:'pg_temp'});
+    const page=compilePostgres(select(wide,fullWhere,1),compileOptions);
     assert.equal(page.parameters.length,10_002);
     assert.deepEqual(decode(await session.all(page.sql,page.parameters),page),[{id:1n}]);
-    const update=compilePostgres(queryModel.update({table:wide,where:fullWhere,assignments:columns.slice(1).map((column,i)=>({column,value:i+1}))}),{schema:'pg_temp'});
+    const update=compilePostgres(queryModel.update({table:wide,where:fullWhere,assignments:columns.slice(1).map((column,i)=>({column,value:i+1}))}),compileOptions);
     assert.equal(update.parameters.length,10_099);assert.equal(update.outputs.length,100);
-    const countPlan=compilePostgres(queryModel.count({table:wide,where:fullWhere}),{schema:'pg_temp'}),rollback=new Error('Intentional boundary-fixture rollback');
+    const countPlan=compilePostgres(queryModel.count({table:wide,where:fullWhere}),compileOptions),rollback=new Error('Intentional boundary-fixture rollback');
     await assert.rejects(session.transaction(async tx=>{
       const observed=decode(await tx.all(countPlan.sql,countPlan.parameters),countPlan);assert.equal(observed[0].n,1n);
       const changed=decode(await tx.all(update.sql,update.parameters),update);assert.equal(changed.length,1);assert.equal(changed[0].id,1n);
@@ -188,7 +194,7 @@ export async function runMixedNumericCases(openTransport){
       throw rollback;
     }),error=>error===rollback);
     assert.equal(await executor.inTransaction(),false);
-    const after=compilePostgres(queryModel.select({table:wide,columns,where:value('id','=',[1]),orderBy:[{column:'id',direction:'ASC'}],limit:1,offset:0}),{schema:'pg_temp'});
+    const after=compilePostgres(queryModel.select({table:wide,columns,where:value('id','=',[1]),orderBy:[{column:'id',direction:'ASC'}],limit:1,offset:0}),compileOptions);
     const budgetUnchanged=decode(await session.all(after.sql,after.parameters),after);assert.equal(budgetUnchanged.length,1);assert.equal(budgetUnchanged[0].id,1n);
     for(const column of columns.slice(1))assert.equal(budgetUnchanged[0][column],0n);
     const generated='SELECT 1::int4 AS "__rs_pg_0" WHERE 0::int4 OPERATOR("pg_catalog".=) ANY(ARRAY['
@@ -207,8 +213,12 @@ export async function runMixedNumericCases(openTransport){
     if(executor){
       try{if(await executor.inTransaction())await executor.exec('ROLLBACK');cleanup.transactionEnded=true;}catch(error){original??=error;}
       try{
-        for(const {type,name}of [...objects].reverse())await executor.all('DROP '+type+' pg_temp.'+name,[]);
-        for(const {name}of objects)assert.deepEqual((await executor.all('SELECT pg_catalog.to_regclass($1::text)::text',['pg_temp.'+name])).rows,[[null]]);
+        if(schemaCreated){
+          for(const {type,name}of [...objects].reverse())await executor.all('DROP '+type+' '+qualify(name),[]);
+          for(const {name}of objects)assert.deepEqual((await executor.all('SELECT pg_catalog.to_regclass($1::text)::text',[qualify(name)])).rows,[[null]]);
+          await executor.all('DROP SCHEMA '+schema,[]);
+          assert.deepEqual((await executor.all('SELECT pg_catalog.to_regnamespace($1::text)::text',[schema])).rows,[[null]]);
+        }
         cleanup.temporaryObjectsDropped=true;
       }catch(error){original??=error;}
       try{await(session?session.close():executor.close());assert.equal(closeCalls,1);cleanup.ownedTransportClosed=true;cleanup.ownedTransportCloseCalls=closeCalls;}catch(error){original??=error;}
