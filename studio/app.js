@@ -1,6 +1,7 @@
 // Rowstitch Studio: a read-only, local inspector for Rowstitch trace documents.
 // Every value from a trace is untrusted text. It is rendered with textContent and numeric SVG attributes only.
 // Nothing here executes SQL, stores data in the browser, or requests anything except GET /api/demo.
+// The parsed document is for display only. Export writes the validated source bytes, never a serialized document.
 'use strict';
 
 (() => {
@@ -30,6 +31,14 @@
     'RECURSIVE CONFLICT DO NOTHING REPLACE ABORT FAIL IGNORE STRICT WITHOUT ROWID COLLATE NOCASE EXPLAIN QUERY PLAN').split(' '));
   const POSTGRES_KEYWORDS = new Set('OPERATOR OVERRIDING SYSTEM USER VALUE ONLY ISOLATION LEVEL SERIALIZABLE READ'.split(' '));
   const DIALECTS = Object.freeze(['sqlite', 'postgresql']);
+  const SCOPES = Object.freeze(['all', 'mapped']);
+  const SCHEMA_SOURCES = Object.freeze(['explicit', 'default']);
+  const POLICIES = Object.freeze(['legacy', 'exact', 'subset']);
+  const COVERAGES = Object.freeze(['all', 'mapped-and-key']);
+  // The same rules as the library's identifier(). Logical names are simple; physical names are arbitrary catalog data.
+  const LOGICAL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
+  const RESERVED_LOGICAL = /^(?:sqlite_|__rs_)/i;
+  const LONE_SURROGATE = /\p{Cs}/u;
   const isPostgres = (doc) => doc.dialect === 'postgresql';
   // Constant display names. An imported dialect is validated against DIALECTS and never shown as text.
   const backendName = (doc) => (isPostgres(doc) ? 'PostgreSQL' : 'SQLite');
@@ -140,10 +149,16 @@
   function normalizeTrace(raw) {
     if (!isPlainObject(raw)) fail('', 'The file is JSON, but not a Rowstitch trace object.');
     if (raw.format !== 'rowstitch-trace') fail('', 'This is not a Rowstitch trace: "format" must be "rowstitch-trace".');
-    if (raw.version !== 1) fail('', 'This trace version is not supported. The studio reads version 1.');
-    checkKeys(raw, 'The trace', ['format', 'version', 'title', 'generatedAt', 'source', 'schema', 'queries'], ['results', 'notes', 'dialect']);
-    // Absent means a legacy SQLite trace. It stays absent, so an export keeps matching the document that was loaded.
-    if (has(raw, 'dialect') && !DIALECTS.includes(raw.dialect)) fail('"dialect"', 'must be "sqlite" or "postgresql" when present');
+    if (raw.version !== 1 && raw.version !== 2) fail('', 'This trace version is not supported. The studio reads versions 1 and 2.');
+    const v2 = raw.version === 2;
+    if (v2) {
+      checkKeys(raw, 'The trace', ['format', 'version', 'dialect', 'title', 'generatedAt', 'source', 'mapping', 'inspection', 'schema', 'queries', 'notes'], ['results']);
+      if (!DIALECTS.includes(raw.dialect)) fail('"dialect"', 'must be "sqlite" or "postgresql"');
+    } else {
+      checkKeys(raw, 'The trace', ['format', 'version', 'title', 'generatedAt', 'source', 'schema', 'queries'], ['results', 'notes', 'dialect']);
+      // Absent means a legacy SQLite trace. It stays absent, so the About view can say the trace names no database.
+      if (has(raw, 'dialect') && !DIALECTS.includes(raw.dialect)) fail('"dialect"', 'must be "sqlite" or "postgresql" when present');
+    }
 
     const title = text(raw.title, '"title"');
     const generatedAt = text(raw.generatedAt, '"generatedAt"', { max: 64 });
@@ -160,32 +175,10 @@
     }
     if (raw.source !== 'fictional-demo' && raw.source !== 'local-trace') fail('"source"', 'must be "fictional-demo" or "local-trace"');
 
-    const schema = list(raw.schema, '"schema"', LIMITS.tables).map((table, t) => {
-      const at = `schema[${t}]`;
-      checkKeys(table, at, ['name', 'columns'], ['foreignKeys']);
-      const columns = list(table.columns, `${at}.columns`, LIMITS.columns).map((column, c) => {
-        const cat = `${at}.columns[${c}]`;
-        checkKeys(column, cat, ['name', 'type', 'nullable', 'primaryKey'], []);
-        return {
-          name: text(column.name, `${cat}.name`, { allowEmpty: false }),
-          type: text(column.type, `${cat}.type`),
-          nullable: bool(column.nullable, `${cat}.nullable`),
-          primaryKey: bool(column.primaryKey, `${cat}.primaryKey`),
-        };
-      });
-      const foreignKeys = has(table, 'foreignKeys')
-        ? list(table.foreignKeys, `${at}.foreignKeys`, LIMITS.foreignKeys).map((fk, f) => {
-          const fat = `${at}.foreignKeys[${f}]`;
-          checkKeys(fk, fat, ['column', 'table', 'target'], []);
-          return {
-            column: text(fk.column, `${fat}.column`, { allowEmpty: false }),
-            table: text(fk.table, `${fat}.table`, { allowEmpty: false }),
-            target: text(fk.target, `${fat}.target`, { allowEmpty: false }),
-          };
-        })
-        : [];
-      return { name: text(table.name, `${at}.name`, { allowEmpty: false }), columns, foreignKeys };
-    });
+    const mapping = v2 ? normalizeMapping(raw.mapping, raw.dialect) : null;
+    const inspection = v2 ? normalizeInspection(raw.inspection) : null;
+    const schema = v2 ? normalizeSchemaV2(raw.schema, raw.dialect) : normalizeSchemaV1(raw.schema);
+    if (v2) checkTraceCounts(mapping, inspection, schema, raw.dialect);
 
     const seenIds = new Set();
     const queries = list(raw.queries, '"queries"', LIMITS.queries).map((query, i) => {
@@ -197,7 +190,7 @@
       if (!OPERATIONS.includes(query.operation)) fail(`${at}.operation`, `must be one of ${OPERATIONS.join(', ')}`);
       if (query.status !== 'ok' && query.status !== 'error') fail(`${at}.status`, 'must be "ok" or "error"');
       // An empty table string means the statement has no associated table (for example BEGIN or COMMIT).
-      // It is kept as loaded so an export matches the original document.
+      // The views treat an empty string and a missing table alike.
       const table = query.table === undefined || query.table === null ? null : text(query.table, `${at}.table`);
       const transactionId = query.transactionId === undefined || query.transactionId === null
         ? null : text(query.transactionId, `${at}.transactionId`, { allowEmpty: false, max: 200 });
@@ -227,7 +220,9 @@
       };
     });
 
-    const doc = { format: 'rowstitch-trace', version: 1, title, generatedAt, source: raw.source, ...(has(raw, 'dialect') ? { dialect: raw.dialect } : {}), schema, queries };
+    const doc = v2
+      ? { format: 'rowstitch-trace', version: 2, title, generatedAt, source: raw.source, dialect: raw.dialect, mapping, inspection, schema, queries }
+      : { format: 'rowstitch-trace', version: 1, title, generatedAt, source: raw.source, ...(has(raw, 'dialect') ? { dialect: raw.dialect } : {}), schema, queries };
     if (has(raw, 'results')) {
       doc.results = list(raw.results, '"results"', LIMITS.results).map((result, r) => {
         const at = `results[${r}]`;
@@ -245,6 +240,220 @@
       doc.notes = list(raw.notes, '"notes"', LIMITS.notes).map((note, k) => text(note, `notes[${k}]`));
     }
     return doc;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Schema sections, by trace version
+  // ---------------------------------------------------------------------------
+
+  function normalizeSchemaV1(value) {
+    return list(value, '"schema"', LIMITS.tables).map((table, t) => {
+      const at = `schema[${t}]`;
+      checkKeys(table, at, ['name', 'columns'], ['foreignKeys']);
+      const columns = list(table.columns, `${at}.columns`, LIMITS.columns).map((column, c) => {
+        const cat = `${at}.columns[${c}]`;
+        checkKeys(column, cat, ['name', 'type', 'nullable', 'primaryKey'], []);
+        return {
+          name: text(column.name, `${cat}.name`, { allowEmpty: false }),
+          type: text(column.type, `${cat}.type`),
+          nullable: bool(column.nullable, `${cat}.nullable`),
+          primaryKey: bool(column.primaryKey, `${cat}.primaryKey`),
+        };
+      });
+      const foreignKeys = has(table, 'foreignKeys')
+        ? list(table.foreignKeys, `${at}.foreignKeys`, LIMITS.foreignKeys).map((fk, f) => {
+          const fat = `${at}.foreignKeys[${f}]`;
+          checkKeys(fk, fat, ['column', 'table', 'target'], []);
+          return {
+            column: text(fk.column, `${fat}.column`, { allowEmpty: false }),
+            table: text(fk.table, `${fat}.table`, { allowEmpty: false }),
+            target: text(fk.target, `${fat}.target`, { allowEmpty: false }),
+          };
+        })
+        : [];
+      return { name: text(table.name, `${at}.name`, { allowEmpty: false }), columns, foreignKeys };
+    });
+  }
+
+  // Physical names are data from a catalog: they may hold quotes, dots, newlines or prototype-like words. They are only ever
+  // text, and only ever keys in a Map or Set. The rules match the library's capturePhysicalName, and errors never repeat a name.
+  function physicalName(value, path, dialect) {
+    if (typeof value !== 'string') fail(path, 'must be text');
+    if (value === '') fail(path, 'must not be empty');
+    if (value.length > LIMITS.string) fail(path, `is longer than ${LIMITS.string.toLocaleString('en-US')} bytes`);
+    if (value.includes('\u0000') || LONE_SURROGATE.test(value)) fail(path, 'must be well-formed text without a NUL character');
+    const max = dialect === 'postgresql' ? 63 : LIMITS.string;
+    if (new TextEncoder().encode(value).length > max) fail(path, `is longer than ${max.toLocaleString('en-US')} bytes`);
+    return value;
+  }
+
+  function logicalName(value, path) {
+    if (typeof value !== 'string' || !LOGICAL_NAME.test(value) || RESERVED_LOGICAL.test(value) || FORBIDDEN_KEYS.has(value)) {
+      fail(path, 'must be a simple logical name');
+    }
+    return value;
+  }
+
+  function identity(value, path, dialect) {
+    checkKeys(value, path, ['schema', 'table'], []);
+    return { schema: physicalName(value.schema, `${path}.schema`, dialect), table: physicalName(value.table, `${path}.table`, dialect) };
+  }
+
+  function oneOf(value, path, allowed) {
+    if (!allowed.includes(value)) fail(path, `must be one of ${allowed.join(', ')}`);
+    return value;
+  }
+
+  function count(value, path, max) {
+    if (!Number.isSafeInteger(value) || value < 0) fail(path, 'must be a whole number of zero or more');
+    if (value > max) fail(path, `is more than the limit of ${max.toLocaleString('en-US')}`);
+    return value;
+  }
+
+  // PostgreSQL compares names exactly. SQLite folds ASCII A to Z only, separately for each part.
+  const nameKey = (name, dialect) => (dialect === 'sqlite' ? name.replace(/[A-Z]/g, (c) => c.toLowerCase()) : name);
+  // A JSON tuple cannot collide across the two parts, whatever characters they hold.
+  const identityKey = (id, dialect) => JSON.stringify([nameKey(id.schema, dialect), nameKey(id.table, dialect)]);
+
+  function normalizeMapping(value, dialect) {
+    checkKeys(value, '"mapping"', ['tables', 'omittedTables'], []);
+    const logicals = new Set();
+    const physicals = new Set();
+    const tables = list(value.tables, '"mapping.tables"', LIMITS.tables).map((table, t) => {
+      const at = `mapping.tables[${t}]`;
+      checkKeys(table, at, ['logical', 'physical', 'schemaSource', 'policy', 'columns'], []);
+      const logical = logicalName(table.logical, `${at}.logical`);
+      if (logicals.has(logical)) fail(`${at}.logical`, 'repeats a registered table');
+      logicals.add(logical);
+      const physical = identity(table.physical, `${at}.physical`, dialect);
+      const key = identityKey(physical, dialect);
+      if (physicals.has(key)) fail(`${at}.physical`, 'repeats a stored table used by another registration');
+      physicals.add(key);
+      const properties = new Set();
+      const stored = new Set();
+      const columns = list(table.columns, `${at}.columns`, LIMITS.columns).map((column, c) => {
+        const cat = `${at}.columns[${c}]`;
+        checkKeys(column, cat, ['logical', 'physical'], []);
+        const property = logicalName(column.logical, `${cat}.logical`);
+        if (properties.has(property)) fail(`${cat}.logical`, 'repeats a property in this table');
+        properties.add(property);
+        const name = physicalName(column.physical, `${cat}.physical`, dialect);
+        if (stored.has(nameKey(name, dialect))) fail(`${cat}.physical`, 'repeats a stored column in this table');
+        stored.add(nameKey(name, dialect));
+        return { logical: property, physical: name };
+      });
+      return {
+        logical, physical,
+        schemaSource: oneOf(table.schemaSource, `${at}.schemaSource`, SCHEMA_SOURCES),
+        policy: oneOf(table.policy, `${at}.policy`, POLICIES),
+        columns,
+      };
+    });
+    return { tables, omittedTables: count(value.omittedTables, '"mapping.omittedTables"', LIMITS.tables) };
+  }
+
+  function normalizeInspection(value) {
+    checkKeys(value, '"inspection"', ['scope', 'registeredTables', 'omittedTables'], []);
+    return {
+      scope: oneOf(value.scope, '"inspection.scope"', SCOPES),
+      registeredTables: count(value.registeredTables, '"inspection.registeredTables"', LIMITS.tables),
+      omittedTables: count(value.omittedTables, '"inspection.omittedTables"', LIMITS.tables),
+    };
+  }
+
+  function normalizeSchemaV2(value, dialect) {
+    const identities = new Set();
+    return list(value, '"schema"', LIMITS.tables).map((table, t) => {
+      const at = `schema[${t}]`;
+      checkKeys(table, at, ['name', 'identity', 'coverage', 'columns', 'foreignKeys'], []);
+      const id = identity(table.identity, `${at}.identity`, dialect);
+      if (table.name !== id.table) fail(`${at}.name`, 'must equal its identity table');
+      const key = identityKey(id, dialect);
+      if (identities.has(key)) fail(`${at}.identity`, 'repeats a table already in this schema');
+      identities.add(key);
+      const seenColumns = new Set();
+      const columns = list(table.columns, `${at}.columns`, LIMITS.columns).map((column, c) => {
+        const cat = `${at}.columns[${c}]`;
+        checkKeys(column, cat, ['name', 'type', 'nullable', 'primaryKey'], []);
+        const name = physicalName(column.name, `${cat}.name`, dialect);
+        if (seenColumns.has(nameKey(name, dialect))) fail(`${cat}.name`, 'repeats a column in this table');
+        seenColumns.add(nameKey(name, dialect));
+        return { name, type: text(column.type, `${cat}.type`), nullable: bool(column.nullable, `${cat}.nullable`), primaryKey: bool(column.primaryKey, `${cat}.primaryKey`) };
+      });
+      checkKeys(table.coverage, `${at}.coverage`, ['columns'], ['totalColumnCount']);
+      const coverage = { columns: oneOf(table.coverage.columns, `${at}.coverage.columns`, COVERAGES) };
+      if (has(table.coverage, 'totalColumnCount')) {
+        coverage.totalColumnCount = count(table.coverage.totalColumnCount, `${at}.coverage.totalColumnCount`, Number.MAX_SAFE_INTEGER);
+        if (coverage.columns === 'all' ? coverage.totalColumnCount !== columns.length : coverage.totalColumnCount < columns.length) {
+          fail(`${at}.coverage.totalColumnCount`, `contradicts the ${columns.length.toLocaleString('en-US')} listed columns`);
+        }
+      }
+      const constraints = new Set();
+      const foreignKeys = list(table.foreignKeys, `${at}.foreignKeys`, LIMITS.foreignKeys).map((fk, f) => {
+        const fat = `${at}.foreignKeys[${f}]`;
+        checkKeys(fk, fat, ['constraint', 'width', 'columns', 'targetIdentity'], []);
+        const constraint = physicalName(fk.constraint, `${fat}.constraint`, dialect);
+        if (constraints.has(constraint)) fail(`${fat}.constraint`, 'repeats a constraint in this table');
+        constraints.add(constraint);
+        const components = list(fk.columns, `${fat}.columns`, LIMITS.columns).map((component, c) => {
+          const cat = `${fat}.columns[${c}]`;
+          checkKeys(component, cat, ['column', 'target'], []);
+          return {
+            column: physicalName(component.column, `${cat}.column`, dialect),
+            target: component.target === null ? null : physicalName(component.target, `${cat}.target`, dialect),
+          };
+        });
+        if (!Number.isSafeInteger(fk.width) || fk.width < 1 || fk.width !== components.length) {
+          fail(`${fat}.width`, `must be a whole number that matches its ${components.length.toLocaleString('en-US')} listed columns`);
+        }
+        return { constraint, width: fk.width, columns: components, targetIdentity: identity(fk.targetIdentity, `${fat}.targetIdentity`, dialect) };
+      });
+      return { name: id.table, identity: id, coverage, columns, foreignKeys };
+    });
+  }
+
+  function checkTraceCounts(mapping, inspection, schema, dialect) {
+    const accounted = mapping.tables.length + mapping.omittedTables;
+    if (inspection.registeredTables !== accounted) {
+      fail('"inspection.registeredTables"', `says ${inspection.registeredTables.toLocaleString('en-US')}, but the mapping accounts for ${accounted.toLocaleString('en-US')}`);
+    }
+    const inspected = schema.length + inspection.omittedTables;
+    if (inspected > LIMITS.tables) fail('"inspection.omittedTables"', `brings the snapshot to ${inspected.toLocaleString('en-US')} tables, the limit is ${LIMITS.tables}`);
+    if (inspection.scope === 'all') {
+      // An unscoped inspection has no registrations to narrow its columns by.
+      if (schema.some((table) => table.coverage.columns !== 'all')) fail('"schema"', 'lists partial columns, which an inspection of everything cannot produce');
+      return;
+    }
+    // Mapped inspection reads only registered identities, and each resolves to at most one table.
+    if (inspected > inspection.registeredTables) {
+      fail('"inspection.omittedTables"', `brings a mapped snapshot to ${inspected.toLocaleString('en-US')} tables, but only ${inspection.registeredTables.toLocaleString('en-US')} are registered`);
+    }
+    if (mapping.omittedTables === 0) {
+      const registered = new Set(mapping.tables.map((table) => identityKey(table.physical, dialect)));
+      schema.forEach((table, t) => {
+        if (!registered.has(identityKey(table.identity, dialect))) fail(`schema[${t}].identity`, 'is not registered, but this snapshot covers mapped tables only');
+      });
+    }
+  }
+
+  /** Joins registrations to observed tables by structured identity. For display only, and kept out of the document. */
+  function buildMappingModel(doc) {
+    if (doc.version !== 2) return null;
+    const observed = new Map(doc.schema.map((table) => [identityKey(table.identity, doc.dialect), table]));
+    const claimed = new Set();
+    const byLogical = new Map();
+    const cards = doc.mapping.tables.map((mapping) => {
+      const key = identityKey(mapping.physical, doc.dialect);
+      claimed.add(key);
+      const table = observed.get(key) || null;
+      const stored = table ? table.identity : mapping.physical;
+      byLogical.set(mapping.logical, { mapping, observed: table, identity: stored, search: `${stored.schema}\n${stored.table}`.toLowerCase() });
+      return { logical: mapping.logical, mapping, observed: table, identity: stored };
+    });
+    for (const table of doc.schema) {
+      if (!claimed.has(identityKey(table.identity, doc.dialect))) cards.push({ logical: null, mapping: null, observed: table, identity: table.identity });
+    }
+    return { observed, byLogical, cards };
   }
 
   // ---------------------------------------------------------------------------
@@ -271,6 +480,79 @@
   }
   const clear = (node) => { while (node.firstChild) node.removeChild(node.firstChild); };
   const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+
+  // Catalog names shown as text. Every format, control, separator and default-ignorable character becomes a visible code point,
+  // including the tab and newline that visible() keeps for SQL. Quotes stay as delimiters, so edge and repeated spaces can be seen.
+  const HIDDEN_IN_NAME = /[\p{C}\p{Z}\p{Default_Ignorable_Code_Point}]/gu;
+  const PLAIN_NAME = /^[\x21-\x7e]+(?: [\x21-\x7e]+)*$/;
+  const NAME_SHOWN = 96;
+  const NAME_HEAD = 64;
+  const NAME_TAIL = 24;
+  const codePoint = (c) => `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+  const showHidden = (value) => value.replace(HIDDEN_IN_NAME, (c) => (c === ' ' ? c : `[${codePoint(c)}]`));
+  /** True when the plain text of a name can mislead, so the exact code points are worth offering. */
+  const isUnusualName = (name) => name.length > NAME_SHOWN || !PLAIN_NAME.test(name) || name.includes('[U+');
+
+  function nameNode(name) {
+    const points = Array.from(name);
+    const wrap = el('span', 'ident');
+    const quoted = (value) => `"${showHidden(value).replaceAll('"', '""')}"`;
+    const code = document.createElement('code');
+    code.className = 'mono';
+    if (points.length <= NAME_SHOWN) {
+      code.textContent = quoted(name);
+      wrap.append(code);
+      return wrap;
+    }
+    // Never a silent clip: the length is stated, both ends stay visible, and the exact characters are one disclosure away.
+    code.textContent = `${quoted(points.slice(0, NAME_HEAD).join('')).slice(0, -1)}…${quoted(points.slice(-NAME_TAIL).join('')).slice(1)}`;
+    wrap.append(code, el('span', 'ident-length', `${points.length.toLocaleString('en-US')} characters, shortened`));
+    return wrap;
+  }
+
+  /** Schema and table stay two separate elements, so a table named with a dot can't read as a qualified name. */
+  function identityNode(id) {
+    const wrap = el('span', 'ident-pair');
+    wrap.append(nameNode(id.schema), el('span', 'ident-dot', '.'), nameNode(id.table));
+    return wrap;
+  }
+
+  /** Lazy, because a hostile card can hold a hundred 4 KiB names. Nothing is built until the reader asks. */
+  function exactNames(entries) {
+    const seen = new Set();
+    const unusual = entries.filter(({ label, value }) => {
+      const key = JSON.stringify([label, value]);
+      if (!isUnusualName(value) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (!unusual.length) return null;
+    const details = el('details', 'exact');
+    const summary = el('summary', 'exact-summary', `Exact characters of ${plural(unusual.length, 'unusual name', 'unusual names')}`);
+    details.append(summary);
+    let built = false;
+    details.addEventListener('toggle', () => {
+      if (!details.open || built) return;
+      built = true;
+      const listNode = el('dl', 'exact-list');
+      listNode.tabIndex = 0;
+      listNode.setAttribute('role', 'group');
+      listNode.setAttribute('aria-label', 'Code points of each unusual name. Scrolls.');
+      const encoder = new TextEncoder();
+      for (const { label, value } of unusual) {
+        const points = Array.from(value);
+        const row = el('div', 'exact-row');
+        row.append(el('dt', '', `${label}, ${plural(points.length, 'character', 'characters')}, ${plural(encoder.encode(value).length, 'UTF-8 byte', 'UTF-8 bytes')}`));
+        const dd = el('dd', 'mono exact-points');
+        dd.textContent = points.map(codePoint).join(' ');
+        row.append(dd);
+        listNode.append(row);
+      }
+      details.append(listNode);
+    });
+    return details;
+  }
+
   function formatMs(ms) {
     if (ms === null) return 'not recorded';
     // Each duration is finite, but a sum of very large ones can overflow; say so instead of printing Infinity.
@@ -300,6 +582,8 @@
 
   const state = {
     doc: null,
+    // The exact bytes behind doc, set and released together with it. Immutable, and the only thing Export writes.
+    sourceBlob: null,
     origin: '',
     generation: 0,
     abort: null,
@@ -312,6 +596,8 @@
     view: 'queries',
     rowButtons: [],
     paramRows: [],
+    outcomes: null,
+    mapping: null,
   };
 
   // ---------------------------------------------------------------------------
@@ -373,7 +659,7 @@
       if (generation !== state.generation) return;
       const doc = parseTrace(decode(buffer));
       if (doc.source !== 'fictional-demo') fail('', 'The demo endpoint did not return a fictional demo, so it was not shown.');
-      applyDocument(doc, 'Served by this local studio');
+      applyDocument(doc, buffer, 'Served by this local studio');
       setStatus(`Loaded the fictional demo: ${plural(doc.queries.length, 'statement', 'statements')}`);
     } catch (error) {
       if (generation !== state.generation || (error && error.name === 'AbortError')) return;
@@ -405,7 +691,7 @@
       if (generation !== state.generation) return;
       const doc = parseTrace(decode(buffer));
       if (generation !== state.generation) return;
-      applyDocument(doc, `File: ${name}`);
+      applyDocument(doc, buffer, `File: ${name}`);
       setStatus(`Opened ${name}: ${plural(doc.queries.length, 'statement', 'statements')}`);
     } catch (error) {
       if (generation !== state.generation) return;
@@ -424,26 +710,28 @@
     beginLoad();
     hideError();
     state.doc = null;
+    state.sourceBlob = null;
     state.origin = '';
     resetView();
     $('file-input').value = '';
     setBusy(false);
     render();
     setStatus(hadDocument
-      ? 'Cleared. The trace was removed from this page and nothing was saved.'
+      ? 'Cleared. The trace was removed from this page. Files you exported are not affected.'
       : 'Stopped loading. Nothing is loaded and nothing was saved.');
     $('empty-title').focus();
   }
 
   // Empties every container that can hold trace-derived text so a cleared trace does not linger in hidden DOM.
   const TRACE_CONTAINERS = ['counts', 'thread-scroll', 'thread-scale', 'query-list', 'showing', 'errors-count', 'table-filter-name',
-    'detail-body', 'relationships', 'tables', 'results', 'facts', 'notes', 'loaded-title', 'loaded-dialect',
+    'detail-body', 'schema-coverage', 'relationships', 'tables', 'results', 'facts', 'notes', 'loaded-title', 'loaded-dialect',
     'tab-count-queries', 'tab-count-schema', 'tab-count-results', 'outcome-note'];
   function purgeTraceDom() {
     for (const id of TRACE_CONTAINERS) clear($(id));
     state.rowButtons = [];
     state.paramRows = [];
     state.outcomes = null;
+    state.mapping = null;
     $('table-filter').hidden = true;
     $('outcome-note').hidden = true;
   }
@@ -464,9 +752,13 @@
     $('op-filter').value = 'all';
   }
 
-  function applyDocument(doc, origin) {
+  // Callers reach this only after validating the bytes and confirming their load is still current,
+  // so a failed, superseded or canceled read can never replace what Export writes.
+  function applyDocument(doc, buffer, origin) {
     state.doc = doc;
+    state.sourceBlob = new Blob([buffer], { type: 'application/json' });
     state.outcomes = analyzeOutcomes(doc.queries, isPostgres(doc));
+    state.mapping = buildMappingModel(doc);
     state.origin = origin;
     resetView();
     state.selected = doc.queries.length ? 0 : -1;
@@ -475,19 +767,18 @@
   }
 
   function exportDocument() {
-    const doc = state.doc;
-    if (!doc) return;
-    const blob = new Blob([`${JSON.stringify(doc, null, 2)}\n`], { type: 'application/json' });
+    const { doc, sourceBlob } = state;
+    if (!doc || !sourceBlob) return;
     const stamp = doc.generatedAt.replace(/[^0-9]/g, '').slice(0, 14) || 'export';
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = URL.createObjectURL(sourceBlob);
     link.download = `rowstitch-${doc.source === 'fictional-demo' ? 'demo' : 'trace'}-${stamp}.json`;
     link.rel = 'noopener';
     document.body.appendChild(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    setStatus(`Downloaded ${link.download}. It contains the trace exactly as loaded, including any values that were not redacted.`);
+    setStatus(`Downloaded ${link.download}, an unchanged copy of the original trace, including any values that were not redacted and anything this page does not show, such as repeated fields. It is not sanitized, so review it before sharing.`);
   }
 
   // ---------------------------------------------------------------------------
@@ -513,7 +804,7 @@
     $('loaded-dialect').hidden = false;
     setText($('loaded-title'), doc.title || 'Untitled trace');
     $('tab-count-queries').textContent = doc.queries.length.toLocaleString('en-US');
-    $('tab-count-schema').textContent = doc.schema.length.toLocaleString('en-US');
+    $('tab-count-schema').textContent = (state.mapping ? state.mapping.cards.length : doc.schema.length).toLocaleString('en-US');
     $('tab-count-results').textContent = doc.results ? doc.results.length.toLocaleString('en-US') : '0';
     renderCounts();
     renderThread();
@@ -834,8 +1125,9 @@
     if (state.table !== null && q.table !== state.table) return false;
     if (state.search) {
       const needle = state.search.toLowerCase();
+      const entry = state.mapping && q.table ? state.mapping.byLogical.get(q.table) : undefined;
       const hay = `${q.id}\n${q.operation}\n${q.table || ''}\n${q.transactionId || ''}\n${q.sql}`.toLowerCase();
-      if (!hay.includes(needle)) return false;
+      if (!hay.includes(needle) && !(entry && entry.search.includes(needle))) return false;
     }
     return true;
   }
@@ -1106,7 +1398,17 @@
     fact('Transaction', q.transactionId === null ? 'Autocommit' : q.transactionId, q.transactionId === null ? '' : 'mono');
     fact('Duration', formatMs(q.durationMs), 'mono');
     fact('Rows reported', q.rowCount === null ? 'not recorded' : q.rowCount.toLocaleString('en-US'), 'mono');
-    const effect = state.outcomes ? state.outcomes.writes.get(state.selected) : undefined;
+    if (state.mapping && q.table) {
+      // The statement's table is the registered name. The join to the stored name goes through the mapping, never the SQL text.
+      const entry = state.mapping.byLogical.get(q.table);
+      const wrap = el('div', 'fact fact-stored');
+      const value = el('dd', '');
+      if (entry) value.append(identityNode(entry.identity));
+      else value.textContent = doc.mapping.omittedTables ? 'Its mapping entry was left out of this trace' : 'This trace has no mapping entry for it';
+      wrap.append(el('dt', '', 'Stored as'), value);
+      facts.append(wrap);
+    }
+    const effect =state.outcomes ? state.outcomes.writes.get(state.selected) : undefined;
     if (effect) {
       const wrap = el('div', 'fact fact-effect');
       const value = el('dd', `effect is-${effect.state}`);
@@ -1267,9 +1569,273 @@
   }
 
   function renderSchema() {
-    const doc = state.doc;
+    const coverage = $('schema-coverage');
+    clear(coverage);
+    if (state.mapping) renderMappedSchema(coverage);
+    else renderLegacySchema(coverage);
+  }
+
+  const POLICY_LABELS = new Map([
+    ['legacy', 'Declared policy: legacy, this database\'s default comparison'],
+    ['exact', 'Declared policy: exact, the mapped columns must match'],
+    ['subset', 'Declared policy: subset, allows extra columns'],
+  ]);
+
+  function renderCoverage(host) {
+    const { doc, mapping: model } = state;
+    const { scope, registeredTables, omittedTables } = doc.inspection;
+    const say = (tone, message) => host.append(el('p', `callout ${tone}`, message));
+    const counts = `${plural(registeredTables, 'table', 'tables')} registered, ${plural(doc.schema.length, 'table', 'tables')} in this snapshot.`;
+    if (scope === 'mapped') {
+      say('is-note', registeredTables === 0
+        ? 'No tables are registered, so none were inspected. This says nothing about the database.'
+        : `Mapped tables only. Other tables may exist. ${counts}`);
+    } else {
+      say('is-note', `Every table this connection could see in the namespaces it inspected, at that moment. It does not prove the database is empty or unchanged since. ${registeredTables === 0 ? 'No tables are registered, so no stored names are mapped.' : counts}`);
+    }
+    if (doc.mapping.omittedTables) say('is-warn', `${plural(doc.mapping.omittedTables, 'registration was', 'registrations were')} left out of this file, so ${doc.mapping.omittedTables === 1 ? 'its mapping is' : 'their mappings are'} not shown.`);
+    if (omittedTables) say('is-warn', `${plural(omittedTables, 'table', 'tables')} from the catalog ${omittedTables === 1 ? 'was' : 'were'} left out of this file, for example because ${omittedTables === 1 ? 'it was' : 'they were'} too large to export intact.`);
+    if (model.cards.some((card) => card.mapping)) host.append(el('p', 'fine', 'Policies are what the application declared, not a check result. They do not cover triggers, row security or CHECK rules.'));
+  }
+
+  function renderMappedSchema(coverage) {
+    const { doc, mapping: model } = state;
+    const key = (id) => identityKey(id, doc.dialect);
+    renderCoverage(coverage);
+
     const rel = $('relationships');
     clear(rel);
+    const referencedBy = new Map();
+    let constraints = 0;
+    for (const table of doc.schema) {
+      for (const fk of table.foreignKeys) {
+        constraints += 1;
+        const target = model.observed.get(key(fk.targetIdentity));
+        const li = el('li', 'relationship');
+        const head = el('div', 'rel-head');
+        head.append(identityNode(table.identity), el('span', 'arrow', ' references '), identityNode(fk.targetIdentity));
+        if (!target) head.append(el('span', 'tag', 'Table not in this snapshot'));
+        if (fk.width > 1) head.append(el('span', 'tag', `${fk.width} columns together`));
+        li.append(head);
+        const pairs = el('ul', 'rel-pairs');
+        const local = new Set(table.columns.map((c) => nameKey(c.name, doc.dialect)));
+        const remote = target ? new Set(target.columns.map((c) => nameKey(c.name, doc.dialect))) : null;
+        for (const pair of fk.columns) {
+          const row = el('li', 'rel-pair');
+          row.append(nameNode(pair.column));
+          if (!local.has(nameKey(pair.column, doc.dialect))) row.append(el('span', 'tag', 'Column not in this snapshot'));
+          row.append(el('span', 'arrow', ' to '));
+          if (pair.target === null) row.append(el('span', 'tag is-warn', 'Target key not resolved by the catalog'));
+          else {
+            row.append(nameNode(pair.target));
+            if (remote && !remote.has(nameKey(pair.target, doc.dialect))) row.append(el('span', 'tag', 'Column not in this snapshot'));
+          }
+          pairs.append(row);
+        }
+        li.append(pairs);
+        rel.append(li);
+        const refKey = key(fk.targetIdentity);
+        if (!referencedBy.has(refKey)) referencedBy.set(refKey, []);
+        referencedBy.get(refKey).push(table.identity);
+      }
+    }
+    if (!constraints) rel.append(el('li', 'muted', 'No foreign keys are recorded.'));
+
+    const host = $('tables');
+    clear(host);
+    host.classList.add('is-mapped');
+    if (!model.cards.length) host.append(el('p', 'muted', 'No tables are listed. That says nothing about what the database holds.'));
+    model.cards.forEach((card, index) => host.append(tableCard(card, index, referencedBy.get(key(card.identity)))));
+  }
+
+  function tableCard(card, index, references) {
+    const { doc } = state;
+    const { logical, mapping, observed } = card;
+    const section = el('section', 'table-card');
+    const headingId = `table-card-${index}`;
+    section.setAttribute('aria-labelledby', headingId);
+    const names = [];
+    const note = (label, value) => names.push({ label, value });
+    note('Stored schema', card.identity.schema);
+    note('Stored table', card.identity.table);
+
+    const head = el('div', 'table-head');
+    const heading = el('h2', 'table-name mono');
+    heading.id = headingId;
+    if (logical !== null) setText(heading, logical);
+    else heading.append(identityNode(card.identity));
+    head.append(heading);
+    if (mapping === null) head.append(el('span', 'tag', 'Not registered'));
+    else if (observed) head.append(el('span', 'muted', plural(observed.columns.length, 'column', 'columns')));
+    else head.append(el('span', 'tag is-warn', 'Not in this snapshot'));
+    section.append(head);
+
+    const sameColumns = mapping !== null && mapping.columns.every((c) => c.logical === c.physical);
+    const sameName = mapping !== null && mapping.physical.table === mapping.logical;
+    if (mapping) {
+      const line = el('p', 'stored-as');
+      if (sameName) {
+        line.append(document.createTextNode('Stored under the same name, in '), nameNode(card.identity.schema));
+      } else {
+        line.append(document.createTextNode('Stored as '), identityNode(card.identity));
+      }
+      line.append(el('span', 'muted', mapping.schemaSource === 'default' ? ' (default schema)' : ' (named schema)'));
+      section.append(line);
+      section.append(el('p', 'fine policy', POLICY_LABELS.get(mapping.policy)));
+    }
+
+    if (observed) section.append(el('p', 'fine coverage-line', coverageLine(observed)));
+    else {
+      section.append(el('p', 'callout is-note', doc.inspection.omittedTables
+        ? 'Registered, but this snapshot has no catalog entry for it. The table may not exist, or its entry may be one of those left out of this file.'
+        : 'Registered, but this snapshot has no catalog entry for it. That can mean the table does not exist, or that it changed after inspection.'));
+    }
+
+    const rows = columnRows(mapping, observed);
+    if (rows.length) section.append(columnTable(rows, mapping !== null && !sameColumns, note));
+    if (mapping && !observed) {
+      section.append(el('p', 'fine', 'Types and rules come from the catalog, so they are not known here.'));
+    }
+
+    if (observed && observed.foreignKeys.length) {
+      section.append(el('p', 'fine', `${plural(observed.foreignKeys.length, 'foreign key', 'foreign keys')} from this table, listed under Relationships.`));
+      for (const fk of observed.foreignKeys) {
+        note('Constraint', fk.constraint);
+        note('Referenced schema', fk.targetIdentity.schema);
+        note('Referenced table', fk.targetIdentity.table);
+        for (const pair of fk.columns) {
+          note('Foreign key column', pair.column);
+          if (pair.target !== null) note('Referenced column', pair.target);
+        }
+      }
+    }
+    if (references) {
+      const line = el('p', 'fine referenced-by');
+      line.append(document.createTextNode('Referenced by '));
+      references.forEach((id, k) => {
+        if (k) line.append(document.createTextNode(', '));
+        line.append(identityNode(id));
+      });
+      section.append(line);
+    }
+
+    const exact = exactNames(names);
+    if (exact) section.append(exact);
+
+    if (logical === null) {
+      section.append(el('p', 'fine', 'Not registered, so no statement in this trace is linked to it.'));
+    } else {
+      const used = doc.queries.filter((q) => q.table === logical).length;
+      const show = el('button', 'btn btn-small', used ? `Show ${plural(used, 'statement', 'statements')}` : 'No statements recorded for this table');
+      show.type = 'button';
+      show.disabled = !used;
+      show.addEventListener('click', () => showTableStatements(logical));
+      section.append(show);
+    }
+    return section;
+  }
+
+  function coverageLine(table) {
+    const shown = table.columns.length;
+    const total = table.coverage.totalColumnCount;
+    if (table.coverage.columns === 'all') return total === undefined ? 'Every column in the catalog is listed.' : `All ${plural(total, 'column', 'columns')} in the catalog ${total === 1 ? 'is' : 'are'} listed.`;
+    if (total === undefined) return 'Mapped and key columns only. The catalog gave no total, so other columns may exist.';
+    if (total === shown) return `Mapped and key columns only, and the catalog counts ${plural(total, 'column', 'columns')} in all.`;
+    const more = total - shown;
+    return `Mapped and key columns only: ${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}. ${plural(more, 'more column exists', 'more columns exist')} in the database and ${more === 1 ? 'is' : 'are'} not listed.`;
+  }
+
+  /** One row per mapped property, then any observed column no property maps. Matched by comparing names for this database. */
+  function columnRows(mapping, observed) {
+    const dialect = state.doc.dialect;
+    const catalog = new Map((observed ? observed.columns : []).map((column) => [nameKey(column.name, dialect), column]));
+    const foreign = new Set();
+    if (observed) for (const fk of observed.foreignKeys) for (const pair of fk.columns) foreign.add(nameKey(pair.column, dialect));
+    const used = new Set();
+    const rows = [];
+    for (const column of mapping ? mapping.columns : []) {
+      const key = nameKey(column.physical, dialect);
+      const found = catalog.get(key) || null;
+      if (found) used.add(key);
+      rows.push({ property: column.logical, stored: found ? found.name : column.physical, column: found, foreign: foreign.has(key) });
+    }
+    for (const [key, column] of catalog) {
+      if (!used.has(key)) rows.push({ property: null, stored: column.name, column, foreign: foreign.has(key) });
+    }
+    return rows;
+  }
+
+  // Explicit roles, because the narrow layout restyles these cells as a grid and CSS display would otherwise remove their table semantics.
+  function columnTable(rows, showProperty, note) {
+    const table = el('table', `columns mapped-columns${showProperty ? ' has-property' : ''}`);
+    table.setAttribute('role', 'table');
+    const headers = showProperty ? ['Property', 'Stored column', 'Type', 'Rules'] : ['Column', 'Type', 'Rules'];
+    const cell = (label, className) => {
+      const td = el('td', className);
+      td.setAttribute('role', 'cell');
+      td.dataset.label = label;
+      return td;
+    };
+    const thead = el('thead');
+    thead.setAttribute('role', 'rowgroup');
+    const hr = el('tr');
+    hr.setAttribute('role', 'row');
+    for (const header of headers) {
+      const th = el('th', '', header);
+      th.setAttribute('role', 'columnheader');
+      hr.append(th);
+    }
+    thead.append(hr);
+    const tbody = el('tbody');
+    tbody.setAttribute('role', 'rowgroup');
+    for (const row of rows) {
+      const tr = el('tr');
+      tr.setAttribute('role', 'row');
+      if (showProperty) {
+        const property = cell('Property', row.property === null ? 'muted' : 'mono');
+        setText(property, row.property === null ? 'Not mapped' : row.property);
+        tr.append(property);
+      }
+      const stored = cell(showProperty ? 'Stored column' : 'Column', '');
+      stored.append(nameNode(row.stored));
+      note('Stored column', row.stored);
+      tr.append(stored);
+      const type = cell('Type', 'mono muted');
+      setText(type, row.column ? (row.column.type || 'untyped') : 'Not in this snapshot');
+      tr.append(type);
+      const rules = [];
+      if (row.column) {
+        if (row.column.primaryKey) rules.push('Primary key');
+        rules.push(row.column.nullable ? 'Nullable' : 'Required');
+      }
+      if (row.foreign) rules.push('Foreign key');
+      const rule = cell('Rules', '');
+      setText(rule, rules.join(' · ') || 'Not known');
+      tr.append(rule);
+      tbody.append(tr);
+    }
+    table.append(thead, tbody);
+    return table;
+  }
+
+  function showTableStatements(name) {
+    state.table = name;
+    state.search = '';
+    state.op = 'all';
+    state.errorsOnly = false;
+    $('query-search').value = '';
+    $('op-filter').value = 'all';
+    selectView('queries', true);
+    refreshListAndSelection();
+  }
+
+  function renderLegacySchema(coverage) {
+    const doc = state.doc;
+    // Version 1 never recorded stored names, so none are inferred, even where the table name looks like one.
+    coverage.append(el('p', 'callout is-note', 'This trace predates mappings. It shows table names as they were recorded, with no stored names, schemas or coverage.'));
+    const rel = $('relationships');
+    clear(rel);
+    $('tables').classList.remove('is-mapped');
     const names = new Set(doc.schema.map((t) => t.name));
     const referencedBy = new Map();
     let count = 0;
@@ -1321,16 +1887,7 @@
       const show = el('button', 'btn btn-small', used ? `Show ${plural(used, 'statement', 'statements')}` : 'No statements on this table');
       show.type = 'button';
       show.disabled = !used;
-      show.addEventListener('click', () => {
-        state.table = table.name;
-        state.search = '';
-        state.op = 'all';
-        state.errorsOnly = false;
-        $('query-search').value = '';
-        $('op-filter').value = 'all';
-        selectView('queries', true);
-        refreshListAndSelection();
-      });
+      show.addEventListener('click', () => showTableStatements(table.name));
       card.append(show);
       host.append(card);
     }
@@ -1408,7 +1965,12 @@
     add('Loaded from', state.origin);
     add('Generated', `${doc.generatedAt} (${when.toISOString().replace('T', ' ').slice(0, 19)} UTC)`, 'mono');
     add('Statements', `${doc.queries.length.toLocaleString('en-US')}, ${s.failed} failed, ${plural(state.outcomes.transactions, 'transaction', 'transactions')}, ${plural(state.outcomes.savepoints, 'savepoint', 'savepoints')}`);
-    add('Schema', `${plural(doc.schema.length, 'table', 'tables')}, ${plural(columns, 'column', 'columns')}, ${plural(relationships, 'foreign key', 'foreign keys')}`);
+    add('Trace format', doc.version === 2 ? 'Version 2, with stored names and coverage' : 'Version 1. This trace predates mappings.');
+    add('Schema', `${plural(doc.schema.length, 'table', 'tables')}, ${plural(columns, 'column', 'columns')}, ${plural(relationships, 'foreign key', 'foreign keys')}${doc.version === 2 ? ' in this snapshot' : ''}`);
+    if (doc.version === 2) {
+      add('Inspection', doc.inspection.scope === 'mapped' ? 'Mapped tables only. Other tables may exist.' : 'Every table visible when inspected. Not proof of an empty or unchanged database.');
+      add('Registered tables', `${doc.inspection.registeredTables.toLocaleString('en-US')}, with ${doc.mapping.omittedTables.toLocaleString('en-US')} left out of the mapping and ${doc.inspection.omittedTables.toLocaleString('en-US')} left out of the snapshot`);
+    }
     add('Result previews', doc.results ? plural(doc.results.length, 'preview', 'previews') : 'Not included');
     const t = state.outcomes.totals;
     add('Write effects in this trace', `${t.kept} committed, ${t.undone} undone, ${t.pending} not finished, ${t.unknown} unknown`);

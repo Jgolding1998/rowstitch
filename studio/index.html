@@ -95,7 +95,7 @@ writeFileSync('trace.json', JSON.stringify(db.exportTrace({ title: 'My app' })))
 
         <h2 class="guide-heading" id="guide-brief-title">Using a coding agent?</h2>
         <p class="guide-note">Paste this into your agent. It keeps the work in your chosen project, and on made-up data unless you name a database.</p>
-        <textarea class="guide-brief mono" id="guide-brief" readonly rows="13" spellcheck="false" aria-labelledby="guide-brief-title">Help me add Rowstitch to this Node.js project.
+        <textarea class="guide-brief mono" id="guide-brief" readonly rows="19" spellcheck="false" aria-labelledby="guide-brief-title">Help me add Rowstitch to this Node.js project.
 
 Rowstitch is a TypeScript ORM for a supported Node.js LTS release. SQLite is built in. PostgreSQL and in-memory PGlite are optional and cover fewer features. Read the README for the minimum supported versions and check node --version first. It needs no account or API key and is installed from its GitHub release, not the npm registry. Read the README first and use its current install command:
 https://github.com/Jgolding1998/rowstitch#readme
@@ -123,7 +123,7 @@ https://github.com/Jgolding1998/rowstitch#readme
         <button type="button" class="btn btn-primary" id="empty-open">Open a trace file</button>
         <button type="button" class="btn" id="empty-demo">Load the fictional demo</button>
       </div>
-      <p class="fine">Rowstitch trace JSON, version 1, up to 2 MiB. You can also drop the file onto this window.</p>
+      <p class="fine">Rowstitch trace JSON, version 1 or 2, up to 2 MiB. You can also drop the file onto this window.</p>
       <p class="fine"><button type="button" class="link-button" id="empty-guide">How do I get a trace from my app?</button></p>
     </section>
 
@@ -193,6 +193,7 @@ https://github.com/Jgolding1998/rowstitch#readme
       <section class="view" id="view-schema" role="tabpanel" aria-labelledby="tab-schema" hidden>
         <h1 class="view-title">Schema</h1>
         <p class="view-lede">Tables and foreign keys as recorded in the trace. The studio does not read a database.</p>
+        <div class="schema-coverage" id="schema-coverage"></div>
         <section class="block" aria-labelledby="rel-title">
           <h2 class="block-title" id="rel-title">Relationships</h2>
           <ul class="relationships" id="relationships"></ul>
@@ -215,9 +216,10 @@ https://github.com/Jgolding1998/rowstitch#readme
         </section>
         <section class="block privacy" aria-labelledby="privacy-title">
           <h2 class="block-title" id="privacy-title">Before you share a trace</h2>
-          <p>Redaction is not anonymization. Bound values may be replaced with <code class="mono">[redacted]</code>, but the title, table and column names, SQL text, statement counts and timings stay readable, and they can reveal what an application does and how its data is shaped.</p>
+          <p>Redaction is not anonymization. Bound values may be replaced with <code class="mono">[redacted]</code>, but the title, table and column names, stored names, SQL text, statement counts and timings stay readable, and they can reveal what an application does and how its data is shaped.</p>
           <p>Write effects such as "Committed" or "Undone" are read from the order of BEGIN, SAVEPOINT, COMMIT and ROLLBACK statements in this file. They describe this trace only, not the current database or whether your application's call succeeded. A file can be edited, so treat them as a reading aid, not proof.</p>
-          <p>This page shows what is in the file and nothing else. It keeps the trace in this tab's memory only, makes no requests besides loading the fictional demo from this local server, and never executes SQL. Export downloads the trace exactly as loaded. Clear removes it from the page.</p>
+          <p>This page shows only what it reads from the file, and it may not show all of it. It keeps the trace in this tab's memory only, makes no requests besides loading the fictional demo from this local server, and never executes SQL.</p>
+          <p>Export downloads an unchanged copy of the original trace. It is not sanitized: it keeps any values that were not redacted and anything this page does not show, such as an earlier value of a repeated field. This page can show very large or very precise numbers approximately, but the copy keeps them as written. Clear removes the trace from this page and does not affect files you exported.</p>
         </section>
       </section>
     </div>

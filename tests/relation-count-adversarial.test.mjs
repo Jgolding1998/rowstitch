@@ -96,7 +96,8 @@ test('nested counts and quantifiers use immediate self-relation scopes and disti
   assert.deepEqual(ids(repo.findMany({ where: countRelated(relation, '=', 1, none(relation)) })), [3]);
   assert.deepEqual(ids(repo.findMany({ where: every(relation, countRelated(relation, '=', 0)) })), [2, 3, 4, 5, 6]);
   const compiled = repo.compileSelect({ where: and(countRelated(relation, '>=', 1, some(relation)), some(relation, countRelated(relation, '=', 0))) });
-  const aliases = compiled.sql.match(/ AS "__rs_[^"]+"/g) ?? [];
+  assert.ok(compiled.sql.includes('FROM "main"."count_nodes" AS "__rs_root"'));
+  const aliases = compiled.sql.match(/ AS "__rs_filter_\d+"/g) ?? [];
   assert.equal(aliases.length, 4); assert.equal(new Set(aliases).size, 4);
   assert.deepEqual(compiled.parameters, [1, 0, 1000, 0]);
 });

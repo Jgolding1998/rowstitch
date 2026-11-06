@@ -281,7 +281,7 @@ test('cancellation: an aborted transaction rolls back; a pre-aborted signal send
   assert.equal(await db.table(owners).count(), 0);
 });
 
-test('unconfirmed COMMIT: no rollback inferred, connection closed once, conservative v1 trace with explicit notes, durable effect visible', async t => {
+test('unconfirmed COMMIT: no rollback inferred, connection closed once, conservative v2 trace with explicit notes, durable effect visible', async t => {
   const f = files(t), file = f.file('unknown');
   { const setup = openDatabase(file, { tables }); setup.ensureSchema(); setup.close(); }
   const c = controlled(file);
@@ -296,7 +296,7 @@ test('unconfirmed COMMIT: no rollback inferred, connection closed once, conserva
   const tail = trace.queries.slice(-3).map(q => [q.operation, q.sql.split(' ')[0], q.status, q.transactionId]);
   assert.deepEqual(tail, [['transaction', 'BEGIN', 'ok', 'tx1'], ['insert', 'INSERT', 'ok', 'tx1'], ['transaction', 'COMMIT', 'error', 'tx1']]);
   assert.ok(trace.notes.some(note => /unknown outcome/.test(note)) && trace.notes.some(note => /1 request\(s\).*unconfirmed/.test(note)));
-  assert.equal(trace.version, 1);
+  assert.equal(trace.version, 2);
   for (const q of trace.queries) assert.ok(q.status === 'ok' || q.status === 'error');
   await db.close();
   assert.equal(c.state.closes, 1);
@@ -305,7 +305,7 @@ test('unconfirmed COMMIT: no rollback inferred, connection closed once, conserva
 });
 
 test('trace snapshots are synchronous, bounded and redacted; compile never executes; close semantics', async t => {
-  const f = files(t), db = await openAsyncDatabase(f.file('trace'), { tables, maxTraceEntries: 5 });
+  const f = files(t), db = f.own(await openAsyncDatabase(f.file('trace'), { tables, maxTraceEntries: 5 }));
   await db.ensureSchema();
   const snapshot = db.exportTrace();
   assert.deepEqual(snapshot.schema.map(s => s.name), ['adb_items', 'adb_owners']);

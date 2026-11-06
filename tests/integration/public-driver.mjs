@@ -23,6 +23,7 @@ import { runPublicEagerResourceCases } from './eager-resources.mjs';
 import { runEagerNativeControlCases } from './eager-native-controls.mjs';
 import { runPublicEagerComparisonCases } from './public-eager-compare.mjs';
 import { runPublicParameterBudgetCases } from './parameter-budget.mjs';
+import { runPublicPhysicalMappingCases } from './public-physical-mapping.mjs';
 import { connectPgliteTransport } from './glue.mjs';
 
 const args = process.argv.slice(2), knownFlags = new Set(['--no-docker', '--require-native', '--compare', '--comparison-only']);
@@ -126,12 +127,12 @@ const compiledHashes = treeHashes(join(consumer, 'dist'), '.js');
 assert.deepEqual(compiledHashes, treeHashes(distSource, '.js'), 'The consumer must hold the exact current compiled source');
 const harnessNames = ['public-driver.mjs', 'public-api.mjs', 'public-compare.mjs', 'public-aggregates.mjs',
   'public-aggregate-compare.mjs', 'aggregate-guards.mjs', 'aggregate-operators.mjs', 'aggregate-capacity.mjs', 'public-eager.mjs', 'eager-resources.mjs',
-  'eager-native-controls.mjs', 'public-eager-compare.mjs', 'parameter-budget.mjs', 'glue.mjs'];
+  'eager-native-controls.mjs', 'public-eager-compare.mjs', 'parameter-budget.mjs', 'public-physical-mapping.mjs', 'glue.mjs'];
 const harnessHashes = Object.fromEntries(harnessNames.map(name => [name, hashOf(fileURLToPath(new URL(name, import.meta.url)))]));
 const adapterHashes = Object.fromEntries(readdirSync(join(consumer, 'dist/adapters')).filter(name => name.endsWith('.js')).sort().map(name => [name, hashOf(join(consumer, 'dist/adapters', name))]));
 const report = { format: 'rowstitch-public-driver-checks', label, node: process.version, packages: { pg: '8.23.1', pglite: '0.5.15' }, imageDigest, adapterHashes, passed: [], skipped: [], failed: [],
   selection: { comparisonOnly }, notExecuted: [],
-  sourceHashes, compiledHashes, harnessHashes, requireNative, compare, publicApi: {}, publicAggregates: {}, publicEager: {}, eagerCapacity: {}, eagerResources: {}, parameterBudget: {}, eagerNativeControls: null, eagerComparison: null, aggregateGuards: {}, aggregateOperators: {}, aggregateCapacity: {}, cleanup: {},
+  sourceHashes, compiledHashes, harnessHashes, requireNative, compare, publicApi: {}, physicalMapping: {}, publicAggregates: {}, publicEager: {}, eagerCapacity: {}, eagerResources: {}, parameterBudget: {}, eagerNativeControls: null, eagerComparison: null, aggregateGuards: {}, aggregateOperators: {}, aggregateCapacity: {}, cleanup: {},
   scope: 'Adapter boundary and actual public scalar/aggregate/group/projected/eager ORM APIs on fictional fixtures, native PostgreSQL trigger/partition/restricted-login RLS controls, real-worker wide capacity and explicitly inline PGlite malformed-storage/operator controls. Native graph controls separately exercise ICU, hostile resolution, statement visibility, cancellation and backend loss. Parameter tests exercise the actual payload limit, not a heap or full-protocol bound. Not full ORM parity, pools, replicas, managed services or a performance or reliability claim.' };
 const password = randomBytes(32).toString('base64url');
 const pause = ms => new Promise(ok => setTimeout(ok, ms));
@@ -163,6 +164,12 @@ await step('pglite public API: actual factory, scalar CRUD/filters/relations and
   assert.equal(result.cases.length, 10);
   assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases);
   report.publicApi.pglite = result;
+});
+await step('pglite public physical mappings: fresh worker and exact quoted identities', async () => {
+  const result = await runPublicPhysicalMappingCases({ engine: 'pglite', sdk, openPgliteDatabase });
+  assert.equal(result.cases.length, 4);
+  assert.deepEqual(result.cleanup, { openedDatabases: 2, closedDatabases: 2, createdSchemas: 0, droppedSchemas: 0 });
+  report.physicalMapping.pglite = result;
 });
 await step('pglite public summaries: actual worker factory, root/group/related/projection and numeric boundaries', async () => {
   const result = await runPublicAggregateCases({ engine: 'pglite', sdk, openPgliteDatabase });
@@ -632,6 +639,13 @@ async function native() {
     assert.equal(result.cleanup.openedDatabases, result.cleanup.closedDatabases);
     assert.equal(result.cleanup.schemaDropped, true); assert.equal(result.cleanup.roleDropped, true);
     report.publicApi.postgresql = result;
+  });
+  await step('native public physical mappings: scoped catalogs, policy drift and cross-schema foreign keys', async () => {
+    const result = await runPublicPhysicalMappingCases({ engine: 'postgresql', sdk, openPostgresDatabase,
+      postgresOptions: { ...options, ssl: false }, admin: publicAdmin });
+    assert.equal(result.cases.length, 9);
+    assert.deepEqual(result.cleanup, { openedDatabases: 13, closedDatabases: 13, createdSchemas: 4, droppedSchemas: 4 });
+    report.physicalMapping.postgresql = result;
   });
   await step('native public summaries: actual PostgreSQL factory, root/group/related/projection and numeric boundaries', async () => {
     report.publicAggregates.postgresql = await runPublicAggregateCases({ engine: 'postgresql', sdk, openPostgresDatabase,

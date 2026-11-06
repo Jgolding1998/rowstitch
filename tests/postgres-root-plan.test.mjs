@@ -50,6 +50,24 @@ test('counts qualify the aggregate and require no caller SQL or values',()=>{
   assert.equal(decodePostgresRoot(compiled,raw(compiled,[['0']])),0);
 });
 
+test('legacy root plans reject physical renames and different schemas while retaining exact identity mappings', () => {
+  const unsupported = [
+    defineTable(table.name, table.columns, { storage: { table: 'SYNTHETIC_PRIVATE_VALUE' } }),
+    defineTable(table.name, table.columns, { storage: { schema: 'SYNTHETIC_PRIVATE_VALUE' } }),
+    defineTable(table.name, { ...table.columns, label: table.columns.label.storedAs('Label') }),
+  ];
+  for (const mapped of unsupported) {
+    assert.throws(() => planPostgresInsert(mapped, data()), code('SCHEMA'));
+    assert.throws(() => planPostgresByKey(mapped, { id: 1 }), code('SCHEMA'));
+    assert.throws(() => planPostgresCount(mapped), code('SCHEMA'));
+  }
+  const identity = defineTable(table.name, { ...table.columns, label: table.columns.label.storedAs('label') },
+    { storage: { table: table.name, schema: 'demo_space' } });
+  assert.deepEqual(compilePostgresRoot(planPostgresInsert(identity, data(), 'demo_space')),
+    compilePostgresRoot(planPostgresInsert(table, data(), 'demo_space')));
+  assert.throws(() => planPostgresCount(identity), code('SCHEMA'));
+});
+
 test('all input records must have exactly the mapped fields and safe logical values',()=>{
   for(const change of [r=>{delete r.label;},r=>{r.extra='no';},r=>{r.id='1';},r=>{r.enabled=1;},r=>{r.data={x:undefined};},r=>{r.ratio=Infinity;},r=>{r.label='bad\0text';},r=>{r[Symbol('hidden')]=1;}]) {
     const input=data();change(input);assert.throws(()=>planPostgresInsert(table,input),code('VALIDATION'));

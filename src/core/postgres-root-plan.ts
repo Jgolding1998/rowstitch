@@ -20,8 +20,14 @@ export interface CompiledPostgresRoot {
 const plans = new WeakSet<object>(), statements = new WeakSet<object>();
 const invalid = (code: 'VALIDATION' | 'QUERY' | 'DATA' | 'SCHEMA', message: string): never => { throw new RowstitchError(code, message); };
 const CAST = Object.freeze({ bigint:'"pg_catalog"."int8"', 'double precision':'"pg_catalog"."float8"', text:'"pg_catalog"."text"', boolean:'"pg_catalog"."bool"', jsonb:'"pg_catalog"."jsonb"' });
-function mapping(input: AnyTable): Mapping {
+/** The legacy roots lock, inspect and query only identity names in their configured schema. */
+export function requirePostgresRootIdentity(input: AnyTable, schema: string): Mapping {
   if (!isTable(input)) return invalid('SCHEMA', 'A PostgreSQL root plan requires a genuine mapped table.');
+  const { storage } = input;
+  if (storage.table !== input.name || (storage.schema ?? schema) !== schema
+    || Object.keys(input.columns).some(name => storage.columns[name] !== name)) {
+    return invalid('SCHEMA', 'The legacy PostgreSQL root API requires identity storage names in its configured schema.');
+  }
   return input;
 }
 function freezeJson(value: unknown): unknown {
@@ -46,7 +52,7 @@ function capturedRecord(input: unknown, keys: readonly string[]): Record<string,
   } catch { return invalid('VALIDATION', 'The PostgreSQL root record must provide exactly its required fields as plain data.'); }
 }
 function plan(operation: PostgresRootPlan['operation'], input: AnyTable, data: unknown, schema: string): PostgresRootPlan {
-  const table = mapping(input);
+  const table = requirePostgresRootIdentity(input, schema);
   identifier(schema);
   if (/^(?:pg_|information_schema$)/i.test(schema)) return invalid('SCHEMA', 'System and temporary PostgreSQL schemas are not supported by root plans.');
   const names = Object.keys(table.columns);

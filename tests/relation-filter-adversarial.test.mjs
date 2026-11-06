@@ -168,7 +168,7 @@ test('nested filters work inside text-correlated eager windows with separate ali
   assert.deepEqual(actual, [{ id: 'a', page: [{ label: 'Second' }] }, { id: 'b', page: [] }]);
   const queries = db.exportTrace().queries;
   assert.equal(queries.length, 2); assert.ok(queries[1].sql.startsWith('WITH '));
-  assert.ok(queries[1].sql.includes('"__rs_filter_0"."childId" = "filter_window_children"."id"'));
+  assert.ok(queries[1].sql.includes('"__rs_filter_0"."childId" = "__rs_root"."id"'));
 });
 
 test('unsupported relationship key domains reject for filters and empty eager reads', t => {

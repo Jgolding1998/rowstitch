@@ -4,7 +4,7 @@ import { RowstitchError } from './errors.js';
 import { trackTransactionPromise, type AsyncOperationOptions, type AsyncSession, type AsyncTransaction } from './async-session.js';
 import { identifier,isTable,plainRecord,type AnyTable,type KeyRow,type Row } from './schema.js';
 import type { PostgresRawResult } from './postgres-result.js';
-import { compilePostgresRoot,decodePostgresRoot,planPostgresByKey,planPostgresCount,planPostgresInsert,type PostgresRootPlan } from './postgres-root-plan.js';
+import { compilePostgresRoot,decodePostgresRoot,planPostgresByKey,planPostgresCount,planPostgresInsert,requirePostgresRootIdentity,type PostgresRootPlan } from './postgres-root-plan.js';
 import { comparePostgresPhysical,comparePostgresSettings,postgresPhysicalFingerprint } from './postgres-physical.js';
 import { readPostgresPhysical,readPostgresSettings } from './postgres-catalog.js';
 
@@ -177,6 +177,7 @@ export class PostgresRoots {
 /** Open-time structural subset, then per-operation guards. No lasting schema or authorization certification. */
 export async function openPostgresRoots(owner:AsyncSession<PostgresRawResult>,input:PostgresRootsOptions,inputOptions?:AsyncOperationOptions):Promise<PostgresRoots>{
   const config=configuration(input),options=operationOptions(inputOptions);
+  for (const table of config.tables) requirePostgresRootIdentity(table, config.schema);
   const state:State={...config,fingerprints:new Map(),context:new AsyncLocalStorage(),searchPath:'',drift:undefined,closing:undefined};
   await owner.transaction(async handle=>{
     const settings=await readPostgresSettings(handle,options),reason=comparePostgresSettings(settings);

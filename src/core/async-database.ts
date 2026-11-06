@@ -14,9 +14,9 @@ import { isTable } from './schema.js';
 import { assertOptions, type CompiledQuery, type FindOptions, type Includes, type Predicate, type Selection, type WithIncludes } from './predicates.js';
 import type { RepositoryDialect } from './dialect.js';
 import type { AggregateSelection, AggregateOptions, AggregateResult, GroupKey, GroupOptions, GroupResult, ProjectedRow, RelatedAggregates } from './aggregates.js';
-import { RepositoryCore, ensureSchemaWork, inspectSchemaWork, integer, openConfig, publicPlans, runAsync, schemaPlansWork,
-  type CoreContext, type OpenConfig, type QueryPlan, type Rows, type SchemaPlan, type SchemaTable, type Step, type Work, type WriteOptions } from './repository-core.js';
-import { clearTraceState, recordTrace, traceDocument, type TraceDocument, type TraceState } from './trace-log.js';
+import { RepositoryCore, ensureSchemaWork, inspectSchemaWork, inspectionScope, integer, openConfig, publicPlans, runAsync, schemaPlansWork,
+  type CoreContext, type MappingBackend, type OpenConfig, type QueryPlan, type Rows, type SchemaInspectionOptions, type SchemaPlan, type SchemaTable, type Step, type Work, type WriteOptions } from './repository-core.js';
+import { clearTraceState, recordTrace, traceDocument, type TraceDocumentV2, type TraceState } from './trace-log.js';
 import { ASYNC_SESSION_LIMITS, createAsyncSession, trackTransactionPromise, type AsyncControlEvent, type AsyncResultGuard, type AsyncSession, type AsyncTransaction } from './async-session.js';
 import { isAcknowledgedRejection, type AsyncExecutor } from './executor.js';
 import { openWorkerSqliteExecutor } from './worker-executor.js';
@@ -39,7 +39,7 @@ export interface AsyncDatabaseRuntime {
   readonly dialect: RepositoryDialect;
   readonly sessionDialect: 'sqlite' | 'postgresql';
   readonly isResult: AsyncResultGuard<unknown>;
-  readonly inspectSchema: () => Work<SchemaTable[]>;
+  readonly inspectSchema: (scope?: 'all' | 'mapped') => Work<SchemaTable[]>;
   readonly planSchema?: () => Work<SchemaPlan[]>;
   readonly ensureSchema?: () => Work<{ plans: SchemaPlan[]; schema: SchemaTable[] }>;
 }
@@ -48,9 +48,10 @@ interface AsyncState extends TraceState {
   session: AsyncSession<unknown>; tables: Map<string, AnyTable>; closed: boolean; readOnly: boolean; context: AsyncLocalStorage<Lease>;
   runtime: AsyncDatabaseRuntime | undefined;
   transactionSequence: number; ids: WeakMap<AsyncTransaction<unknown>, string>;
-  schema: SchemaTable[]; schemaAt: string; unconfirmed: number;
+  schemaSnapshot: SchemaSnapshot; unconfirmed: number;
 }
-interface Lease { active: boolean }
+interface SchemaSnapshot { schema: SchemaTable[]; at: string; scope: 'all' | 'mapped' }
+interface Lease { active: boolean; parent: Lease | undefined; snapshot?: SchemaSnapshot }
 interface AsyncInternal extends CoreContext {
   run<R>(work: Work<R>): Promise<R>;
   atomic<R>(callback: (tx: AsyncDatabase) => R | PromiseLike<R>): Promise<Awaited<R>>;
@@ -152,28 +153,36 @@ export class AsyncDatabase {
   async #transaction<R>(callback: (tx: AsyncDatabase) => R | PromiseLike<R>, options?: AsyncTransactionOptions): Promise<Awaited<R>> {
     this.#check();
     if (typeof callback !== 'function') fail('VALIDATION', 'A transaction requires a callback.');
-    const lease: Lease = { active: true };
+    const lease: Lease = { active: true, parent: this.#lease };
     // The callback's own errors pass through unchanged; session errors are already safe RowstitchErrors.
-    try { return await this.#handle.transaction<R>(sessionTx => this.#state.context.run(lease, () => {
-      try {
-        const result = Promise.resolve(callback(new AsyncDatabase(CONSTRUCT, this.#state, sessionTx, lease)));
-        // Revoke this callback's context when its result settles, before waiting for COMMIT/RELEASE acknowledgment.
-        // Return the same promise so observing settlement does not add a drain that could hide unfinished work.
-        result.then(() => { lease.active = false; }, () => { lease.active = false; });
-        return result;
-      } catch (error) { lease.active = false; throw error; }
-    }), options); }
-    finally { lease.active = false; }
+    try {
+      const value = await this.#handle.transaction<R>(sessionTx => this.#state.context.run(lease, () => {
+        try {
+          const result = Promise.resolve(callback(new AsyncDatabase(CONSTRUCT, this.#state, sessionTx, lease)));
+          // Revoke the callback context before waiting for COMMIT or RELEASE acknowledgment.
+          // Observe the same promise without draining unfinished work.
+          result.then(() => { lease.active = false; }, () => { lease.active = false; });
+          return result;
+        } catch (error) { lease.active = false; throw error; }
+      }), options);
+      if (lease.snapshot) this.#keepSnapshot(lease.snapshot);
+      return value;
+    }
+    finally {
+      lease.active = false;
+      delete lease.snapshot;
+    }
   }
 
-  inspectSchema(): Promise<SchemaTable[]> {
-    return ops(this).scoped(() => this.#inspect());
+  inspectSchema(options: SchemaInspectionOptions = {}): Promise<SchemaTable[]> {
+    return ops(this).scoped(() => this.#inspect(options));
   }
-  async #inspect(): Promise<SchemaTable[]> {
+  async #inspect(options: SchemaInspectionOptions = {}): Promise<SchemaTable[]> {
     this.#check();
     try {
-      const schema = await ops(this).run(this.#state.runtime ? this.#state.runtime.inspectSchema() : inspectSchemaWork());
-      this.#snapshot(schema);
+      const scope = inspectionScope(options);
+      const schema = await ops(this).run(this.#state.runtime ? this.#state.runtime.inspectSchema(scope) : inspectSchemaWork(this.#state.tables, scope));
+      this.#snapshot(schema, scope);
       return schema;
     } catch (error) { throw safe(error); }
   }
@@ -192,48 +201,58 @@ export class AsyncDatabase {
       const ensure = this.#state.runtime?.ensureSchema;
       if (ensure) {
         try {
-          const captured = await this.#transaction(async tx => {
+          return await this.#transaction(async tx => {
             try {
               const result = await ops(tx).run(ensure());
               // All inspection, validation and allocation finish before COMMIT. Afterwards only these owned values are assigned.
-              return { plans: result.plans, schema: structuredClone(result.schema), at: new Date().toISOString() };
+              tx.#snapshot(result.schema, 'mapped');
+              return result.plans;
             } catch (error) {
               // Sanitize internal computation errors before rollback, so its acknowledgment/cleanup metadata remains attached.
               throw safe(error);
             }
           });
-          this.#state.schema = captured.schema; this.#state.schemaAt = captured.at;
-          return captured.plans;
         } catch (error) { throw safe(error); }
       }
       if (this.#state.runtime?.dialect.name === 'postgresql') fail('QUERY', 'Schema creation is not implemented for this database dialect.');
-      const plans = await this.#transaction(tx => ops(tx).run(ensureSchemaWork(ops(tx))));
-      await this.#inspect();
-      return plans;
+      return this.#transaction(async tx => {
+        const plans = await ops(tx).run(ensureSchemaWork(ops(tx)));
+        await tx.#inspect({ scope: 'mapped' });
+        return plans;
+      });
     });
   }
-  #snapshot(schema: SchemaTable[]): void {
-    this.#state.schema = structuredClone(schema);
-    this.#state.schemaAt = new Date().toISOString();
+  #snapshot(schema: SchemaTable[], scope: 'all' | 'mapped'): void {
+    this.#keepSnapshot({ schema: structuredClone(schema), at: new Date().toISOString(), scope });
+  }
+  #keepSnapshot(snapshot: SchemaSnapshot): void {
+    if (!this.#lease) this.#state.schemaSnapshot = snapshot;
+    else if (this.#lease.active) this.#lease.snapshot = snapshot;
   }
 
   clearTrace(): void {
     this.#check(); clearTraceState(this.#state);
   }
   /**
-   * Synchronous snapshot in trace format version 1, with the synchronous redaction and size policy. The schema is the
+   * Synchronous trace snapshot with the shared redaction and size policy. The schema is the
    * last one inspected by this database (at open, inspectSchema or ensureSchema), because exporting must not perform I/O.
    */
-  exportTrace(options: { title?: string } = {}): TraceDocument {
+  exportTrace(options: { title?: string } = {}): TraceDocumentV2 {
     this.#check();
     const title = options.title ?? 'Local query trace';
     if (typeof title !== 'string' || title.length > 4096) fail('VALIDATION', 'Trace titles must be bounded text.');
     const outcomeNote = this.#state.runtime?.dialect.name === 'postgresql'
       ? 'An "error" status records a failed or unconfirmed request; it is not proof that nothing changed. In this trace, a failed PostgreSQL COMMIT has an unknown outcome even if a later ROLLBACK succeeds, because that ROLLBACK might have had no transaction to undo.'
       : 'An "error" status records a failed or unconfirmed request; it is not proof that nothing changed. A failed COMMIT that is not followed by a recorded ROLLBACK has an unknown outcome.';
-    const notes = ['Asynchronous connection: the schema shown was inspected at ' + this.#state.schemaAt + ' and may not include later changes made by other connections.', outcomeNote];
+    let owner = this.#lease;
+    while (owner && !owner.snapshot) owner = owner.parent;
+    const { schema, scope, at } = owner?.snapshot ?? this.#state.schemaSnapshot;
+    const notes = ['Asynchronous connection: the schema shown was inspected at ' + at + ' and may not include later changes made by other connections.', outcomeNote];
+    if (owner) notes.push('This schema snapshot is provisional until its outer transaction commits.');
     if (this.#state.unconfirmed) notes.push(this.#state.unconfirmed + ' request(s) on this connection had unconfirmed outcomes. Inspect the stored data before retrying any of that work.');
-    return traceDocument(this.#state, title, this.#state.schema, notes);
+    const { tables: registrations, runtime } = this.#state;
+    const defaultSchema = runtime?.dialect.defaultSchema ?? (this.#state.dialect === 'postgresql' ? 'public' : 'main');
+    return traceDocument(this.#state, title, { schema, scope, registrations, defaultSchema }, notes);
   }
 
   /** Closes the connection after issued work finishes. Refused while a transaction is active. */
@@ -339,8 +358,8 @@ export interface CapturedAsyncDatabaseOptions {
   readonly config: OpenConfig;
   readonly limits: ReturnType<typeof asyncLimits>;
 }
-export function captureAsyncDatabaseOptions(options: AsyncDatabaseOptions): CapturedAsyncDatabaseOptions {
-  return Object.freeze({ config: openConfig(':memory:', options, ASYNC_KEYS), limits: Object.freeze(asyncLimits(options)) });
+export function captureAsyncDatabaseOptions(options: AsyncDatabaseOptions, backend?: MappingBackend): CapturedAsyncDatabaseOptions {
+  return Object.freeze({ config: openConfig(':memory:', options, ASYNC_KEYS, backend), limits: Object.freeze(asyncLimits(options)) });
 }
 export async function openPreparedAsyncDatabase<R>(executor: AsyncExecutor<R>, captured: CapturedAsyncDatabaseOptions, runtime: AsyncDatabaseRuntime): Promise<AsyncDatabase> {
   return openCaptured(executor, captured.config, captured.limits, runtime);
@@ -352,14 +371,15 @@ export async function openAsyncDatabaseWithExecutor(executor: AsyncExecutor, opt
 }
 /** Internal native adapter entry. Connection options and this runtime are captured by a dedicated public factory. */
 export async function openAsyncDatabaseWithDialect<R>(executor: AsyncExecutor<R>, options: AsyncDatabaseOptions, runtime: AsyncDatabaseRuntime): Promise<AsyncDatabase> {
-  return openCaptured(executor, openConfig(':memory:', options, ASYNC_KEYS), asyncLimits(options), runtime);
+  return openCaptured(executor, openConfig(':memory:', options, ASYNC_KEYS,
+    { dialect: runtime.sessionDialect, schema: runtime.dialect.defaultSchema ?? (runtime.sessionDialect === 'sqlite' ? 'main' : 'public') }), asyncLimits(options), runtime);
 }
 async function openCaptured(executor: AsyncExecutor<unknown>, config: OpenConfig, sessionLimits: ReturnType<typeof asyncLimits>, runtime?: AsyncDatabaseRuntime): Promise<AsyncDatabase> {
   const state: AsyncState = {
     session: undefined as unknown as AsyncSession<unknown>, tables: config.tables, closed: false, readOnly: config.readOnly, context: new AsyncLocalStorage(), runtime,
     ...(runtime?.dialect.name === 'postgresql' ? { dialect: 'postgresql' as const } : {}),
     traceValues: config.traceValues, capacity: config.capacity, traces: [], sequence: 0, traceBytes: 0, omittedEntries: 0,
-    transactionSequence: 0, ids: new WeakMap(), schema: [], schemaAt: new Date(0).toISOString(), unconfirmed: 0,
+    transactionSequence: 0, ids: new WeakMap(), schemaSnapshot: { schema: [], at: new Date(0).toISOString(), scope: 'mapped' }, unconfirmed: 0,
   };
   const observer = {
     control(event: AsyncControlEvent<unknown>): void {
@@ -374,7 +394,7 @@ async function openCaptured(executor: AsyncExecutor<unknown>, config: OpenConfig
     ? createAsyncSession(executor, { readOnly: config.readOnly, observer, ...sessionLimits, dialect: runtime.sessionDialect, isResult: runtime.isResult })
     : createAsyncSession(executor as AsyncExecutor, { readOnly: config.readOnly, observer, ...sessionLimits });
   const db = new AsyncDatabase(CONSTRUCT, state, state.session);
-  try { await db.inspectSchema(); }
+  try { await db.inspectSchema({ scope: 'mapped' }); }
   catch (error) { await state.session.close().catch(() => {}); state.closed = true; throw safe(error); }
   return db;
 }

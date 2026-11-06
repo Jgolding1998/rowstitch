@@ -21,7 +21,7 @@ function model(run) {
 test('select returns only requested fields, while filters and ordering may use other fields', () => model((db, a) => {
   db.table(a).insertMany([{ name: 'Avery', secret: 'PRIVATE_VALUE_A' }, { name: 'Morgan', secret: 'PRIVATE_VALUE_B' }]);
   const compiled = db.table(a).compileSelect({ select: ['name'], where: eq(a.col('id'), 1), orderBy: [desc(a.col('id'))] });
-  assert.match(compiled.sql, /^SELECT "name" FROM/);
+  assert.match(compiled.sql, /^SELECT "__rs_root"\."name" AS "name" FROM "main"\."authors" AS "__rs_root" /);
   assert.ok(!compiled.sql.includes('"secret"'));
   db.clearTrace();
   assert.deepEqual(db.table(a).findMany({ select: ['name'], where: eq(a.col('id'), 1) }), [{ name: 'Avery' }]);

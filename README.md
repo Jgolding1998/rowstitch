@@ -15,7 +15,7 @@ This release includes the 0.7.1 correction for related summaries with different 
 Use **Node 24.22.2+ or Node 26.13.0+ within those LTS release lines**. Run the prebuilt GitHub release:
 
 ```sh
-npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.12.0/rowstitch-0.12.0.tgz -- rowstitch demo
+npm exec --yes --package=https://github.com/Jgolding1998/rowstitch/releases/download/v0.13.0/rowstitch-0.13.0.tgz -- rowstitch demo
 ```
 
 Or build from source:
@@ -28,7 +28,7 @@ npm run build
 npm run demo
 ```
 
-Open **http://127.0.0.1:4317**. The demo creates a fresh in-memory database with fictional authors and posts. Its SQL, results and version-conflict example come from the real ORM. Stop it with Ctrl+C. Use `node dist/cli.js demo --port 4318` if the port is occupied.
+Open **http://127.0.0.1:4317**. The demo creates fictional authors, posts and labels in memory. In Studio's Schema view, the `labels` mapping shows how names in your code can differ from names in the database. The SQL, results and version-conflict example come from the ORM. Stop it with Ctrl+C. Use `node dist/cli.js demo --port 4318` if the port is occupied.
 
 The inspector lets you search queries, follow transactions, examine parameterized SQL and query plans, and read the schema. You can open a Rowstitch trace JSON file in the browser; imported SQL is displayed, never executed. The file stays in browser memory and is not uploaded to the local server.
 
@@ -37,7 +37,7 @@ The inspector lets you search queries, follow transactions, examine parameterize
 Install the versioned release in your project. It is distributed through GitHub releases, not the npm registry:
 
 ```sh
-npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.12.0/rowstitch-0.12.0.tgz
+npm install --save-exact https://github.com/Jgolding1998/rowstitch/releases/download/v0.13.0/rowstitch-0.13.0.tgz
 ```
 
 ```ts
@@ -140,7 +140,7 @@ A connection string works too: `postgres://app_user:password@db.example.test:543
 
 Set `schema` to use a PostgreSQL namespace other than `public`. It must already exist.
 
-### What works in version 0.12
+### What works in version 0.13
 
 | Available | Not available yet on PostgreSQL or PGlite |
 | --- | --- |
@@ -366,6 +366,24 @@ This command opens the named file read-only and prints schema metadata as JSON. 
 
 The schema report and drift checks do not currently identify column collations. Existing `NOCASE` or `RTRIM` columns can change equality, ordering and uniqueness behavior. Literal text searches keep their explicitly chosen case behavior, so they can differ from equality on those columns. Review the existing schema's declarations when those distinctions matter.
 
+### Map an existing table without renaming it
+
+```ts
+const orders = defineTable('orders', {
+  id: column.integer().primaryKey().storedAs('Order ID'),
+  title: column.text().storedAs('Display title'),
+}, {
+  storage: { table: 'Order Records' },
+  schemaPolicy: 'subset',
+});
+```
+
+Register `orders` when opening the database. Use `id` and `title` in filters and returned rows. Rowstitch quotes each stored name as a database identifier. You can set `storage.schema` separately. SQLite mappings use `main` or `temp`, and PostgreSQL mappings use the configured default namespace or an existing explicitly named namespace.
+
+Use `inspectSchema({ scope: 'mapped' })` to inspect registered tables. The default inspection reports all visible tables in the inspected namespaces, within its metadata limits. In both cases, structured identities distinguish tables with the same name in different namespaces.
+
+`schemaPolicy: 'subset'` allows extra columns while checking the mapped columns and their relevant constraints. Extra required fields still affect inserts. `exact` checks the supported shape and constraints across the whole table. The default `legacy` keeps the previous drift policy for each backend. PostgreSQL exact and subset checks recognize supported literal defaults. Other expressions report drift and should be reviewed against the existing database.
+
 ## Trace your own code
 
 ```ts
@@ -375,9 +393,9 @@ import { writeFileSync } from 'node:fs';
 writeFileSync('trace.json', JSON.stringify(db.exportTrace({ title: 'A local session' })));
 ```
 
-Bound values are redacted at collection by default and result rows are not collected. Trace history defaults to 200 statements with a separate 1 MiB byte limit. Exports fit within 2 MiB by dropping old statements; an oversized schema raises a clear error. Omitted history is noted in the export. SQL, schema names, titles and literal defaults can still reveal information. **Redaction is not anonymization.** Review a trace before sharing it. Compiled-query APIs deliberately return their parameters to your code; keep that output private too.
+Bound values are redacted at collection by default and result rows are not collected. Trace history defaults to 200 statements with a separate 1 MiB byte limit. Exports fit within 2 MiB by omitting whole mapping or schema entries that cannot fit and by dropping the oldest statements. The document records how many tables were omitted. SQL, schema names, titles and literal defaults can still reveal information. **Redaction is not anonymization.** Review a trace before sharing it. Compiled-query APIs deliberately return their parameters to your code; keep that output private too.
 
-Traces stay in format version 1. PostgreSQL and PGlite traces also name their database, and Studio labels it. A trace with no database named is read as SQLite, so older files keep working.
+Trace format version 2 includes the dialect, registered mappings, observed table identities and inspection scope. Query entries use logical table names. Studio reads version 1 traces too and preserves their version when exporting them again.
 
 Trace statuses describe individual SQL statements. An ORM call can still reject a stale edit or ambiguous relationship after its SQL succeeds. Those application-level failures do not yet appear as separate trace events, so zero failed statements does not mean every API call succeeded.
 
@@ -385,7 +403,7 @@ Studio separately shows a write's effect in the recorded transaction: committed,
 
 ## Scope and checks
 
-This release supports SQLite through synchronous and async APIs, plus the narrower PostgreSQL and in-memory PGlite paths described above. The async API executes SQLite operations in a background worker; its transactions await async callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, other databases, the missing PostgreSQL features listed above, a migration history runner, nested graph writes, a remote database API or an authorization system. Identifiers use simple names of at most 63 characters. Use the dedicated bigint column for integers beyond JavaScript's safe range.
+This release supports SQLite through synchronous and async APIs, plus the narrower PostgreSQL and in-memory PGlite paths described above. The async API executes SQLite operations in a background worker; its transactions await async callbacks. It is an independent implementation, with a [feature comparison and development plan](docs/compatibility.md). It does not yet provide Orange's full feature set, other databases, the missing PostgreSQL features listed above, a migration history runner, nested graph writes, a remote database API or an authorization system. Logical names use simple identifiers of at most 63 characters. Stored identifiers allow quoted names up to 4,096 UTF-8 bytes on SQLite and 63 bytes on PostgreSQL. Use the dedicated bigint column for integers beyond JavaScript's safe range.
 
 JSON reads and writes accept finite JSON data within the same depth and node limits. Stored JSON text is limited to 1,048,576 characters before parsing; oversized, invalid or out-of-domain stored values raise a `DATA` error. This also applies to existing databases populated by another tool.
 

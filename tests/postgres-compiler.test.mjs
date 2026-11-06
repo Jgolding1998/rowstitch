@@ -227,9 +227,24 @@ test('legal escaped JSON strings remain native-json writes while jsonb compariso
     assert.throws(()=>compilePostgres(count(compare('doc','IN',[encoded]))),code('VALIDATION'));
   }
 });
-test('missing kind/nullability metadata, injection identifiers and unsupported options are rejected',()=>{
+test('quoted physical names keep statement-like text in identifier positions',()=>{
+  const physical=tableModel({...table,storage:{table:'rows"; DROP TABLE sentinel; --',
+    columns:{...table.storage.columns,id:'id"; SELECT 1; --'}}});
+  const compiled=compilePostgres(select({table:physical,where:compare('id','=',[7])}),{schema:'scope"; SELECT 2; --'});
+  assert.equal(compiled.sql,'SELECT "__rs_pg_root"."id""; SELECT 1; --" AS "__rs_pg_0"'
+    + ' FROM "scope""; SELECT 2; --"."rows""; DROP TABLE sentinel; --" AS "__rs_pg_root"'
+    + ' WHERE "__rs_pg_root"."id""; SELECT 1; --" OPERATOR("pg_catalog".=) $1::"pg_catalog"."int8"'
+    + ' LIMIT $2::"pg_catalog"."int8" OFFSET $3::"pg_catalog"."int8"');
+  assert.deepEqual(compiled.parameters,['7','10','0']);
+  assert.equal(compiled.outputs[0].property,'id');
+});
+
+test('missing kind/nullability metadata, malformed identifiers and unsupported options are rejected',()=>{
   for(const missing of ['kinds','nullable']){const bare={...table};delete bare[missing];assert.throws(()=>compilePostgres(select({table:bare})),code('QUERY'));}
-  assert.throws(()=>compilePostgres(select(),{schema:'public; DROP TABLE sample_rows'}),code('SCHEMA'));
+  for(const schema of ['', 'bad\0name', '\ud800', 'é'.repeat(32), 'pg_catalog', 'information_schema']){
+    assert.throws(()=>compilePostgres(select(),{schema}),code('SCHEMA'));
+  }
+  assert.throws(()=>select({table:{...table,name:'rows"; DROP TABLE sentinel; --'}}),code('SCHEMA'));
   assert.throws(()=>compilePostgres(select(),{only:'yes'}),code('QUERY'));assert.throws(()=>compilePostgres(select(),{arbitrarySql:'PRIVATE_TEST_VALUE'}),code('QUERY'));
   assert.throws(()=>compilePostgres(select(),Object.defineProperty({},'arbitrarySql',{value:'PRIVATE_TEST_VALUE'})),code('QUERY'));
   let invoked=0;assert.throws(()=>compilePostgres(select(),{get schema(){invoked++;return 'bad';}}),code('QUERY'));assert.equal(invoked,0);

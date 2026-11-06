@@ -14,7 +14,7 @@ test('normalized plans retain data snapshots while reusable compiler outputs sta
   const plan = queryModel.select(source);
   source.columns[0] = 'id'; source.where.values[0] = 8;
   const first = compileSqlite(plan), second = compileSqlite(plan);
-  assert.deepEqual(first, { sql: 'SELECT "value" FROM "items" WHERE "id" = ? LIMIT ? OFFSET ?', parameters: [7, 9, 0] });
+  assert.deepEqual(first, { sql: 'SELECT "__rs_root"."value" AS "value" FROM "main"."items" AS "__rs_root" WHERE "__rs_root"."id" = ? LIMIT ? OFFSET ?', parameters: [7, 9, 0] });
   first.parameters[0] = 99;
   assert.deepEqual(second.parameters, [7, 9, 0]);
   assert.ok(Object.isFrozen(plan) && Object.isFrozen(plan.table) && Object.isFrozen(plan.columns) && Object.isFrozen(plan.where.values));
@@ -29,7 +29,7 @@ test('deterministic ordering preserves all public order items plus remaining com
     const query = db.table(table).compileSelect({ select: ['k0'], orderBy: Array.from({ length: 100 }, () => asc(table.col('k0'))) });
     const orders = query.sql.split(' ORDER BY ')[1].split(' LIMIT ')[0].split(', ');
     assert.equal(orders.length, 199);
-    assert.equal(orders.at(-1), '"k99" ASC');
+    assert.equal(orders.at(-1), '"__rs_root"."k99" ASC');
     assert.deepEqual(query.parameters, [1000, 0]);
   } finally { db.close(); }
 });

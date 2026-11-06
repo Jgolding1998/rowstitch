@@ -1,6 +1,7 @@
 /** Pure PostgreSQL rendering of captured structured plans. No connection, driver or caller SQL. */
 import { fail } from './errors.js';
-import { encode, identifier, plainRecord, type Kind, type Parameter } from './schema.js';
+import { encode, plainRecord, type Kind, type Parameter } from './schema.js';
+import { modelPhysicalColumn, modelPhysicalTable, quotePhysicalName, quotePhysicalTable } from './physical-identity.js';
 import { MAX_REQUEST_PARAMETERS, normalizeQueryModel, type ColumnComparisonOperator, type OrderModel, type PredicateModel, type QueryModel, type TableModel } from './query-model.js';
 import { compilePostgresControl } from './postgres-control.js';
 import type { PostgresOutputField } from './postgres-result.js';
@@ -134,12 +135,26 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
   const schemaOption = option('schema'), onlyOption = option('only');
   if (Object.keys(descriptors).some(key => key !== 'schema' && key !== 'only')
       || onlyOption !== undefined && typeof onlyOption !== 'boolean') fail('QUERY', 'PostgreSQL compile options contain an unsupported value.');
-  const schema = identifier((schemaOption === undefined ? 'public' : schemaOption) as string);
+  const schema = (schemaOption === undefined ? 'public' : schemaOption) as string;
+  const namespace = (value: string): void => {
+    quotePhysicalName(value, 'postgresql');
+    if (/^(?:pg_|information_schema$)/i.test(value)) fail('SCHEMA', 'Compile mapped objects in a supported user namespace.');
+  };
+  namespace(schema);
   const only = onlyOption === true;
   const parameters: (string | null)[] = [];
   let aliasSequence = 0, parameterBytes = 0;
-  const qualified = (table: TableModel): string => schema + '.' + identifier(table.name);
+  const qualified = (table: TableModel): string => {
+    const physical = modelPhysicalTable(table, schema, 'postgresql');
+    namespace(physical.schema);
+    return quotePhysicalTable(physical.schema, physical.table, 'postgresql');
+  };
   const source = (table: TableModel): string => (only ? 'ONLY ' : '') + qualified(table);
+  const column = (table: TableModel, logical: string): string => quotePhysicalName(modelPhysicalColumn(table, logical, 'postgresql'), 'postgresql');
+  const mappedMetadata = (table: TableModel): void => {
+    metadata(table); qualified(table);
+    for (const logical of table.columns) column(table, logical);
+  };
   const append = (value: string | null, type: string): string => {
     // Query models budget 10,000 user bindings; SELECT adds its two compiler-owned page bounds.
     if (parameters.length >= MAX_REQUEST_PARAMETERS) fail('QUERY', 'The PostgreSQL statement exceeds its binding limit.');
@@ -158,9 +173,9 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
     const type = columnKind(table, column);
     return append(encodedWire(type, value, table.nullable![column], type === 'json' && comparison), type === 'json' && comparison ? 'jsonb' : CAST[type]);
   };
-  const field = (scope: string, column: string): string => scope + '.' + identifier(column);
+  const field = (table: TableModel, scope: string, logical: string): string => scope + '.' + column(table, logical);
   const compared = (table: TableModel, scope: string, column: string): string => {
-    const expression = field(scope, column);
+    const expression = field(table, scope, column);
     return columnKind(table, column) === 'json' ? expression + cast('jsonb') : expression;
   };
   const predicate = (table: TableModel, scope: string, model?: PredicateModel): string => {
@@ -173,10 +188,10 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
     if (model.kind === 'column-compare') {
       const leftKind = columnKind(table, model.left), rightKind = columnKind(table, model.right);
       if (leftKind === 'real' && (rightKind === 'integer' || rightKind === 'bigint')) {
-        return mixedNumeric(field(scope, model.right), field(scope, model.left), model.operator, true);
+        return mixedNumeric(field(table, scope, model.right), field(table, scope, model.left), model.operator, true);
       }
       if (rightKind === 'real' && (leftKind === 'integer' || leftKind === 'bigint')) {
-        return mixedNumeric(field(scope, model.left), field(scope, model.right), model.operator, false);
+        return mixedNumeric(field(table, scope, model.left), field(table, scope, model.right), model.operator, false);
       }
       return compared(table, scope, model.left) + operator(model.operator) + compared(table, scope, model.right);
     }
@@ -187,7 +202,7 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
         ? '"pg_catalog"."translate"((' + sql + c + '), \'ABCDEFGHIJKLMNOPQRSTUVWXYZ\', \'abcdefghijklmnopqrstuvwxyz\')'
         : '(' + sql + c + ')';
       wireText(model.literal);
-      const expression = fold(field(scope, model.column)), literal = fold(append(model.literal, 'text'));
+      const expression = fold(field(table, scope, model.column)), literal = fold(append(model.literal, 'text'));
       if (model.mode === 'ends-with') return '"pg_catalog"."right"(' + expression + ', "pg_catalog"."char_length"(' + literal + '))' + operator('=') + literal;
       return '"pg_catalog"."strpos"(' + expression + ', ' + literal + ')' + operator(model.mode === 'contains' ? '>' : '=') + (model.mode === 'contains' ? '0' : '1');
     }
@@ -199,15 +214,15 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
         const clauses: string[] = [];
         // Explicit operator qualification avoids resolving a caller-defined equality operator through search_path.
         if (values.length) clauses.push(expression + operator('=') + 'ANY (ARRAY[' + values.map(value => bind(table, model.column, value, true)).join(', ') + '])');
-        if (values.length !== model.values.length) clauses.push(field(scope, model.column) + ' IS NULL');
+        if (values.length !== model.values.length) clauses.push(field(table, scope, model.column) + ' IS NULL');
         return '(' + clauses.join(' OR ') + ')';
       }
-      if (model.values[0] === null) return field(scope, model.column) + (model.operator === '=' ? ' IS NULL' : ' IS NOT NULL');
+      if (model.values[0] === null) return field(table, scope, model.column) + (model.operator === '=' ? ' IS NULL' : ' IS NOT NULL');
       return expression + operator(model.operator) + bind(table, model.column, model.values[0], true);
     }
-    metadata(model.table);
+    mappedMetadata(model.table);
     const alias = '"__rs_pg_filter_' + aliasSequence++ + '"';
-    const join = field(alias, model.foreignKey) + operator('=') + field(scope, model.localKey);
+    const join = field(model.table, alias, model.foreignKey) + operator('=') + field(table, scope, model.localKey);
     const domain = predicate(model.table, alias, model.where), test = predicate(model.table, alias, model.predicate);
     const condition = test ? ' AND (' + test + ')' + (model.kind === 'relation-filter' && model.quantifier === 'every' ? ' IS NOT TRUE' : '') : '';
     const from = ' FROM ' + source(model.table) + ' AS ' + alias + ' WHERE ' + join + (domain ? ' AND (' + domain + ')' : '') + condition;
@@ -221,15 +236,15 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
   });
   if (query.kind === 'transaction') return result(compilePostgresControl(query), [], null);
   if (query.kind === 'explain' || query.kind === 'create-table' || query.kind === 'create-index') return unsupported();
-  metadata(query.table);
+  mappedMetadata(query.table);
   if (query.kind === 'relation') {
-    const rendered = compilePostgresRelation(query, { source, kind: columnKind, predicate, order,
+    const rendered = compilePostgresRelation(query, { source, column: field, kind: columnKind, predicate, order,
       bindKey: (value, kind) => append(value, kind), textKey: value => encodedWire('text', value, false)!, bindInteger });
     return Object.freeze({ sql: rendered.sql, parameters: Object.freeze(parameters), outputs: rendered.profile.outputs,
       command: 'SELECT', relation: rendered.profile });
   }
   if (query.kind === 'aggregate' || query.kind === 'group' || query.kind === 'select' && query.aggregates?.length) {
-    const rendered = compilePostgresAggregate(query, { source, predicate, kind: columnKind, metadata, bindInteger });
+    const rendered = compilePostgresAggregate(query, { source, column: field, predicate, kind: columnKind, metadata: mappedMetadata, bindInteger });
     return Object.freeze({ sql: rendered.sql, parameters: Object.freeze(parameters), outputs: Object.freeze([]),
       command: 'SELECT', aggregate: rendered.profile, ...(rendered.realRange ? { realAggregateRange: true as const } : {}) });
   }
@@ -237,18 +252,18 @@ export function compilePostgres(input: QueryModel, options: PostgresCompileOptio
     ? [{ alias: '__rs_pg_count', property: 'n', kind: 'bigint', nullable: false }]
     : (query.kind === 'select' ? query.columns : query.table.columns).map((property, index) => ({ alias: '__rs_pg_' + index, property,
       kind: columnKind(query.table, property), nullable: query.table.nullable![property] }));
-  const projection = outputs.map(output => field(ROOT, output.property) + ' AS "' + output.alias + '"').join(', ');
+  const projection = query.kind === 'count' ? '' : outputs.map(output => field(query.table, ROOT, output.property) + ' AS "' + output.alias + '"').join(', ');
   const target = qualified(query.table) + ' AS ' + ROOT;
   if (query.kind === 'insert') {
     const body = query.columns.length
-      ? ' (' + query.columns.map(identifier).join(', ') + ') OVERRIDING SYSTEM VALUE VALUES (' + query.columns.map((column, index) => bind(query.table, column, query.values[index])).join(', ') + ')'
+      ? ' (' + query.columns.map(logical => column(query.table, logical)).join(', ') + ') OVERRIDING SYSTEM VALUE VALUES (' + query.columns.map((column, index) => bind(query.table, column, query.values[index])).join(', ') + ')'
       : ' DEFAULT VALUES';
     return result('INSERT INTO ' + target + body + ' RETURNING ' + projection, outputs, 'INSERT');
   }
   if (query.kind === 'update') {
     // Assignment bindings precede WHERE bindings in statement order.
-    const assignments = query.assignments.map(assignment => identifier(assignment.column) + ' = ' + bind(query.table, assignment.column, assignment.value));
-    if (query.table.version) assignments.push(identifier(query.table.version) + ' = ' + field(ROOT, query.table.version) + operator('+') + '1');
+    const assignments = query.assignments.map(assignment => column(query.table, assignment.column) + ' = ' + bind(query.table, assignment.column, assignment.value));
+    if (query.table.version) assignments.push(column(query.table, query.table.version) + ' = ' + field(query.table, ROOT, query.table.version) + operator('+') + '1');
     const where = predicate(query.table, ROOT, query.where);
     return result('UPDATE ' + (only ? 'ONLY ' : '') + target + ' SET ' + assignments.join(', ') + ' WHERE ' + where + ' RETURNING ' + projection, outputs, 'UPDATE');
   }

@@ -207,17 +207,20 @@ test('one shared logical budget and a physical budget that counts every repeated
   } finally { db.close(); }
 });
 
-test('without related selectors, compiled M6 SQL is unchanged; related SQL is bound, explainable and read-only safe', () => {
+test('qualified root-only SQL retains its slots; related SQL is bound, explainable and read-only safe', () => {
   const db = seeded();
   try {
     const plain = db.table(shops).compileGroupBy({ by: ['area'], where: gt(shops.col('tier'), 1), select: { n: agg.count(), t: agg.sum(shops.col('tier')) }, orderBy: [{ field: 't', direction: 'desc' }], limit: 5 });
-    assert.equal(plain.sql, 'SELECT "gr_shops"."area" AS "__rs_key_0", COUNT(*) AS "__rs_agg_0", (SUM(("gr_shops"."tier" >> 32)) + (SUM(("gr_shops"."tier" & 4294967295)) >> 32)) AS "__rs_sum_hi_1", (SUM(("gr_shops"."tier" & 4294967295)) & 4294967295) AS "__rs_sum_lo_1", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN "gr_shops"."area" IS NULL THEN 0 WHEN typeof("gr_shops"."area") = \'text\' THEN 0 ELSE 1 END) OR (CASE WHEN "gr_shops"."tier" IS NULL THEN 1 WHEN typeof("gr_shops"."tier") = \'integer\' AND "gr_shops"."tier" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS "__rs_bad" FROM "gr_shops" WHERE "gr_shops"."tier" > ? GROUP BY "gr_shops"."area" ORDER BY 3 DESC, 4 DESC, 1 ASC LIMIT ? OFFSET ?');
+    assert.equal(plain.sql, 'SELECT "__rs_root"."area" AS "__rs_key_0", COUNT(*) AS "__rs_agg_0", (SUM(("__rs_root"."tier" >> 32)) + (SUM(("__rs_root"."tier" & 4294967295)) >> 32)) AS "__rs_sum_hi_1", (SUM(("__rs_root"."tier" & 4294967295)) & 4294967295) AS "__rs_sum_lo_1", COALESCE(MAX(MAX((CASE WHEN (CASE WHEN "__rs_root"."area" IS NULL THEN 0 WHEN typeof("__rs_root"."area") = \'text\' THEN 0 ELSE 1 END) OR (CASE WHEN "__rs_root"."tier" IS NULL THEN 1 WHEN typeof("__rs_root"."tier") = \'integer\' AND "__rs_root"."tier" BETWEEN -9007199254740991 AND 9007199254740991 THEN 0 ELSE 1 END) THEN 1 ELSE 0 END))) OVER (), 0) AS "__rs_bad" FROM "main"."gr_shops" AS "__rs_root" WHERE "__rs_root"."tier" > ? GROUP BY "__rs_root"."area" ORDER BY 3 DESC, 4 DESC, 1 ASC LIMIT ? OFFSET ?');
     assert.deepEqual(plain.parameters, [1, 5, 0]);
     const sentinel = "SENTINEL_' OR 1=1 --";
     const marked = hasMany(sales, { localKey: shops.col('id'), foreignKey: sales.col('shopId'), where: eq(sales.col('label'), sentinel) });
     db.clearTrace();
     const compiled = db.table(shops).compileGroupBy({ by: ['area'], where: eq(shops.col('area'), 'core'), select: { s: agg.related(marked, agg.count()) } });
-    assert.ok(!compiled.sql.includes('SENTINEL') && !compiled.sql.includes('"s"') && !/JOIN "gr_sales"[^)]*GROUP BY/.test(compiled.sql.split(' FROM "gr_shops" WHERE')[1] ?? ''));
+    assert.ok(!compiled.sql.includes('SENTINEL') && !compiled.sql.includes('"s"'));
+    const outerFrom = compiled.sql.lastIndexOf(' FROM "main"."gr_shops" AS "__rs_root" WHERE ');
+    assert.ok(outerFrom > 0, 'The outer query reads the qualified root');
+    assert.doesNotMatch(compiled.sql.slice(outerFrom), /\bJOIN\b/, 'Related aggregation does not multiply outer root rows');
     assert.deepEqual(compiled.parameters, ['core', sentinel, 'core', sentinel, 'core', 10001, 0], 'value copy, guard copy, then main where and page');
     assert.equal(db.exportTrace().queries.length, 0, 'compile does not execute');
     assert.ok(db.table(shops).explainGroupBy({ by: ['area'], select: { s: agg.related(shopSales, agg.count()) } }).some(step => /CORRELATED|SUBQUERY/.test(step.detail)));

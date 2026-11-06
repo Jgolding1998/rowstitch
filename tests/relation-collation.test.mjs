@@ -126,7 +126,7 @@ test('correlated relation models validate flags, metadata, keys and binding orde
   const input = { table, columns: ['id', 'parentCode'], partitionBy: 'parentCode', keys: ['A', 'a'], correlateKeys: true, where: { kind: 'compare', column: 'label', operator: '=', values: ["Fictional ' OR 1=1 --"] }, orderBy: [{ column: 'id', direction: 'DESC' }], offset: 1, limit: 2, readLimit: 7 };
   const compiled = compileSqlite(queryModel.relation(input));
   assert.deepEqual(compiled.parameters, ['A', 'a', "Fictional ' OR 1=1 --", 1, 3, 7]);
-  assert(!compiled.sql.includes('Fictional')); assert(compiled.sql.includes('ON "parentCode" = "__rs_keys"."__rs_key"'));
+  assert(!compiled.sql.includes('Fictional')); assert(compiled.sql.includes('ON "__rs_root"."parentCode" = "__rs_keys"."__rs_key"'));
   assert(compiled.sql.includes('PARTITION BY "__rs_keys"."__rs_ordinal"')); assert(compiled.sql.includes('AS "__rs_parent"'));
   for (const correlateKeys of ['true', 1, null, {}]) assert.throws(() => queryModel.relation({ ...input, correlateKeys }), error => error.code === 'QUERY');
   for (const [change, code] of [[{ table: { ...table, kinds: undefined } }, 'SCHEMA'], [{ keys: ['A', 1] }, 'QUERY'], [{ table: { ...table, kinds: { ...table.kinds, parentCode: 'json' } } }, 'QUERY'], [{ parentOrdinal: 'id' }, 'QUERY']]) assert.throws(() => queryModel.relation({ ...input, ...change }), error => error.code === code);

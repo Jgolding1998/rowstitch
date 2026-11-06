@@ -27,7 +27,7 @@ function fixture(body, definition = 'id INTEGER, category TEXT, value INTEGER, w
 test('aggregate models require complete kinds and nullability while existing row models remain compatible', () => {
   const legacy = { name: 'legacy', columns: ['id'], primaryKey: ['id'] };
   assert.equal(compileSqlite(queryModel.select({ table: legacy, columns: ['id'], orderBy: [], limit: 1, offset: 0 })).sql,
-    'SELECT "id" FROM "legacy" LIMIT ? OFFSET ?');
+    'SELECT "__rs_root"."id" AS "id" FROM "main"."legacy" AS "__rs_root" LIMIT ? OFFSET ?');
   assert.throws(() => aggregate(undefined, { table: legacy }), code('QUERY'));
   assert.throws(() => aggregate(undefined, { table: { ...table, nullable: undefined } }), code('SCHEMA'));
   assert.throws(() => tableModel({ ...table, nullable: { id: false } }), code('SCHEMA'));
@@ -92,7 +92,7 @@ test('group pagination, ordering and output layout use bounded options and stabl
 test('generated outputs avoid source-name alias ambiguity and explain only accepts supported reads', () => {
   const model = group([selection('sum', 'value', 'wide')], { where: compare('id', '>', 2), orderBy: [{ field: 'wide', direction: 'DESC' }] });
   const query = compileSqlite(model);
-  assert.match(query.sql, /WHERE "measures"\."id" > \? GROUP BY "measures"\."category" ORDER BY 2 DESC, 3 DESC, 1 ASC/);
+  assert.match(query.sql, /WHERE "__rs_root"\."id" > \? GROUP BY "__rs_root"\."category" ORDER BY 2 DESC, 3 DESC, 1 ASC/);
   assert.doesNotMatch(query.sql, /AS "wide"/);
   assert.deepEqual(query.parameters, [2, 100, 0]);
   assert.equal(compileSqlite(queryModel.explain({ query: aggregate() })).sql, 'EXPLAIN QUERY PLAN ' + compileSqlite(aggregate()).sql);
@@ -105,7 +105,7 @@ test('global WHERE keeps nested relation count parameters in order before pagina
     localKey: 'id', foreignKey: 'value', where: compare('id', '>', 4), predicate: compare('enabled', '=', 1) };
   const compiled = compileSqlite(group(undefined, { where, limit: 7, offset: 3 }));
   assert.deepEqual(compiled.parameters, [4, 1, 2, 7, 3]);
-  assert.match(compiled.sql, /"__rs_filter_0"\."value" = "measures"\."id"/);
+  assert.match(compiled.sql, /"__rs_filter_0"\."value" = "__rs_root"\."id"/);
 });
 
 test('empty and all-NULL inputs retain standard aggregate semantics and valid guards', () => fixture(db => {

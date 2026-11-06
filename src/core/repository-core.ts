@@ -13,6 +13,7 @@ import { decode, encode, identifier, isColumnRef, isTable, literal, plainRecord,
 import { ManyRelation, SingularRelation, and, assertOptions, eq, isRelation, orderToModel, predicateToModel, selectionFields, validateRelation,
   type FindOptions, type Includes, type LoweringBudget, type Predicate, type Selection } from './predicates.js';
 import { mappedCreateTableModel, mappedTableModel } from './model-mapping.js';
+import { physicalNameKey, physicalTableKey, quotePhysicalTable, validateModelStorage, type PhysicalDialect, type PhysicalTableIdentity } from './physical-identity.js';
 import { hasRelationFilter, predicateTruth, queryModel, relationKindsCompatible, MAX_RELATION_KEYS,
   type AggregateModel, type CreateIndexModel, type CreateTableModel, type GroupModel, type PredicateModel, type QueryModel, type SelectModel } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
@@ -40,9 +41,24 @@ export type Work<R> = Generator<Step, R, Rows>;
 export function* request(step: Step): Work<Rows> { return yield step; }
 
 export interface SchemaColumn { name: string; type: string; nullable: boolean; primaryKey: boolean; primaryKeyOrder: number; default: string | null; generated: boolean; hidden: boolean }
-export interface SchemaForeignKey { column: string; table: string; target: string; onDelete: string; onUpdate: string }
+export interface SchemaForeignKey { column: string; table: string; target: string; onDelete: string; onUpdate: string;
+  targetIdentity?: PhysicalTableIdentity; constraint?: string; position?: number; width?: number; targetResolved?: false }
 export interface SchemaIndex { name: string; columns: (string | null)[]; unique: boolean; origin: string; partial: boolean }
-export interface SchemaTable { name: string; columns: SchemaColumn[]; foreignKeys: SchemaForeignKey[]; indexes: SchemaIndex[] }
+export interface SchemaTable { name: string; columns: SchemaColumn[]; foreignKeys: SchemaForeignKey[]; indexes: SchemaIndex[];
+  identity?: PhysicalTableIdentity; coverage?: { scope: 'all' | 'mapped'; columns: 'all' | 'mapped-and-key'; totalColumnCount?: number } }
+export interface SchemaInspectionOptions { readonly scope?: 'all' | 'mapped' }
+export function inspectionScope(options: SchemaInspectionOptions): 'all' | 'mapped' {
+  let value: unknown;
+  try {
+    if (!options || typeof options !== 'object' || Array.isArray(options)
+        || ![null, Object.prototype].includes(Object.getPrototypeOf(options))) throw new Error();
+    const descriptors = Object.getOwnPropertyDescriptors(options);
+    if (Reflect.ownKeys(descriptors).some(key => key !== 'scope') || descriptors.scope && !('value' in descriptors.scope)) throw new Error();
+    value = descriptors.scope?.value;
+  } catch { return fail('QUERY', 'Schema inspection needs supported plain options.'); }
+  if (value !== undefined && value !== 'all' && value !== 'mapped') fail('QUERY', 'The schema inspection scope is unsupported.');
+  return value ?? 'all';
+}
 export interface SchemaPlan { table: string; action: 'create-table' | 'create-index'; sql: string }
 export interface QueryPlan { id: number; parent: number; detail: string }
 export interface WriteOptions { where: Predicate; maxRows?: number }
@@ -67,8 +83,9 @@ export function integer(value: number | undefined, fallback: number, min: number
   return n;
 }
 export interface OpenConfig { readOnly: boolean; traceValues: boolean; busyTimeoutMs: number; capacity: number; tables: Map<string, AnyTable> }
+export interface MappingBackend { readonly dialect: PhysicalDialect; readonly schema: string }
 /** Validation shared by openDatabase and openAsyncDatabase, in the synchronous order. `extraKeys` are allowed but not checked here. */
-export function openConfig(filename: unknown, options: Record<string, unknown> | object, extraKeys: readonly string[] = []): OpenConfig {
+export function openConfig(filename: unknown, options: Record<string, unknown> | object, extraKeys: readonly string[] = [], backend: MappingBackend = { dialect: 'sqlite', schema: 'main' }): OpenConfig {
   if (!supportedNode(process.versions.node)) fail('UNSUPPORTED_RUNTIME', 'Rowstitch requires ' + NODE_REQUIREMENT + '.');
   if (typeof filename !== 'string' || !filename.length || filename.includes('\0')) fail('VALIDATION', 'Choose a local SQLite filename or :memory:.');
   assertOptions(options, ['tables', 'readOnly', 'busyTimeoutMs', 'maxTraceEntries', 'traceValues', ...extraKeys]);
@@ -78,17 +95,26 @@ export function openConfig(filename: unknown, options: Record<string, unknown> |
   const busyTimeoutMs = integer(o.busyTimeoutMs, 1000, 0, 10_000);
   const capacity = integer(o.maxTraceEntries, 200, 1, 1000);
   const tables = new Map<string, AnyTable>();
-  const names = new Set<string>();
+  const names = new Set<string>(), physicalNames = new Set<string>();
   if (!Array.isArray(o.tables ?? []) || (o.tables?.length ?? 0) > 100) fail('SCHEMA', 'Register at most 100 mapped tables.');
   for (const table of o.tables ?? []) {
     if (!isTable(table) || names.has(table.name.toLowerCase())) fail('SCHEMA', 'Register genuine mapped tables with unique names.');
     identifier(table.name);
+    const target = validateModelStorage(mappedTableModel(table), backend.schema, backend.dialect);
+    const physical = physicalTableKey(target.schema, target.table, backend.dialect);
+    if (physicalNames.has(physical)) fail('SCHEMA', 'Register mapped tables with distinct physical identities.');
+    physicalNames.add(physical);
     names.add(table.name.toLowerCase()); tables.set(table.name, table);
+  }
+  if (backend.dialect === 'sqlite') for (const table of tables.values()) for (const column of Object.values(table.columns as Columns)) {
+    const target = column.config.foreignKey?.table;
+    if (target && (target.storage.schema ?? backend.schema).toLowerCase() !== (table.storage.schema ?? backend.schema).toLowerCase())
+      fail('SCHEMA', 'SQLite foreign keys cannot cross mapped namespaces.');
   }
   return { readOnly: o.readOnly === true, traceValues: o.traceValues === true, busyTimeoutMs, capacity, tables };
 }
 function foreignIndex(table: AnyTable, name: string): string {
-  return 'rs_fk_' + createHash('sha256').update(table.name + '\0' + name).digest('hex').slice(0, 16);
+  return 'rs_fk_' + createHash('sha256').update(table.storage.table + '\0' + table.storage.columns[name]).digest('hex').slice(0, 16);
 }
 function countValue(value: unknown): number {
   if (typeof value !== 'bigint' || value < 0 || value > BigInt(Number.MAX_SAFE_INTEGER)) fail('DATA', 'A database count exceeds the supported range.');
@@ -98,39 +124,66 @@ const toPlan = (rows: Rows): QueryPlan[] => rows.map(row => ({ id: Number(row.id
 
 // ------------------------------------------------------------------------------------------------ schema
 
-export function* inspectSchemaWork(): Work<SchemaTable[]> {
+export function* inspectSchemaWork(mapped?: ReadonlyMap<string, AnyTable>, scope: 'all' | 'mapped' = 'all'): Work<SchemaTable[]> {
   const metadata = (sql: string, parameters: readonly Parameter[] = []): Work<Rows> => request({ sql, parameters, operation: 'select', table: '', metadata: true });
-  const tables = yield* metadata("SELECT name FROM sqlite_schema WHERE type = 'table' AND substr(name,1,7) <> 'sqlite_' ORDER BY name LIMIT 101");
-  if (tables.length > 100) fail('RESULT_LIMIT', 'Schema inspection supports at most 100 tables.');
+  const tables: { name: string; schema: string; mapping?: AnyTable }[] = [];
+  if (scope === 'mapped') {
+    for (const mapping of mapped?.values() ?? []) {
+      const target = validateModelStorage(mappedTableModel(mapping), 'main', 'sqlite');
+      const found = yield* metadata('SELECT name FROM ' + quotePhysicalTable(target.schema, 'sqlite_schema', 'sqlite')
+        + " WHERE type = 'table' AND name = ? COLLATE NOCASE LIMIT 2", [target.table]);
+      if (found.length > 1) fail('SCHEMA', 'A mapped physical table identity is ambiguous.');
+      if (found.length) tables.push({ name: String(found[0].name), schema: target.schema, mapping });
+    }
+  } else for (const schema of ['main', 'temp']) {
+    const found = yield* metadata('SELECT name FROM ' + quotePhysicalTable(schema, 'sqlite_schema', 'sqlite')
+      + " WHERE type = 'table' AND substr(name,1,7) <> 'sqlite_' ORDER BY name LIMIT 101");
+    tables.push(...found.map(table => ({ name: String(table.name), schema })));
+    if (tables.length > 100) fail('RESULT_LIMIT', 'Schema inspection supports at most 100 tables.');
+  }
+  tables.sort((left, right) => Buffer.compare(Buffer.from(left.schema), Buffer.from(right.schema)) || Buffer.compare(Buffer.from(left.name), Buffer.from(right.name)));
   const result: SchemaTable[] = [];
   for (const t of tables) {
-    const name = String(t.name);
-    const columns = yield* metadata('SELECT name, type, "notnull", dflt_value, pk, hidden FROM pragma_table_xinfo(?) ORDER BY cid LIMIT 101', [name]);
+    const { name, schema } = t;
+    const subset = t.mapping?.schemaPolicy === 'subset';
+    const requested = t.mapping ? Object.values(t.mapping.storage.columns) : [];
+    const condition = requested.length ? 'name COLLATE NOCASE IN (' + requested.map(() => '?').join(', ') + ')' : '0';
+    const columns = yield* metadata('SELECT name, type, "notnull", '
+      + (subset ? 'CASE WHEN ' + condition + ' THEN dflt_value ELSE NULL END AS dflt_value' : 'dflt_value')
+      + ', pk, hidden FROM pragma_table_xinfo(?, ?)'
+      + (subset ? ' WHERE ' + condition + ' OR pk > 0' : '') + ' ORDER BY cid LIMIT 101',
+      subset ? [...requested, name, schema, ...requested] : [name, schema]);
     if (columns.length > 100) fail('SCHEMA', 'Schema inspection supports at most 100 columns per table.');
-    const foreignKeys = yield* metadata('SELECT "from", "to", "table", seq, on_delete, on_update FROM pragma_foreign_key_list(?) LIMIT 101', [name]);
-    const indices = yield* metadata('SELECT name, "unique", origin, partial FROM pragma_index_list(?) LIMIT 101', [name]);
+    const totalColumnCount = subset ? countValue((yield* metadata('SELECT count(*) AS n FROM pragma_table_xinfo(?, ?)', [name, schema]))[0]?.n) : columns.length;
+    const foreignKeys = yield* metadata('SELECT id, "from", "to", "table", seq, on_delete, on_update FROM pragma_foreign_key_list(?, ?) ORDER BY id, seq LIMIT 101', [name, schema]);
+    const indices = yield* metadata('SELECT name, "unique", origin, partial FROM pragma_index_list(?, ?) LIMIT 101', [name, schema]);
     if (foreignKeys.length > 100 || indices.length > 100) fail('RESULT_LIMIT', 'Schema inspection exceeded its key or index limit.');
     const primary = columns.filter(c => c.pk !== 0n);
     const rowidKey = primary.length === 1 && String(primary[0].type).toUpperCase() === 'INTEGER'
       && !indices.some(i => i.origin === 'pk');
     const parentKeys = new Map<string, string[]>();
-    const targets: string[] = [];
+    const targets: (string | undefined)[] = [];
     for (const f of foreignKeys) {
       if (f.to !== null) { targets.push(String(f.to)); continue; }
       const parent = String(f.table);
-      if (!parentKeys.has(parent)) parentKeys.set(parent, (yield* metadata('SELECT name FROM pragma_table_xinfo(?) WHERE pk > 0 ORDER BY pk LIMIT 101', [parent])).map(c => String(c.name)));
-      targets.push(parentKeys.get(parent)?.[Number(f.seq)] ?? '(unresolved implicit primary key)');
+      if (!parentKeys.has(parent)) parentKeys.set(parent, (yield* metadata('SELECT name FROM pragma_table_xinfo(?, ?) WHERE pk > 0 ORDER BY pk LIMIT 101', [parent, schema])).map(c => String(c.name)));
+      targets.push(parentKeys.get(parent)?.[Number(f.seq)]);
     }
     const indexes: SchemaIndex[] = [];
     for (const i of indices) {
-      const indexColumns = (yield* metadata('SELECT name FROM pragma_index_info(?) ORDER BY seqno LIMIT 101', [String(i.name)])).map(c => c.name === null ? null : String(c.name));
+      const indexColumns = (yield* metadata('SELECT name FROM pragma_index_info(?, ?) ORDER BY seqno LIMIT 101', [String(i.name), schema])).map(c => c.name === null ? null : String(c.name));
+      if (indexColumns.length > 100) fail('RESULT_LIMIT', 'Schema inspection exceeded its index width limit.');
       indexes.push({ name: String(i.name), unique: i.unique === 1n, origin: String(i.origin), partial: i.partial === 1n, columns: indexColumns });
     }
     result.push({
-      name,
+      name, identity: Object.freeze({ schema, table: name }), coverage: { scope, columns: subset ? 'mapped-and-key' : 'all', totalColumnCount },
       columns: columns.map(c => ({ name: String(c.name), type: String(c.type).toLowerCase(), nullable: c.notnull === 0n && !(rowidKey && c.pk !== 0n),
         primaryKey: c.pk !== 0n, primaryKeyOrder: Number(c.pk), default: c.dflt_value === null ? null : String(c.dflt_value), generated: c.hidden === 2n || c.hidden === 3n, hidden: c.hidden === 1n })),
-      foreignKeys: foreignKeys.map((f, k) => ({ column: String(f.from), table: String(f.table), target: targets[k], onDelete: String(f.on_delete).toLowerCase(), onUpdate: String(f.on_update).toLowerCase() })),
+      foreignKeys: foreignKeys.map((f, k) => ({ column: String(f.from), table: String(f.table), target: targets[k] ?? '(unresolved implicit primary key)',
+        ...(targets[k] === undefined ? { targetResolved: false as const } : {}),
+        targetIdentity: Object.freeze({ schema, table: String(f.table) }), constraint: String(f.id), position: Number(f.seq) + 1,
+        width: foreignKeys.filter(other => other.id === f.id).length,
+        onDelete: String(f.on_delete).toLowerCase(), onUpdate: String(f.on_update).toLowerCase() })),
       indexes,
     });
   }
@@ -140,11 +193,15 @@ export function* inspectSchemaWork(): Work<SchemaTable[]> {
 export function* schemaPlansWork(ctx: CoreContext): Work<PlannedSchema[]> {
   ctx.check();
   if (ctx.dialect && ctx.dialect.name !== 'sqlite') fail('QUERY', 'Schema planning is not implemented for this database dialect.');
-  const actual = yield* inspectSchemaWork();
+  const actual = yield* inspectSchemaWork(ctx.tables, 'mapped');
   const plans: PlannedSchema[] = [];
   const add = (table: string, action: SchemaPlan['action'], model: CreateTableModel | CreateIndexModel): void => { plans.push({ table, action, model, sql: compileFor(ctx, model).sql }); };
   for (const table of ctx.tables.values()) {
-    const found = actual.find(t => t.name.toLowerCase() === table.name.toLowerCase());
+    const expected = validateModelStorage(mappedTableModel(table), 'main', 'sqlite');
+    const found = actual.find(t => t.identity && physicalTableKey(t.identity.schema, t.identity.table, 'sqlite') === physicalTableKey(expected.schema, expected.table, 'sqlite'));
+    const physical = (name: string): string => table.storage.columns[name];
+    const same = (left: string, right: string): boolean => physicalNameKey(left, 'sqlite') === physicalNameKey(right, 'sqlite');
+    const strict = table.schemaPolicy !== 'subset';
     const columns = Object.entries(table.columns as Columns);
     for (const [, c] of columns) {
       const fk = c.config.foreignKey;
@@ -152,35 +209,38 @@ export function* schemaPlansWork(ctx: CoreContext): Work<PlannedSchema[]> {
     }
     if (!found) add(table.name, 'create-table', mappedCreateTableModel(table));
     else {
-      const expectedPrimary = columns.filter(([, c]) => c.config.primary).map(([n]) => n);
+      const expectedPrimary = columns.filter(([, c]) => c.config.primary).map(([n]) => physical(n));
       const actualPrimary = found.columns.filter(c => c.primaryKey).sort((a, b) => a.primaryKeyOrder - b.primaryKeyOrder).map(c => c.name);
-      let drift = found.name !== table.name || found.columns.length !== columns.length || JSON.stringify(expectedPrimary) !== JSON.stringify(actualPrimary)
-        || found.columns.some(c => c.generated || c.hidden);
+      let drift = strict && found.columns.length !== columns.length
+        || expectedPrimary.length !== actualPrimary.length || expectedPrimary.some((name, index) => !same(name, actualPrimary[index]))
+        || found.columns.some(c => (strict || Object.values(table.storage.columns).some(name => same(name, c.name))) && (c.generated || c.hidden));
       for (const [name, c] of columns) {
-        const a = found.columns.find(v => v.name === name);
+        const a = found.columns.find(v => same(v.name, physical(name)));
         if (!a || a.type !== sqlType(c.config).toLowerCase() || a.nullable !== c.config.nullable
             || a.default !== (c.config.hasDefault ? literal(c.config.defaultValue!) : null)) drift = true;
         const expectedUnique = c.config.unique;
-        const actualUnique = found.indexes.some(i => i.unique && i.origin !== 'pk' && i.columns.length === 1 && i.columns[0] === name && !i.partial);
-        if (expectedUnique !== actualUnique) drift = true;
+        const actualUnique = found.indexes.some(i => i.unique && i.origin !== 'pk' && i.columns.length === 1 && i.columns[0] !== null && same(i.columns[0], physical(name)) && !i.partial);
+        if (expectedUnique ? !actualUnique : strict && actualUnique) drift = true;
       }
-      for (const index of found.indexes) {
+      if (strict) for (const index of found.indexes) {
         if (index.unique && index.origin !== 'pk' && (index.partial || index.columns.length !== 1 || index.columns[0] === null
-            || !Object.hasOwn(table.columns, index.columns[0]) || !table.columns[index.columns[0]].config.unique)) drift = true;
+            || !columns.some(([name, c]) => same(physical(name), index.columns[0]!) && c.config.unique))) drift = true;
       }
       const expectedFk = columns.filter(([, c]) => c.config.foreignKey).map(([name, c]) => {
         const f = c.config.foreignKey!;
-        return [name, f.table.name, f.column, f.onDelete, 'no action'].join('\0');
+        return JSON.stringify([physicalNameKey(physical(name), 'sqlite'), physicalTableKey(f.table.storage.schema ?? 'main', f.table.storage.table, 'sqlite'),
+          physicalNameKey(f.table.storage.columns[f.column], 'sqlite'), f.onDelete, 'no action', 1]);
       }).sort();
-      const actualFk = found.foreignKeys.map(f => [f.column, f.table, f.target, f.onDelete, f.onUpdate].join('\0')).sort();
-      if (JSON.stringify(expectedFk) !== JSON.stringify(actualFk)) drift = true;
+      const actualFk = found.foreignKeys.map(f => JSON.stringify([physicalNameKey(f.column, 'sqlite'), physicalTableKey(f.targetIdentity?.schema ?? expected.schema, f.targetIdentity?.table ?? f.table, 'sqlite'),
+        f.targetResolved === false ? null : physicalNameKey(f.target, 'sqlite'), f.onDelete, f.onUpdate, f.width ?? 1])).sort();
+      if (expectedFk.some(key => !actualFk.includes(key)) || strict && JSON.stringify(expectedFk) !== JSON.stringify(actualFk)) drift = true;
       if (drift) fail('SCHEMA_DRIFT', 'An existing table is incompatible with its mapping. No destructive schema changes were made.');
     }
     for (const [name, c] of columns) {
       if (!c.config.foreignKey) continue;
       const indexName = foreignIndex(table, name);
       const index = found?.indexes.find(i => i.name === indexName);
-      if (index && (index.unique || index.partial || index.columns.length !== 1 || index.columns[0] !== name)) fail('SCHEMA_DRIFT', 'An existing relation index is incompatible with its mapping.');
+      if (index && (index.unique || index.partial || index.columns.length !== 1 || index.columns[0] === null || !same(index.columns[0], physical(name)))) fail('SCHEMA_DRIFT', 'An existing relation index is incompatible with its mapping.');
       if (!index) add(table.name, 'create-index', queryModel.createIndex({ table: mappedTableModel(table), name: indexName, columns: [name] }));
     }
   }

@@ -1,12 +1,13 @@
 /** Closed native lowering of the shared loader's captured batched relation windows. */
 import { fail } from './errors.js';
-import { identifier, type Kind, type Parameter } from './schema.js';
+import type { Kind, Parameter } from './schema.js';
 import type { OrderModel, PredicateModel, RelationModel, TableModel } from './query-model.js';
 import type { PostgresOutputField } from './postgres-result.js';
 import { POSTGRES_RELATION_LIMITS, type PostgresRelationProfile } from './postgres-relation-profile.js';
 
 interface RelationContext {
   source(table: TableModel): string;
+  column(table: TableModel, scope: string, logicalColumn: string): string;
   kind(table: TableModel, column: string): Kind;
   predicate(table: TableModel, scope: string, model?: PredicateModel): string;
   order(table: TableModel, scope: string, entries: readonly OrderModel[]): string;
@@ -48,8 +49,8 @@ export function compilePostgresRelation(query: RelationModel, ctx: RelationConte
     alias: '__rs_pg_' + index, property: column, kind: ctx.kind(query.table, column), nullable: query.table.nullable![column]!,
   })));
   const rank = physical(outputs.length), parent = physical(outputs.length + 1);
-  const partition = ROOT + '.' + identifier(query.partitionBy);
-  const projection = query.columns.map((column, index) => ROOT + '.' + identifier(column) + ' AS ' + physical(index));
+  const partition = ctx.column(query.table, ROOT, query.partitionBy);
+  const projection = query.columns.map((column, index) => ctx.column(query.table, ROOT, column) + ' AS ' + physical(index));
   let prefix = '', from = ctx.source(query.table) + ' AS ' + ROOT, keyFilter = '';
   if (correlated) {
     // Ordinals are bounded generated nonnegative int8 constants, not another caller-parameter allowance.
@@ -68,7 +69,7 @@ export function compilePostgresRelation(query: RelationModel, ctx: RelationConte
   const slots = [...outputs.map((_, index) => physical(index)), rank, ...(correlated ? [parent] : [])];
   const lower = ctx.bindInteger(query.offset), upper = ctx.bindInteger(query.offset + query.limit), readLimit = ctx.bindInteger(query.readLimit);
   const outerGroup = correlated ? parent : physical(query.columns.indexOf(query.partitionBy));
-  const sql = prefix + 'SELECT ' + slots.map(slot => WINDOW + '.' + slot).join(', ') + ' FROM (' + inner + ') AS ' + WINDOW
+  const sql = prefix + 'SELECT ' + slots.map(slot => WINDOW + '.' + slot).join(', ') + ' FROM (' + inner + ') AS ' + WINDOW + '(' + slots.join(', ') + ')'
     + ' WHERE ' + WINDOW + '.' + rank + operator('>') + lower + ' AND ' + WINDOW + '.' + rank + operator('<=') + upper
     + ' ORDER BY ' + WINDOW + '.' + outerGroup + ' ASC, ' + WINDOW + '.' + rank + ' ASC LIMIT ' + readLimit;
   const profile: PostgresRelationProfile = Object.freeze({ outputs, partitionBy: query.partitionBy,

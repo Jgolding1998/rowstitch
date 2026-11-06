@@ -6,31 +6,43 @@ import {planPostgresSchemaWork, ensurePostgresSchemaWork} from '../dist/core/pos
 
 const code = expected => error => error?.code === expected;
 const oid = {integer: 20, bigint: 20, real: 701, text: 25, boolean: 16, json: 3802};
-const fkIndex = (table, name) => 'rs_fk_' + createHash('sha256').update(table.name + '\0' + name).digest('hex').slice(0, 16);
+const fkIndex = (table, name) => 'rs_fk_' + createHash('sha256').update(table.storage.table + '\0' + table.storage.columns[name]).digest('hex').slice(0, 16);
 const parent = defineTable('plan_parent', {id: column.integer().primaryKey(), label: column.text().unique()});
 const child = defineTable('plan_child', {id: column.integer().primaryKey(), parent_id: column.integer().references(parent, 'id', {onDelete: 'cascade'})});
 const registry = () => new Map([[child.name, child], [parent.name, parent]]);
 const activity = (primary = false) => ({primary, valid: true, ready: true, live: true, immediate: true});
 function physical(table, schema = 'sample') {
-  const fields = Object.entries(table.columns), primary = fields.filter(([, c]) => c.config.primary).map(([name]) => name);
-  const columns = fields.map(([name, {config: c}]) => ({name, type: 'native type', nullable: c.nullable, primaryKeyOrder: primary.indexOf(name) + 1,
+  const fields = Object.entries(table.columns), primary = fields.filter(([, c]) => c.config.primary).map(([name]) => table.storage.columns[name]);
+  const columns = fields.map(([logical, {config: c}]) => ({name: table.storage.columns[logical], type: 'native type', nullable: c.nullable, primaryKeyOrder: primary.indexOf(table.storage.columns[logical]) + 1,
     default: c.hasDefault && c.defaultValue !== null ? 'fictional_default' : null, generated: false, typeOid: oid[c.kind], identity: c.generated ? 'd' : '', generation: '', hasDefault: c.hasDefault && c.defaultValue !== null}));
-  const foreignKeys = fields.filter(([, c]) => c.config.foreignKey).map(([name, {config: c}]) => ({constraint: 'fk_' + name, position: 1, column: name, targetSchema: schema,
-    targetTable: c.foreignKey.table.name, target: c.foreignKey.column, onDelete: c.foreignKey.onDelete, onUpdate: 'no action', enforced: true, validated: true}));
+  const foreignKeys = fields.filter(([, c]) => c.config.foreignKey).map(([name, {config: c}], index) => ({constraint: 'fk_' + name, constraintOid: 40001 + index, width: 1, position: 1,
+    column: table.storage.columns[name], targetSchema: c.foreignKey.table.storage.schema ?? schema, targetTable: c.foreignKey.table.storage.table,
+    target: c.foreignKey.table.storage.columns[c.foreignKey.column], onDelete: c.foreignKey.onDelete, onUpdate: 'no action', enforced: true,
+    validated: true, match: 'simple', deferrable: false, initiallyDeferred: false, deleteSetColumns: null}));
   const indexes = [{name: table.name + '_pkey', columns: primary, unique: true, origin: 'p', partial: false, ...activity(true)}];
   for (const [name, {config: c}] of fields) {
-    if (c.unique) indexes.push({name: table.name + '_' + name + '_unique', columns: [name], unique: true, origin: 'u', partial: false, ...activity()});
-    if (c.foreignKey) indexes.push({name: fkIndex(table, name), columns: [name], unique: false, origin: 'c', partial: false, ...activity()});
+    if (c.unique) indexes.push({name: table.name + '_' + name + '_unique', columns: [table.storage.columns[name]], unique: true, origin: 'u', partial: false, ...activity()});
+    if (c.foreignKey) indexes.push({name: fkIndex(table, name), columns: [table.storage.columns[name]], unique: false, origin: 'c', partial: false, ...activity()});
   }
-  return {name: table.name, kind: 'r', columns, foreignKeys, indexes};
+  return {name: table.storage.table, kind: 'r', totalColumnCount: columns.length, columns, foreignKeys, indexes};
 }
-const snapshot = (tables = [], extra = {}) => ({schema: 'sample', exists: true, tables, ...extra});
+const snapshot = (tables = [], extra = {}) => ({schema: 'sample', exists: true, tables, conflicts: [], ...extra});
 const response = data => ({fields: [{name: '__rs_pg_schema', typeOid: 3802}], rows: [[JSON.stringify(data)]], command: 'SELECT', rowCount: 1n});
 function drive(work, snapshots, onStep) {
   const calls = []; let state = work.next();
   while (!state.done) {
     const step = state.value; calls.push(step); onStep?.(step, calls.length);
-    const raw = step.metadata ? response(snapshots.shift()) : {fields: [], rows: [], command: 'CREATE', rowCount: null};
+    let raw = {fields: [], rows: [], command: 'CREATE', rowCount: null};
+    if (step.metadata) {
+      const data = structuredClone(snapshots.shift());
+      const request = JSON.parse(step.parameters[1]);
+      for (const table of data.tables) {
+        table.totalColumnCount = table.columns.length;
+        const mapped = request.tables.find(item => item.table === table.name)?.columns;
+        if (mapped && !request.all) table.columns = table.columns.filter(column => mapped.includes(column.name) || column.primaryKeyOrder > 0);
+      }
+      raw = response(data);
+    }
     assert.equal(typeof step.decode, 'function'); state = work.next(step.decode(raw));
   }
   return {value: state.value, calls};
@@ -117,6 +129,50 @@ test('nullable DEFAULT NULL normalization and existing default-value limits rema
   assert.deepEqual(drive(planPostgresSchemaWork(new Map([[other.name, other]]), 'sample'), [snapshot([found])]).value, [], 'Presence is checked; this is deliberately not default-value equivalence.');
 });
 
+test('explicit native policies reject defaults that can be changed or refused by a cast or destination type', () => {
+  const cases = [
+    [column.text().default('ab'), "'ab'::character varying(1)", 25, 'text'],
+    [column.text().default('ab'), "'ab'::character varying", 1043, 'character varying(1)'],
+    [column.text().default('true'), "'true'::boolean", 25, 'text'],
+    [column.real().default(1.23456789), '(1.23456789)::real', 701, 'double precision'],
+    [column.real().default(1.23456789), '1.23456789', 700, 'real'],
+    [column.real().default(0), '(1e-400)::numeric', 701, 'double precision'],
+    [column.integer().default(32768), '32768', 21, 'smallint'],
+    [column.integer().default(32768), "'32768'::smallint", 20, 'bigint'],
+  ];
+  for (const schemaPolicy of ['exact', 'subset', 'legacy']) for (const [value, expression, typeOid, type] of cases) {
+    const table = defineTable('cast_defaults', {id: column.integer().primaryKey(), value}, {schemaPolicy});
+    const found = physical(table);
+    Object.assign(found.columns[1], {default: expression, typeOid, type});
+    const plan = () => drive(planPostgresSchemaWork(new Map([[table.name, table]]), 'sample'), [snapshot([found])]).value;
+    if (schemaPolicy === 'legacy') assert.deepEqual(plan(), []);
+    else assert.throws(plan, code('SCHEMA_DRIFT'), `${schemaPolicy}: ${expression} into ${type}`);
+  }
+});
+
+test('explicit native policies still compare supported lossless literal defaults', () => {
+  const table = defineTable('literal_defaults', {
+    id: column.integer().primaryKey(),
+    text: column.text().default("a'\\b"), character: column.text().default('🙂'),
+    narrowed: column.real().default(1.5), wide: column.real().default(1.23456789),
+    small: column.integer().default(-32768), large: column.bigint().default(9223372036854775807n),
+    bool: column.boolean().default(true), json: column.json().default({name: 'a'}),
+  }, {schemaPolicy: 'exact'});
+  const found = physical(table);
+  const expressions = [
+    [String.raw`E'a''\\b'::text`, 25, 'text'],
+    ["'🙂'::character varying", 1043, 'character varying(1)'],
+    ["'1.5'::real", 700, 'real'],
+    ["'1.23456789'::double precision", 701, 'double precision'],
+    ["'-32768'::smallint", 21, 'smallint'],
+    ["'9223372036854775807'::bigint", 20, 'bigint'],
+    ['true', 16, 'boolean'],
+    ["'{\"name\": \"a\"}'::jsonb", 3802, 'jsonb'],
+  ];
+  for (const [index, [expression, typeOid, type]] of expressions.entries()) Object.assign(found.columns[index + 1], {default: expression, typeOid, type});
+  assert.deepEqual(drive(planPostgresSchemaWork(new Map([[table.name, table]]), 'sample'), [snapshot([found])]).value, []);
+});
+
 test('trusted extra native columns and constraints remain intact but mapped unique obligations are required', () => {
   const found = physical(parent); found.columns.push({name: 'native_extra', type: 'text', nullable: true, primaryKeyOrder: 0, default: null, generated: false, typeOid: 25, identity: '', generation: '', hasDefault: false});
   found.indexes.push({name: 'native_extra_unique', columns: ['native_extra'], unique: true, origin: 'c', partial: true, ...activity(), valid: false, ready: false});
@@ -127,6 +183,7 @@ test('trusted extra native columns and constraints remain intact but mapped uniq
 
 test('a flattened component of a composite foreign key cannot satisfy a standalone mapped obligation', () => {
   const found = physical(child); found.columns.push({name: 'scope', type: 'integer', nullable: true, primaryKeyOrder: 0, default: null, generated: false, typeOid: 23, identity: '', generation: '', hasDefault: false});
+  found.foreignKeys[0].width = 2;
   found.foreignKeys.push({...found.foreignKeys[0], position: 2, column: 'scope', target: 'scope'});
   assert.throws(() => drive(planPostgresSchemaWork(registry(), 'sample'), [snapshot([physical(parent), found])]), code('SCHEMA_DRIFT'));
 });

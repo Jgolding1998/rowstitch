@@ -166,13 +166,21 @@ test('native schema hook failures after a request are sanitized too',async t=>{
 });
 test('native trace exports identify PostgreSQL and preserve unknown failed-commit outcomes',async t=>{
   const f=await fixture(t);const trace=f.db.exportTrace();
+  assert.equal(trace.version,2);
   assert.equal(trace.dialect,'postgresql');
+  assert.deepEqual(trace.inspection,{scope:'mapped',registeredTables:1,omittedTables:0});
+  assert.deepEqual(trace.mapping.tables[0].physical,{schema:'sample',table:'sample_rows'});
   assert.ok(trace.notes.some(note=>note.includes('unknown outcome even if a later ROLLBACK succeeds')));
 });
-test('legacy SQLite exports remain unchanged without a dialect field',async t=>{
+test('SQLite async exports identify the v2 dialect and distinguish unobserved registrations',async t=>{
   const { openAsyncDatabase }=await import(new URL('index.js',build));
   const db=await openAsyncDatabase(':memory:',{tables:[items]});t.after(()=>db.close());
-  assert.ok(!Object.hasOwn(db.exportTrace(),'dialect'));
+  const trace=db.exportTrace();
+  assert.equal(trace.version,2);
+  assert.equal(trace.dialect,'sqlite');
+  assert.deepEqual(trace.inspection,{scope:'mapped',registeredTables:1,omittedTables:0});
+  assert.deepEqual(trace.mapping.tables[0].physical,{schema:'main',table:'sample_rows'});
+  assert.deepEqual(trace.schema,[]);
 });
 const schemaPlan={table:'sample_rows',action:'create-table',sql:'CREATE TABLE sample.sample_rows(id integer PRIMARY KEY)'};
 const createAck=()=>snapshotPostgresResult({command:'CREATE',rowCount:null,fields:[],rows:[]});
@@ -181,11 +189,40 @@ function* schemaEnsure(schema) {
   return {plans:[schemaPlan],schema};
 }
 test('native ensure captures its schema before COMMIT without post-commit inspection',async t=>{
-  const schema=[{name:'sample_rows',columns:[],foreignKeys:[],indexes:[]}];
+  const identity={schema:'sample',table:'sample_rows'};
+  const schema=[{name:'sample_rows',identity,coverage:{scope:'mapped',columns:'all'},columns:[],foreignKeys:[],indexes:[]}];
   const f=await fixture(t,[createAck()],{ensureSchema:()=>schemaEnsure(schema)});
   assert.deepEqual(await f.db.ensureSchema(),[schemaPlan]);assert.equal(f.inspections,1);
   assert.deepEqual(f.controls,['BEGIN ISOLATION LEVEL SERIALIZABLE','COMMIT']);
-  assert.deepEqual(f.db.exportTrace().schema,[{name:'sample_rows',columns:[],foreignKeys:[]}]);
+  assert.deepEqual(f.db.exportTrace().schema,[{name:'sample_rows',identity,coverage:{columns:'all'},columns:[],foreignKeys:[]}]);
+});
+test('nested native ensure publishes its trace schema to the root only after the outer commit', async t => {
+  const identity = { schema: 'sample', table: 'sample_rows' };
+  const schema = [{ name: 'sample_rows', identity, coverage: { scope: 'mapped', columns: 'all' }, columns: [], foreignKeys: [], indexes: [] }];
+  const f = await fixture(t, [createAck(), createAck()], { ensureSchema: () => schemaEnsure(schema) });
+  const observed = [{ name: 'sample_rows', identity, coverage: { columns: 'all' }, columns: [], foreignKeys: [] }];
+  const rollback = new Error('Fictional outer rollback');
+  assert.deepEqual(f.db.exportTrace().schema, []);
+
+  await assert.rejects(f.db.transaction(async outer => {
+    assert.deepEqual(await outer.ensureSchema(), [schemaPlan]);
+    assert.deepEqual(outer.exportTrace().schema, observed);
+    throw rollback;
+  }), error => error === rollback);
+  assert.deepEqual(f.db.exportTrace().schema, []);
+  assert.equal(f.controls[0], 'BEGIN ISOLATION LEVEL SERIALIZABLE');
+  assert.match(f.controls[1], /^SAVEPOINT "rs_async_sp_\d+"$/);
+  assert.deepEqual(f.controls.slice(2), ['RELEASE ' + f.controls[1], 'ROLLBACK']);
+
+  await f.db.transaction(async outer => {
+    assert.deepEqual(await outer.ensureSchema(), [schemaPlan]);
+    assert.deepEqual(outer.exportTrace().schema, observed);
+  });
+  assert.deepEqual(f.db.exportTrace().schema, observed);
+  assert.equal(f.controls[4], 'BEGIN ISOLATION LEVEL SERIALIZABLE');
+  assert.match(f.controls[5], /^SAVEPOINT "rs_async_sp_\d+"$/);
+  assert.deepEqual(f.controls.slice(6), ['RELEASE ' + f.controls[5], 'COMMIT']);
+  assert.equal(f.inspections, 1);
 });
 test('native ensure allocation errors are sanitized and roll back before COMMIT',async t=>{
   const schema=[{get name(){throw new Error('FICTIONAL_PRIVATE_ALLOCATION');}}];

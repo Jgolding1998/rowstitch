@@ -45,7 +45,7 @@ A definite engine rejection is distinct from a lost acknowledgment. The inline a
 
 If COMMIT was sent and its acknowledgment is lost, the session raises `COMMIT_UNCONFIRMED`, becomes unusable and requests close once. It does not infer rollback or replay the callback. A later `inTransaction() === false` would not distinguish commit from rollback. Other unconfirmed driver operations likewise make the connection unusable. Cleanup preserves the callback's original error when possible and reports unusability without claiming that a failed close succeeded.
 
-Async exports remain trace format version 1. They use the schema last inspected at open, `inspectSchema()` or `ensureSchema()`; the notes state its capture time. Exporting performs no database I/O. A request error can be either a definite rejection or an unconfirmed outcome, and notes state the uncertainty. Studio marks a failed COMMIT without a subsequent recorded rollback as an unknown write effect. It does not establish the current database state. Schema names and SQL literals may still be sensitive even with redacted values.
+Async exports use trace format version 2. They include registered mappings and the scope and time of the last successful schema inspection at open, `inspectSchema()` or `ensureSchema()`. Exporting performs no database I/O. A transaction handle can show a provisional inspection. The root handle receives that snapshot after the outer transaction commits. A request error can be either a definite rejection or an unconfirmed outcome, and notes state the uncertainty. Studio marks a failed COMMIT without a subsequent recorded rollback as an unknown write effect. Schema names and SQL literals may still be sensitive even with redacted values.
 
 ## Native PostgreSQL and PGlite
 
@@ -104,7 +104,7 @@ A failed statement aborts a PostgreSQL transaction until it rolls back. A write 
 
 An existing mapped table must be an ordinary or partitioned table and match on primary key columns and order, a compatible native type for each mapped column, nullability, unique columns, single-column foreign keys and their delete action. Otherwise `SCHEMA_DRIFT` is raised and nothing changes.
 
-Not compared: whether a default has the same **value** (only that one is present), CHECK constraints, triggers, row-level security, roles, operator classes and collations. Unmapped extra columns are allowed, so a required one can still make an insert fail. Compatible existing types are wider than what `ensureSchema` creates: for example `int4`, `varchar`, `float4` or `json` columns are accepted, and the engine still applies their limits.
+`schemaPolicy: 'legacy'` checks default presence and allows extra columns. The `exact` and `subset` policies also compare supported literal defaults and stricter foreign key metadata. Exact requires the modeled column set. Subset allows extra columns, and an extra required column can still make an insert fail. CHECK constraints, triggers, row-level security, roles, operator classes and collations remain outside the drift check. Compatible existing types include `int4`, `varchar`, `float4` and `json`, each subject to its engine limits.
 
 ### What the database can still do
 
@@ -134,7 +134,7 @@ Filters have checks on PostgreSQL 18.6 and PGlite 0.5.15 against fixed fictional
 
 These fixtures do not prove every schema. Relation filters ran one relation deep over `hasMany` with integer keys. Deeper nesting, `hasOne` and `belongsTo` descriptors, text keys and locale-dependent ordering, including text `between`, have not been compared with SQLite. Unicode case folding is not offered. The refusals above were observed as an unchanged SQL trace and a working connection afterwards, backed by source and controlled-executor tests, not by a separate network monitor.
 
-Traces carry `dialect: 'postgresql'` and remain format version 1. Studio reads PostgreSQL controls and `$n` slots from that field. A failed PostgreSQL COMMIT stays unknown even if a later ROLLBACK succeeds, because ROLLBACK succeeds with nothing open.
+PostgreSQL and PGlite traces carry `dialect: 'postgresql'`. Studio reads PostgreSQL controls and `$n` slots from that field. A failed PostgreSQL COMMIT stays unknown even if a later ROLLBACK succeeds, because ROLLBACK succeeds with nothing open.
 
 ### PGlite limits
 

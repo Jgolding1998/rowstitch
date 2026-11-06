@@ -443,6 +443,45 @@ tbody tr:last-child td { border-bottom: 0; }
 .table-card { overflow-x: auto; }
 .table-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; }
 .table-name { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.schema-coverage { display: grid; gap: 8px; margin-top: 12px; max-width: 760px; }
+.schema-coverage .callout { margin-top: 0; overflow-wrap: anywhere; }
+
+/* Stored names. Catalog text: quoted, spaces kept, and free to break anywhere so nothing widens the page. */
+.ident { display: inline; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ident code { white-space: inherit; overflow-wrap: inherit; }
+.ident-pair { display: inline; overflow-wrap: anywhere; }
+.ident-dot { color: var(--ink-3); }
+.ident-length { margin-left: 6px; color: var(--ink-3); font-size: 12px; white-space: normal; }
+.tables.is-mapped { grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); }
+.table-card > p { max-width: 100%; }
+.table-card .callout { margin-top: 0; }
+.table-name .ident { font-size: 14px; font-weight: 600; }
+.stored-as { color: var(--ink-2); overflow-wrap: anywhere; }
+.stored-as .muted { font-size: 12px; }
+.table-card .fine { margin-top: -4px; overflow-wrap: anywhere; }
+.mapped-columns td { overflow-wrap: anywhere; }
+.mapped-columns th { white-space: nowrap; }
+.relationship { display: grid; gap: 4px; }
+.rel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; }
+.rel-pairs { display: grid; gap: 2px; padding-left: 12px; border-left: 2px dashed var(--line-strong); color: var(--ink-2); }
+.rel-pair { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; overflow-wrap: anywhere; }
+.relationships > .relationship + .relationship { margin-top: 6px; }
+.exact { width: 100%; font-size: 12px; }
+.exact-summary { display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; border-radius: 4px; list-style: none; color: var(--accent-ink); font-weight: 500; cursor: pointer; }
+.exact-summary::-webkit-details-marker { display: none; }
+.exact-summary::after {
+  content: ""; width: 6px; height: 6px; margin-top: -3px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg); transition: transform 160ms var(--ease);
+}
+.exact[open] .exact-summary { margin-bottom: 6px; }
+.exact[open] .exact-summary::after { margin-top: 3px; transform: rotate(-135deg); }
+.fact-stored { grid-column: 1 / -1; }
+.schema-coverage .fine { margin-top: 0; }
+.exact-list { display: grid; gap: 8px; max-height: 240px; overflow: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); }
+.exact-row dt { color: var(--ink-3); }
+.exact-points { margin-top: 2px; font-size: 11.5px; overflow-wrap: anywhere; }
+
 .result { margin-top: 16px; }
 .result-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .result-scroll { margin-top: 12px; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
@@ -489,7 +528,16 @@ body.is-dragging .drop-hint { display: flex; }
   .counts { gap: 8px 20px; }
   .count-value { font-size: 18px; line-height: 24px; }
   .legend-scale { margin-left: 0; }
-  .tables { grid-template-columns: minmax(0, 1fr); }
+  .tables, .tables.is-mapped { grid-template-columns: minmax(0, 1fr); }
+  .table-card { padding: 14px 16px; }
+  /* A four-column table cannot hold long stored names at this width, so each row becomes a small labelled block. */
+  .mapped-columns, .mapped-columns tbody { display: block; }
+  .mapped-columns thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .mapped-columns tr { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .mapped-columns tbody tr:last-child { border-bottom: 0; }
+  .mapped-columns td { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; padding: 0; border: 0; }
+  .mapped-columns td::before { content: attr(data-label); color: var(--ink-3); font-family: var(--sans); font-size: 12px; }
+  .exact-summary { display: inline-flex; align-items: center; min-height: 40px; }
   .empty { margin: 24px 0; padding: 24px 20px; }
   .guide-summary { flex-direction: column; align-items: flex-start; gap: 4px; }
   .guide-body { padding: 16px; }

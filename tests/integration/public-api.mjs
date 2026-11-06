@@ -126,8 +126,8 @@ export async function runPublicApiCases({ engine, sdk, openPostgresDatabase, ope
     assert.ok(!JSON.stringify(trace).includes(marker), 'Captured traceValues:false must keep bound marker data redacted.');
     assert.ok(trace.queries.some(entry => entry.operation === 'insert'));
     assert.ok(!trace.queries.some(entry => entry.sql.includes('"pg_catalog"."pg_class"')), 'Native schema metadata must stay untraced.');
-    assert.equal(trace.version, 1);
-    cases.push('actual public trace stays v1, redacts captured bound values and excludes catalog metadata');
+    assert.equal(trace.version, 2);
+    cases.push('public trace v2 redacts captured bound values and excludes catalog metadata');
 
     const filterRows = db.table(filterRoots);
     await filterRows.insertMany([

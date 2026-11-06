@@ -13,6 +13,7 @@ export interface DialectQuery {
 }
 export interface RepositoryDialect {
   readonly name: 'sqlite' | 'postgresql';
+  readonly defaultSchema?: string;
   /** False refuses an include during planning, before the root SELECT can run. */
   readonly supportsIncludes?: boolean;
   /** Validate known native child values during whole-tree planning; dummy keys never execute. */

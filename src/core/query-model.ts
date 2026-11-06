@@ -1,6 +1,7 @@
 /** Validated data plans. No driver, connection, SQL text, IO or execution lives here. */
 import { fail } from './errors.js';
-import { identifier, type Kind, type Parameter } from './schema.js';
+import { identifier, type Kind, type Parameter, type TableStorage } from './schema.js';
+import { capturePhysicalName } from './physical-identity.js';
 
 export interface TableModel {
   readonly name: string;
@@ -9,7 +10,10 @@ export interface TableModel {
   readonly version?: string;
   readonly kinds?: Readonly<Record<string, Kind>>;
   readonly nullable?: Readonly<Record<string, boolean>>;
+  /** Optional on legacy input plans; normalization captures a complete immutable storage identity. */
+  readonly storage?: TableStorage;
 }
+export interface CapturedTableModel extends TableModel { readonly storage: TableStorage }
 export type ComparisonOperator = '=' | '<>' | '>' | '>=' | '<' | '<=' | 'IN';
 export type ColumnComparisonOperator = Exclude<ComparisonOperator, 'IN'>;
 export type TextMatchMode = 'contains' | 'starts-with' | 'ends-with';
@@ -66,10 +70,13 @@ export interface RelationModel extends HasTable {
   readonly where?: PredicateModel; readonly orderBy: readonly OrderModel[];
   readonly offset: number; readonly limit: number; readonly readLimit: number;
 }
+export interface ForeignKeyTargetModel { readonly schema?: string; readonly table: string; readonly column: string }
+export type ForeignKeyModel = { readonly target: ForeignKeyTargetModel; readonly table?: never; readonly column?: never; readonly onDelete: 'cascade' | 'restrict' | 'set null' | 'no action' }
+  | { readonly table: string; readonly column: string; readonly target?: never; readonly onDelete: 'cascade' | 'restrict' | 'set null' | 'no action' };
 export interface ColumnDefinitionModel {
   readonly name: string; readonly kind: Kind; readonly nullable: boolean; readonly primary: boolean;
   readonly generated: boolean; readonly unique: boolean; readonly hasDefault: boolean; readonly defaultValue?: Parameter;
-  readonly foreignKey?: { readonly table: string; readonly column: string; readonly onDelete: 'cascade' | 'restrict' | 'set null' | 'no action' };
+  readonly foreignKey?: ForeignKeyModel;
 }
 export interface CreateTableModel extends HasTable { readonly kind: 'create-table'; readonly definitions: readonly ColumnDefinitionModel[] }
 export interface CreateIndexModel extends HasTable { readonly kind: 'create-index'; readonly name: string; readonly columns: readonly string[] }
@@ -79,9 +86,12 @@ export interface ExplainModel { readonly kind: 'explain'; readonly query: Select
 export type QueryModel = SelectModel | CountModel | AggregateModel | GroupModel | InsertModel | UpdateModel | DeleteModel | RelationModel | CreateTableModel | CreateIndexModel | TransactionModel | ExplainModel;
 
 function record(value: unknown, keys: readonly string[], code = 'QUERY'): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)
-      || ![null, Object.prototype].includes(Object.getPrototypeOf(value))) fail(code, 'A model must be a plain record with supported fields.');
-  const descriptors = Object.getOwnPropertyDescriptors(value);
+  let descriptors: Record<string, PropertyDescriptor>;
+  try {
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+        || ![null, Object.prototype].includes(Object.getPrototypeOf(value))) throw new Error();
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch { return fail(code, 'A model must be a plain record with supported fields.'); }
   const snapshot: Record<string, unknown> = Object.create(null);
   for (const key of Reflect.ownKeys(descriptors)) {
     const descriptor = (descriptors as Record<PropertyKey, PropertyDescriptor>)[key];
@@ -91,8 +101,11 @@ function record(value: unknown, keys: readonly string[], code = 'QUERY'): Record
   return snapshot;
 }
 function list(value: unknown, maximum: number, minimum = 0, code = 'QUERY'): readonly unknown[] {
-  if (!Array.isArray(value) || ![null, Array.prototype].includes(Object.getPrototypeOf(value))) fail(code, 'A model array is outside its supported shape or length.');
-  const descriptors: Record<string, PropertyDescriptor> = Object.getOwnPropertyDescriptors(value) as unknown as Record<string, PropertyDescriptor>;
+  let descriptors: Record<string, PropertyDescriptor>;
+  try {
+    if (!Array.isArray(value) || ![null, Array.prototype].includes(Object.getPrototypeOf(value))) throw new Error();
+    descriptors = Object.getOwnPropertyDescriptors(value) as unknown as Record<string, PropertyDescriptor>;
+  } catch { return fail(code, 'A model array is outside its supported shape or length.'); }
   const length = descriptors.length?.value;
   if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < minimum || length > maximum) fail(code, 'A model array is outside its supported shape or length.');
   for (const key of Reflect.ownKeys(descriptors)) {
@@ -144,8 +157,8 @@ export function textMatchOptions(input: unknown = {}): TextMatchCase {
   return options.case;
 }
 
-export function tableModel(input: TableModel): TableModel {
-  const value = record(input, ['name', 'columns', 'primaryKey', 'version', 'kinds', 'nullable'], 'SCHEMA');
+export function tableModel(input: TableModel): CapturedTableModel {
+  const value = record(input, ['name', 'columns', 'primaryKey', 'version', 'kinds', 'nullable', 'storage'], 'SCHEMA');
   const columns = names(value.columns, 100, 1);
   if (new Set(columns.map(v => v.toLowerCase())).size !== columns.length) fail('SCHEMA', 'Mapped column names must be unique ignoring case.');
   let metadata: { kinds?: Readonly<Record<string, Kind>>; nullable?: Readonly<Record<string, boolean>> } = {};
@@ -161,7 +174,21 @@ export function tableModel(input: TableModel): TableModel {
         || Object.values(nullable).some(flag => typeof flag !== 'boolean')) fail('SCHEMA', 'Nullability metadata must describe every mapped column with booleans.');
     metadata.nullable = Object.freeze(nullable as Record<string, boolean>);
   }
-  const base = { name: name(value.name), columns, primaryKey: names(value.primaryKey, 100, 1), ...metadata };
+  const logicalName = name(value.name);
+  let storage: TableStorage;
+  if (value.storage === undefined) {
+    storage = Object.freeze({ table: logicalName, columns: Object.freeze(Object.fromEntries(columns.map(column => [column, column]))) });
+  } else {
+    const supplied = record(value.storage, ['table', 'schema', 'columns'], 'SCHEMA');
+    const physical = record(supplied.columns, columns, 'SCHEMA');
+    if (Object.keys(physical).length !== columns.length || columns.some(column => !Object.hasOwn(physical, column)))
+      fail('SCHEMA', 'Storage metadata must map every logical column exactly once.');
+    const mapped = Object.fromEntries(columns.map(column => [column, capturePhysicalName(physical[column])]));
+    if (new Set(Object.values(mapped)).size !== columns.length) fail('SCHEMA', 'Mapped physical column names must be distinct.');
+    storage = Object.freeze({ table: capturePhysicalName(supplied.table),
+      ...(supplied.schema === undefined ? {} : { schema: capturePhysicalName(supplied.schema) }), columns: Object.freeze(mapped) });
+  }
+  const base = { name: logicalName, columns, primaryKey: names(value.primaryKey, 100, 1), ...metadata, storage };
   if (base.primaryKey.some(v => !columns.includes(v))) fail('SCHEMA', 'A primary key must reference mapped columns.');
   if (value.version !== undefined) {
     const version = name(value.version);
@@ -351,9 +378,16 @@ function definition(input: unknown, table: TableModel): ColumnDefinitionModel {
   } else if (Object.hasOwn(value, 'defaultValue')) fail('SCHEMA', 'A default value needs its hasDefault flag.');
   let foreignKey: { foreignKey?: NonNullable<ColumnDefinitionModel['foreignKey']> } = {};
   if (value.foreignKey !== undefined) {
-    const fk = record(value.foreignKey, ['table', 'column', 'onDelete'], 'SCHEMA');
+    const fk = record(value.foreignKey, ['table', 'column', 'target', 'onDelete'], 'SCHEMA');
     if (typeof fk.onDelete !== 'string' || !['cascade', 'restrict', 'set null', 'no action'].includes(fk.onDelete) || fk.onDelete === 'set null' && !value.nullable) fail('SCHEMA', 'The foreign-key delete action is not supported.');
-    foreignKey = { foreignKey: Object.freeze({ table: name(fk.table), column: name(fk.column), onDelete: fk.onDelete as NonNullable<ColumnDefinitionModel['foreignKey']>['onDelete'] }) };
+    let target: ForeignKeyTargetModel;
+    if (Object.hasOwn(fk, 'target')) {
+      if (Object.hasOwn(fk, 'table') || Object.hasOwn(fk, 'column')) fail('SCHEMA', 'A foreign key needs one structured target.');
+      const physical = record(fk.target, ['schema', 'table', 'column'], 'SCHEMA');
+      target = Object.freeze({ table: capturePhysicalName(physical.table), column: capturePhysicalName(physical.column),
+        ...(physical.schema === undefined ? {} : { schema: capturePhysicalName(physical.schema) }) });
+    } else target = Object.freeze({ table: name(fk.table), column: name(fk.column) });
+    foreignKey = { foreignKey: Object.freeze({ target, onDelete: fk.onDelete as ForeignKeyModel['onDelete'] }) };
   }
   return Object.freeze({ ...base, ...defaultValue, ...foreignKey });
 }
@@ -561,7 +595,7 @@ export function normalizeQueryModel(input: QueryModel): QueryModel {
   }
   if (kind === 'create-index') {
     record(value, ['kind', 'table', 'name', 'columns']);
-    return Object.freeze({ kind, table, name: name(value.name), columns: names(value.columns, 100, 1, table) });
+    return Object.freeze({ kind, table, name: capturePhysicalName(value.name), columns: names(value.columns, 100, 1, table) });
   }
   record(value, ['kind', 'table', 'definitions'], 'SCHEMA');
   const definitions = list(value.definitions, 100, 1, 'SCHEMA').map(d => definition(d, table));

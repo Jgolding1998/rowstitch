@@ -69,7 +69,7 @@ test('six named column helpers compile real zero-binding predicates without chan
     assert.equal(typeof orm[name], 'function', name);
     const predicate = orm[name](records.col('actual'), records.col('planned'));
     const output = repo.compileSelect({ where: predicate, select: ['id'], limit: 7, offset: 2 });
-    assert.ok(output.sql.includes('"actual" ' + token + ' "planned"'));
+    assert.ok(output.sql.includes('"__rs_root"."actual" ' + token + ' "__rs_root"."planned"'));
     assert.ok(!output.sql.includes('CAST('));
     assert.deepEqual(output.parameters, [7, 2]);
   }
@@ -377,17 +377,20 @@ test('compiled declarations preserve non-distributive NoInfer domains for actual
   } finally { unlinkSync(sourcePath); unlinkSync(configPath); rmdirSync(directory); }
 });
 
-test('pure metadata and column compilation needs no SQLite connection or Node builtin dependency', () => {
+test('pure metadata and column compilation work without a SQLite connection, Node builtins or Buffer', () => {
   const models = new URL('../dist/core/query-model.js', import.meta.url).href, compiler = new URL('../dist/core/sqlite-compiler.js', import.meta.url).href;
   const script = `import {registerHooks,isBuiltin} from 'node:module';
     registerHooks({resolve(specifier,context,next){if(isBuiltin(specifier))throw new Error('Unexpected builtin dependency');return next(specifier,context);}});
+    delete globalThis.Buffer;
     const m=await import(${JSON.stringify(models)}), c=await import(${JSON.stringify(compiler)});
-    const table=m.tableModel({name:'columns',columns:['id','lhs','rhs'],primaryKey:['id'],kinds:{id:'integer',lhs:'bigint',rhs:'real'}});
+    const table=m.tableModel({name:'columns',columns:['id','lhs','rhs'],primaryKey:['id'],kinds:{id:'integer',lhs:'bigint',rhs:'real'},
+      storage:{table:'quoted."Δ',columns:{id:'id',lhs:'λ.left',rhs:'right"é'}}});
     const output=c.compileSqlite(m.queryModel.select({table,columns:['id'],where:{kind:'column-compare',left:'lhs',right:'rhs',operator:'>'},orderBy:[],limit:3,offset:0}));
     process.stdout.write(JSON.stringify(output));`;
   const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 10_000, windowsHide: true });
   assert.equal(child.status, 0, child.stderr);
   const result = JSON.parse(child.stdout);
   assert.deepEqual(result.parameters, [3, 0]);
-  assert.ok(result.sql.includes('"lhs" > "rhs"'));
+  assert.ok(result.sql.includes('FROM "main"."quoted.""Δ" AS "__rs_root"'));
+  assert.ok(result.sql.includes('"__rs_root"."λ.left" > "__rs_root"."right""é"'));
 });

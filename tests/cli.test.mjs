@@ -79,10 +79,13 @@ test('demo serves an actual in-memory ORM trace and fictional results', { timeou
     assert.equal(response.status, 200);
     const demo = await response.json();
     assert.equal(demo.format, 'rowstitch-trace');
-    assert.equal(demo.version, 1);
+    assert.equal(demo.version, 2);
     assert.equal(demo.source, 'fictional-demo');
-    assert.ok(demo.schema.some(table => table.name === 'authors'));
-    assert.ok(demo.schema.some(table => table.name === 'posts'));
+    for (const logical of ['authors', 'posts']) {
+      const mapping = demo.mapping.tables.find(table => table.logical === logical);
+      assert.ok(mapping);
+      assert.ok(demo.schema.some(table => table.identity.schema === mapping.physical.schema && table.identity.table === mapping.physical.table));
+    }
     assert.ok(demo.queries.some(query => query.operation === 'select'));
     assert.ok(demo.queries.every(query => query.parameters.every(value => value === '[redacted]')));
     assert.equal(demo.results[0].rows.length, 3);

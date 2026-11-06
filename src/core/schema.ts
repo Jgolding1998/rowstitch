@@ -1,4 +1,5 @@
 import { RowstitchError, fail } from './errors.js';
+import { capturePhysicalName } from './physical-identity.js';
 
 export type Parameter = string | number | bigint | null;
 export type Kind = 'integer' | 'bigint' | 'real' | 'text' | 'boolean' | 'json';
@@ -17,6 +18,7 @@ interface ColumnConfig {
   hasDefault: boolean;
   defaultValue?: Parameter;
   foreignKey?: ForeignKey;
+  storageName?: string;
 }
 
 export function identifier(name: string): string {
@@ -169,6 +171,10 @@ export class Column<T, Optional extends boolean = false, Primary extends boolean
     genuineColumn(this);
     return new Column({ ...this.config, unique: true });
   }
+  storedAs(name: string): Column<T, Optional, Primary, K> {
+    genuineColumn(this);
+    return new Column({ ...this.config, storageName: capturePhysicalName(name) });
+  }
   references<U extends AnyTable, RefKey extends keyof U['columns'] & string>(table: U, key: RefKey, options: { onDelete?: DeleteAction } = {}): Column<T, Optional, Primary, K> {
     genuineColumn(this);
     // The constructor snapshot performs the target, kind and delete-action checks once.
@@ -202,10 +208,7 @@ function dataSnapshot(value: unknown, allowed: readonly string[], required: read
       if (typeof key !== 'string' || !allowed.includes(key) || !descriptor || !('value' in descriptor)) fail('SCHEMA', 'Column configuration contains an unsupported field or accessor.');
       if (descriptor.value !== undefined) snapshot[key] = descriptor.value;
     }
-  } catch (error) {
-    if (error instanceof RowstitchError) throw error;
-    fail('SCHEMA', 'Column configuration must be a plain data record.'); // e.g. a revoked Proxy
-  }
+  } catch { fail('SCHEMA', 'Column configuration must be a plain data record.'); } // Includes caller-thrown trap errors.
   if (required.some(key => !Object.hasOwn(snapshot, key))) fail('SCHEMA', 'Column configuration is missing a required field.');
   return snapshot;
 }
@@ -229,10 +232,11 @@ function encodedDefault(kind: Kind, nullable: boolean, value: unknown): Paramete
   return value as Parameter;
 }
 function columnConfig(input: unknown): Readonly<ColumnConfig> {
-  const value = dataSnapshot(input, ['kind', ...columnFlags, 'defaultValue', 'foreignKey'], ['kind', ...columnFlags]);
+  const value = dataSnapshot(input, ['kind', ...columnFlags, 'defaultValue', 'foreignKey', 'storageName'], ['kind', ...columnFlags]);
   if (typeof value.kind !== 'string' || !columnKinds.includes(value.kind) || columnFlags.some(flag => typeof value[flag] !== 'boolean')) fail('SCHEMA', 'Column kinds and flags must use supported values.');
   const config: ColumnConfig = { kind: value.kind as Kind, nullable: value.nullable as boolean, primary: value.primary as boolean,
     generated: value.generated as boolean, unique: value.unique as boolean, hasDefault: value.hasDefault as boolean };
+  if (Object.hasOwn(value, 'storageName')) config.storageName = capturePhysicalName(value.storageName);
   if (config.primary && (config.nullable || !['integer', 'bigint', 'text'].includes(config.kind))) fail('SCHEMA', 'Primary keys must be non-null integer, bigint or text columns.');
   if (config.generated && (!config.primary || !['integer', 'bigint'].includes(config.kind))) fail('SCHEMA', 'Generated keys require an integer primary key column.');
   if (config.hasDefault) {
@@ -309,20 +313,45 @@ function columnEntries(columns: unknown): [string, Column<any, boolean, boolean>
   }
   return entries as [string, Column<any, boolean, boolean>][];
 }
+export type SchemaPolicy = 'legacy' | 'exact' | 'subset';
+export interface TableStorage {
+  readonly table: string;
+  readonly schema?: string;
+  readonly columns: Readonly<Record<string, string>>;
+}
+export interface TableOptions<V extends string | undefined = undefined> {
+  version?: V;
+  storage?: { table?: string; schema?: string };
+  schemaPolicy?: SchemaPolicy;
+}
 export class Table<C extends Columns = Columns, V extends keyof C & string | undefined = undefined> {
   readonly columns: C;
   readonly version: V | undefined;
-  constructor(public readonly name: string, columns: C, options: { version?: V } = {}) {
+  readonly storage: TableStorage;
+  readonly schemaPolicy: SchemaPolicy;
+  constructor(public readonly name: string, columns: C, options: TableOptions<V> = {}) {
     identifier(name);
     const entries = columnEntries(columns);
+    let captured: Record<string, unknown>, storage: Record<string, unknown>;
+    try {
+      captured = dataSnapshot(options, ['version', 'storage', 'schemaPolicy'], []);
+      storage = captured.storage === undefined ? {} : dataSnapshot(captured.storage, ['table', 'schema'], []);
+    } catch { fail('SCHEMA', 'Table options must contain supported plain data.'); }
+    const policy = captured.schemaPolicy ?? 'legacy';
+    if (policy !== 'legacy' && policy !== 'exact' && policy !== 'subset') fail('SCHEMA', 'The schema policy is unsupported.');
+    const physicalColumns = Object.fromEntries(entries.map(([key, column]) => [key, column.config.storageName ?? key]));
+    if (new Set(Object.values(physicalColumns)).size !== entries.length) fail('SCHEMA', 'Mapped physical column names must be distinct.');
+    this.storage = Object.freeze({ table: storage.table === undefined ? name : capturePhysicalName(storage.table),
+      ...(storage.schema === undefined ? {} : { schema: capturePhysicalName(storage.schema) }), columns: Object.freeze(physicalColumns) });
+    this.schemaPolicy = policy;
     const primary = entries.filter(([, c]) => c.config.primary);
     if (!primary.length) fail('SCHEMA', 'Every mapped table needs an explicit primary key.');
     if (primary.length > 1 && primary.some(([, c]) => c.config.generated)) fail('SCHEMA', 'A composite primary key cannot be generated.');
-    const version = options.version;
+    const version = captured.version;
     if (version !== undefined) {
       const v = entries.find(([key]) => key === version)?.[1];
       if (!v || v.config.kind !== 'integer' || v.config.nullable || v.config.primary) fail('SCHEMA', 'The version column must be a non-null non-key integer.');
-      this.version = version;
+      this.version = version as V;
     }
     // Freeze the validated values, not a second read of a caller-controlled record.
     this.columns = Object.freeze(Object.fromEntries(entries)) as C;
@@ -334,7 +363,7 @@ export class Table<C extends Columns = Columns, V extends keyof C & string | und
   }
 }
 export type AnyTable = Table<any, any>;
-export function defineTable<C extends Columns, V extends keyof C & string | undefined = undefined>(name: string, columns: C, options?: { version?: V }): Table<C, V> {
+export function defineTable<C extends Columns, V extends keyof C & string | undefined = undefined>(name: string, columns: C, options?: TableOptions<V>): Table<C, V> {
   return new Table(name, columns, options);
 }
 export function sqlType(c: Readonly<ColumnConfig>): string {

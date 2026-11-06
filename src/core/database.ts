@@ -7,12 +7,12 @@ import { assertOptions, type CompiledQuery, type FindOptions, type Includes, typ
 import { queryModel, type TransactionAction, type TransactionModel } from './query-model.js';
 import { compileSqlite } from './sqlite-compiler.js';
 import type { AggregateSelection, AggregateOptions, AggregateResult, GroupKey, GroupOptions, GroupResult, ProjectedRow, RelatedAggregates } from './aggregates.js';
-import { RepositoryCore, ensureSchemaWork, inspectSchemaWork, openConfig, publicPlans, runSync, schemaPlansWork,
-  type CoreContext, type Operation, type QueryPlan, type Rows, type SchemaPlan, type SchemaTable, type Step, type Work, type WriteOptions } from './repository-core.js';
-import { recordTrace, traceDocument, clearTraceState, type TraceDocument, type TraceState } from './trace-log.js';
+import { RepositoryCore, ensureSchemaWork, inspectSchemaWork, inspectionScope, openConfig, publicPlans, runSync, schemaPlansWork,
+  type CoreContext, type Operation, type QueryPlan, type Rows, type SchemaInspectionOptions, type SchemaPlan, type SchemaTable, type Step, type Work, type WriteOptions } from './repository-core.js';
+import { recordTrace, traceDocument, clearTraceState, type TraceDocumentV2, type TraceState } from './trace-log.js';
 
-export type { SchemaColumn, SchemaForeignKey, SchemaIndex, SchemaTable, SchemaPlan, QueryPlan, WriteOptions } from './repository-core.js';
-export type { TraceEntry, TraceDocument } from './trace-log.js';
+export type { SchemaColumn, SchemaForeignKey, SchemaIndex, SchemaTable, SchemaInspectionOptions, SchemaPlan, QueryPlan, WriteOptions } from './repository-core.js';
+export type { TraceEntry, TraceDocument, TraceDocumentV1, TraceDocumentV2 } from './trace-log.js';
 export interface DatabaseOptions {
   tables?: readonly AnyTable[]; readOnly?: boolean; busyTimeoutMs?: number;
   maxTraceEntries?: number; traceValues?: boolean;
@@ -157,8 +157,9 @@ export class Database {
       return this.#state.handle.all(sql, parameters);
     } catch (error) { throw databaseError(error); }
   }
-  inspectSchema(): SchemaTable[] {
-    return ops(this).run(inspectSchemaWork());
+  inspectSchema(options: SchemaInspectionOptions = {}): SchemaTable[] {
+    this.#check();
+    return ops(this).run(inspectSchemaWork(this.#state.tables, inspectionScope(options)));
   }
   planSchema(): SchemaPlan[] {
     return publicPlans(ops(this).run(schemaPlansWork(ops(this))));
@@ -171,11 +172,13 @@ export class Database {
   clearTrace(): void {
     this.#check(); clearTraceState(this.#state);
   }
-  exportTrace(options: { title?: string } = {}): TraceDocument {
+  exportTrace(options: { title?: string } = {}): TraceDocumentV2 {
     this.#check();
     const title = options.title ?? 'Local query trace';
     if (typeof title !== 'string' || title.length > 4096) fail('VALIDATION', 'Trace titles must be bounded text.');
-    return traceDocument(this.#state, title, this.inspectSchema(), []);
+    const registrations = this.#state.tables;
+    const scope = registrations.size ? 'mapped' : 'all';
+    return traceDocument(this.#state, title, { schema: this.inspectSchema({ scope }), scope, registrations, defaultSchema: 'main' }, []);
   }
   close(): void {
     if (this.#state.closed) return;

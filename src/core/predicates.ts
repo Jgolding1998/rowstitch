@@ -255,8 +255,9 @@ export function validateRelation(table: AnyTable, options: RelationOptions<Inclu
       || foreignKey.table !== table || !Object.hasOwn(localKey.table.columns, localKey.name)
       || !Object.hasOwn(table.columns, foreignKey.name)) fail('QUERY', 'A relation needs mapped local and foreign keys.');
   selectionFields(table, options.select);
-  compilePredicate(table, options.where);
-  orderSql(table, options.orderBy);
+  // A relation descriptor can be used with any backend. Physical names are checked by its compiler.
+  predicateToModel(table, options.where);
+  orderToModel(table, options.orderBy);
   for (const key of ['limit', 'offset'] as const) {
     const value = options[key];
     if (value !== undefined && (!Number.isSafeInteger(value) || value < 0 || value > (key === 'limit' ? 1000 : 1_000_000_000))) fail('QUERY', 'A relationship limit or offset is outside its documented integer range.');

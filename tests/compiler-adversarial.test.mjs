@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { queryModel, tableModel, predicateModel, orderingModel, predicateTruth } from '../dist/core/query-model.js';
 import { compileSqlite, compileSqlitePredicate, compileSqliteOrder } from '../dist/core/sqlite-compiler.js';
 import { RowstitchError } from '../dist/core/errors.js';
@@ -82,7 +83,7 @@ test('insert, guarded version updates and deletes bind values in semantic order'
   assert.ok(!inserted.sql.includes('M2_INSERT_839'));
   const updated = compileSqlite(queryModel.update({ table: t, assignments: [{ column: 'name', value: 'M2_UPDATE_839' }, { column: 'enabled', value: 0 }], where }));
   assert.deepEqual(updated.parameters, ['M2_UPDATE_839', 0, 41, 7]);
-  assert.match(updated.sql, /"version"\s*=\s*"version"\s*\+\s*1/);
+  assert.match(updated.sql, /, "version" = "records"\."version" \+ 1 WHERE /);
   assert.ok(!updated.sql.includes('M2_UPDATE_839'));
   assert.deepEqual(compileSqlite(queryModel.delete({ table: t, where })).parameters, [41, 7]);
   const defaults = compileSqlite(queryModel.insert({ table: t, columns: [], values: [] }));
@@ -98,7 +99,8 @@ test('relation windows bind keys, filter values, rank bounds and read limit in t
   }));
   assert.deepEqual(output.parameters, [11n, 12n, 1, 'M2_RELATION_839', 2, 5, 21]);
   assert.ok(output.sql.includes('ROW_NUMBER() OVER'));
-  assert.ok(output.sql.includes('PARTITION BY "tenantId"'));
+  assert.ok(output.sql.includes('PARTITION BY "__rs_root"."tenantId"'));
+  assert.ok(output.sql.startsWith('SELECT "__rs_window"."__rs_col_0" AS "tenantId", "__rs_window"."__rs_col_1" AS "name"'));
   assert.ok(!output.sql.includes('M2_RELATION_839'));
   assert.equal((output.sql.match(/\?/g) ?? []).length, output.parameters.length);
 });
@@ -222,7 +224,7 @@ test('forged mutation predicates cannot change from a checked filter into unrest
   const compiled = compileSqlite({ kind: 'update', table: table(), assignments: [{ column: 'name', value: 'M2_PROXY_839' }], where });
   assert.deepEqual(compiled.parameters, ['M2_PROXY_839', 41]);
   assert.ok(!compiled.sql.includes('OR 1=1') && !compiled.sql.includes('--'));
-  assert.ok(compiled.sql.includes('WHERE "id" = ?'));
+  assert.ok(compiled.sql.includes('WHERE "records"."id" = ?'));
   assert.equal(reads, 0);
 });
 
@@ -337,7 +339,28 @@ test('DDL definitions, names, flags and foreign key actions reject executable or
   const kind = { toString() { calls++; return 'integer'; } };
   assert.throws(() => queryModel.createTable(input({ kind })), coded('SCHEMA'));
   assert.equal(calls, 0);
-  for (const name of ['idx; DROP TABLE refs', '__proto__', 'x'.repeat(64)]) assert.throws(() => queryModel.createIndex({ table: t, name, columns: ['ownerId'] }), coded('SCHEMA'));
+  const indexName = { toString() { calls++; return 'index_name'; } };
+  for (const name of ['', 'before\0after', '\ud800', '界'.repeat(1366), indexName]) {
+    assert.throws(() => queryModel.createIndex({ table: t, name, columns: ['ownerId'] }), coded('SCHEMA'));
+  }
+  assert.equal(calls, 0);
+});
+
+test('physical index names execute as single quoted identifiers, including SQL-looking text', () => {
+  const t = tableModel({ name: 'refs', columns: ['id', 'ownerId'], primaryKey: ['id'] });
+  const db = new DatabaseSync(':memory:', { enableDoubleQuotedStringLiterals: false, allowExtension: false, defensive: true });
+  try {
+    db.exec('CREATE TABLE "refs" ("id" INTEGER PRIMARY KEY, "ownerId" INTEGER); INSERT INTO "refs" VALUES (1, 7)');
+    for (const name of ['idx"; DROP TABLE refs; --', 'idx; DROP TABLE refs', '__proto__', 'x'.repeat(64)]) {
+      const compiled = compileSqlite(queryModel.createIndex({ table: t, name, columns: ['ownerId'] }));
+      assert.deepEqual(compiled.parameters, []);
+      assert.equal(compiled.sql, 'CREATE INDEX "main"."' + name.replaceAll('"', '""') + '" ON "refs" ("ownerId")');
+      db.exec(compiled.sql);
+      assert.equal(db.prepare('SELECT tbl_name FROM main.sqlite_schema WHERE type = ? AND name = ?').get('index', name)?.tbl_name, 'refs');
+      assert.deepEqual(db.prepare('SELECT name FROM pragma_index_info(?, ?)').all(name, 'main').map(column => column.name), ['ownerId']);
+    }
+    assert.equal(db.prepare('SELECT "ownerId" FROM "refs" WHERE "id" = 1').get().ownerId, 7);
+  } finally { db.close(); }
 });
 
 test('DDL NUL defaults fail before producing SQL while DML NUL remains a valid parameter', () => {

@@ -119,7 +119,7 @@ test('non-key column aliases cannot change WHERE scope or aggregate order', t =>
   const options = { by: ['bucket'], select: { amount: agg.count() }, where: eq(table.col('amount'), 9), orderBy: [{ field: 'amount', direction: 'asc' }] };
   assert.deepEqual(repo.groupBy(options), [{ bucket: 'b', amount: 1 }, { bucket: 'a', amount: 2 }]);
   const compiled = repo.compileGroupBy(options);
-  assert.ok(compiled.sql.includes('"aggregate_rows"."amount"'));
+  assert.ok(compiled.sql.includes('"__rs_root"."amount"'));
   assert.ok(!/AS "amount"/i.test(compiled.sql)); assert.match(compiled.sql, /ORDER BY \d+ ASC/);
 });
 
@@ -165,7 +165,7 @@ test('captured records and arrays reject accessors and resist changing Proxy get
   const keys = ['bucket'];
   const mutatingSelect = new Proxy({ rows: selector }, { ownKeys(target) { keys[0] = 'amount'; return Reflect.ownKeys(target); } });
   const compiled = repo.compileGroupBy({ by: keys, select: mutatingSelect });
-  assert.ok(compiled.sql.includes('GROUP BY "aggregate_rows"."bucket"'));
+  assert.ok(compiled.sql.includes('GROUP BY "__rs_root"."bucket"'));
 });
 
 test('invalid aliases, duplicate keys, order fields and page limits fail before SQL', t => {

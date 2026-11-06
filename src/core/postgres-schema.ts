@@ -1,7 +1,10 @@
 /** Bounded native catalog inspection. Descriptive metadata, not a full PostgreSQL schema verifier or DDL planner. */
 import { types } from 'node:util';
 import { RowstitchError } from './errors.js';
-import { identifier } from './schema.js';
+import { createHash } from 'node:crypto';
+import { isTable, type AnyTable, type Columns } from './schema.js';
+import { mappedTableModel } from './model-mapping.js';
+import { physicalTableIdentity, physicalTableKey, quotePhysicalName, validateModelStorage, type PhysicalTableIdentity } from './physical-identity.js';
 import { isPostgresRawResult, snapshotPostgresResult, type PostgresRawResult } from './postgres-result.js';
 import type { Rows, SchemaColumn, SchemaForeignKey, SchemaIndex, SchemaTable, Work } from './repository-core.js';
 
@@ -10,13 +13,14 @@ export interface PostgresSchemaColumnDetails {
   readonly generation: '' | 's' | 'v'; readonly hasDefault: boolean;
 }
 export interface PostgresSchemaTableDetails {
-  readonly table: SchemaTable; readonly kind: 'r' | 'p' | 'v' | 'm' | 'f';
+  readonly identity: PhysicalTableIdentity; readonly table: SchemaTable; readonly kind: 'r' | 'p' | 'v' | 'm' | 'f';
   readonly columns: readonly PostgresSchemaColumnDetails[];
   readonly foreignKeys: readonly PostgresSchemaForeignKeyDetails[];
   readonly indexes: readonly PostgresSchemaIndexDetails[];
 }
 export interface PostgresSchemaForeignKeyDetails {
-  readonly name: string; readonly columns: readonly string[]; readonly table: string; readonly targets: readonly string[];
+  readonly name: string; readonly oid: number; readonly width: number; readonly columns: readonly string[]; readonly table: string; readonly targetIdentity: PhysicalTableIdentity; readonly targets: readonly string[];
+  readonly match: 'simple' | 'full' | 'partial'; readonly deferrable: boolean; readonly initiallyDeferred: boolean; readonly deleteSetColumns: readonly string[] | null;
   readonly onDelete: string; readonly onUpdate: string; readonly enforced: boolean; readonly validated: boolean;
 }
 export interface PostgresSchemaIndexDetails {
@@ -25,10 +29,12 @@ export interface PostgresSchemaIndexDetails {
 }
 /** Private planning facts. Existence, privileges and descriptive metadata are not execution authorization. */
 export interface PostgresSchemaDetails {
-  readonly schema: string; readonly exists: boolean; readonly tables: readonly PostgresSchemaTableDetails[];
+  readonly schema: string; readonly exists: boolean | null; readonly namespaces: readonly {readonly schema: string; readonly exists: boolean}[]; readonly scope: 'all' | 'mapped'; readonly conflicts: readonly PhysicalTableIdentity[]; readonly tables: readonly PostgresSchemaTableDetails[];
 }
 
-const MAX_ITEMS = 100, MAX_JSON = 8_388_608, MAX_NODES = 500_000, MAX_DEPTH = 12;
+const MAX_ITEMS = 100, MAX_JSON_BYTES = 8_388_608, MAX_NODES = 500_000, MAX_DEPTH = 12;
+// PostgreSQL's table-width limit is separate from the cap on returned definitions.
+const MAX_TOTAL_COLUMNS = 1_600;
 const { isProxy } = types;
 const { getPrototypeOf, ownKeys } = Reflect;
 const { getOwnPropertyDescriptors, hasOwn } = Object;
@@ -39,11 +45,19 @@ const error = (limit = false): never => { throw new RowstitchError(limit ? 'RESU
 
 // Every relation and catalog function is qualified. Only the selected namespace is bound; no caller SQL is accepted.
 // LIMIT 101 is deliberate: a 101st item is returned and rejected, never silently omitted as a complete schema.
-const CATALOG = `WITH relations AS (
-  SELECT c.oid, c.relname, c.relkind::"pg_catalog"."text" AS kind
+const CATALOG = `WITH requested AS (
+  SELECT x."table", x.columns
+  FROM "pg_catalog"."jsonb_to_recordset"(($2::"pg_catalog"."jsonb") OPERATOR("pg_catalog".->) 'tables') AS x("table" "pg_catalog"."text", columns "pg_catalog"."jsonb")
+), requested_indexes AS (
+  SELECT x.name, x."table"
+  FROM "pg_catalog"."jsonb_to_recordset"(($2::"pg_catalog"."jsonb") OPERATOR("pg_catalog".->) 'indexes') AS x(name "pg_catalog"."text", "table" "pg_catalog"."text")
+), relations AS (
+  SELECT c.oid, c.relname, c.relkind::"pg_catalog"."text" AS kind, CASE WHEN (($2::"pg_catalog"."jsonb") OPERATOR("pg_catalog".->>) 'all') OPERATOR("pg_catalog".=) 'true' THEN NULL::"pg_catalog"."jsonb" ELSE requested.columns END AS columns
   FROM "pg_catalog"."pg_class" c
   JOIN "pg_catalog"."pg_namespace" n ON n.oid OPERATOR("pg_catalog".=) c.relnamespace
+  LEFT JOIN requested ON requested."table" OPERATOR("pg_catalog".=) c.relname::"pg_catalog"."text"
   WHERE n.nspname::"pg_catalog"."text" OPERATOR("pg_catalog".=) $1::"pg_catalog"."text"
+    AND ((($2::"pg_catalog"."jsonb") OPERATOR("pg_catalog".->>) 'all') OPERATOR("pg_catalog".=) 'true' OR requested."table" IS NOT NULL)
     AND c.relkind OPERATOR("pg_catalog".=) ANY (ARRAY['r','p','v','m','f']::"pg_catalog"."char"[])
     AND "pg_catalog"."has_schema_privilege"(n.oid, 'USAGE')
     AND ("pg_catalog"."pg_has_role"(c.relowner, 'USAGE')
@@ -55,6 +69,11 @@ const CATALOG = `WITH relations AS (
   SELECT r.relname::"pg_catalog"."text" AS name,
     "pg_catalog"."jsonb_build_object"(
       'name', r.relname::"pg_catalog"."text", 'kind', r.kind,
+      'totalColumnCount', (
+        SELECT "pg_catalog"."count"(*) FROM "pg_catalog"."pg_attribute" all_attrs
+        WHERE all_attrs.attrelid OPERATOR("pg_catalog".=) r.oid
+          AND all_attrs.attnum OPERATOR("pg_catalog".>) 0 AND NOT all_attrs.attisdropped
+      ),
       'columns', (
         SELECT COALESCE("pg_catalog"."jsonb_agg"(a.payload ORDER BY a.attnum), '[]'::"pg_catalog"."jsonb")
         FROM (
@@ -75,17 +94,20 @@ const CATALOG = `WITH relations AS (
               FROM "pg_catalog"."pg_constraint" p
               WHERE p.conrelid OPERATOR("pg_catalog".=) r.oid AND p.contype OPERATOR("pg_catalog".=) 'p'
             ), 0),
-            'default', CASE WHEN a.attgenerated OPERATOR("pg_catalog".=) ''
+            'default', CASE WHEN a.attgenerated OPERATOR("pg_catalog".=) '' AND (r.columns IS NULL OR r.columns OPERATOR("pg_catalog".?) a.attname::"pg_catalog"."text")
               THEN "pg_catalog"."pg_get_expr"(d.adbin, d.adrelid) ELSE NULL END,
             'generated', a.attgenerated OPERATOR("pg_catalog".=) ANY (ARRAY['s','v']::"pg_catalog"."char"[]),
             'typeOid', a.atttypid::"pg_catalog"."int8", 'identity', a.attidentity::"pg_catalog"."text",
             'generation', a.attgenerated::"pg_catalog"."text",
-            'hasDefault', a.attgenerated OPERATOR("pg_catalog".=) '' AND d.oid IS NOT NULL
+            'hasDefault', a.attgenerated OPERATOR("pg_catalog".=) '' AND d.oid IS NOT NULL AND (r.columns IS NULL OR r.columns OPERATOR("pg_catalog".?) a.attname::"pg_catalog"."text")
           ) AS payload
           FROM "pg_catalog"."pg_attribute" a
           JOIN "pg_catalog"."pg_type" t ON t.oid OPERATOR("pg_catalog".=) a.atttypid
           LEFT JOIN "pg_catalog"."pg_attrdef" d ON d.adrelid OPERATOR("pg_catalog".=) r.oid AND d.adnum OPERATOR("pg_catalog".=) a.attnum
           WHERE a.attrelid OPERATOR("pg_catalog".=) r.oid AND a.attnum OPERATOR("pg_catalog".>) 0 AND NOT a.attisdropped
+            AND (r.columns IS NULL OR r.columns OPERATOR("pg_catalog".?) a.attname::"pg_catalog"."text"
+              OR EXISTS (SELECT 1 FROM "pg_catalog"."pg_constraint" pk WHERE pk.conrelid OPERATOR("pg_catalog".=) r.oid
+                AND pk.contype OPERATOR("pg_catalog".=) 'p' AND a.attnum OPERATOR("pg_catalog".=) ANY(pk.conkey)))
           ORDER BY a.attnum LIMIT 101
         ) a
       ),
@@ -94,7 +116,13 @@ const CATALOG = `WITH relations AS (
         FROM (
           SELECT fk.conname::"pg_catalog"."text" AS constraint_name, fk.oid AS constraint_oid, k.position,
             "pg_catalog"."jsonb_build_object"(
-              'constraint', fk.conname::"pg_catalog"."text", 'position', k.position,
+              'constraint', fk.conname::"pg_catalog"."text", 'constraintOid', fk.oid::"pg_catalog"."int8", 'position', k.position,
+              'width', "pg_catalog"."cardinality"(fk.conkey),
+              'match', CASE WHEN fk.confmatchtype OPERATOR("pg_catalog".=) 's' THEN 'simple' WHEN fk.confmatchtype OPERATOR("pg_catalog".=) 'f' THEN 'full' WHEN fk.confmatchtype OPERATOR("pg_catalog".=) 'p' THEN 'partial' ELSE NULL END,
+              'deferrable', fk.condeferrable, 'initiallyDeferred', fk.condeferred,
+              'deleteSetColumns', (SELECT "pg_catalog"."jsonb_agg"(a.attname::"pg_catalog"."text" ORDER BY d.position)
+                FROM "pg_catalog"."unnest"(fk.confdelsetcols) WITH ORDINALITY AS d(attnum, position)
+                JOIN "pg_catalog"."pg_attribute" a ON a.attrelid OPERATOR("pg_catalog".=) r.oid AND a.attnum OPERATOR("pg_catalog".=) d.attnum),
               'column', local_column.attname::"pg_catalog"."text",
               'targetSchema', target_namespace.nspname::"pg_catalog"."text", 'targetTable', target_relation.relname::"pg_catalog"."text",
               'target', target_column.attname::"pg_catalog"."text",
@@ -109,6 +137,9 @@ const CATALOG = `WITH relations AS (
           JOIN "pg_catalog"."pg_attribute" local_column ON local_column.attrelid OPERATOR("pg_catalog".=) r.oid AND local_column.attnum OPERATOR("pg_catalog".=) k.attnum
           JOIN "pg_catalog"."pg_attribute" target_column ON target_column.attrelid OPERATOR("pg_catalog".=) fk.confrelid AND target_column.attnum OPERATOR("pg_catalog".=) fk.confkey[k.position::"pg_catalog"."int4"]
           WHERE fk.conrelid OPERATOR("pg_catalog".=) r.oid AND fk.contype OPERATOR("pg_catalog".=) 'f'
+            AND (r.columns IS NULL OR EXISTS (SELECT 1 FROM "pg_catalog"."unnest"(fk.conkey) AS key(attnum)
+              JOIN "pg_catalog"."pg_attribute" mapped ON mapped.attrelid OPERATOR("pg_catalog".=) r.oid AND mapped.attnum OPERATOR("pg_catalog".=) key.attnum
+              WHERE r.columns OPERATOR("pg_catalog".?) mapped.attname::"pg_catalog"."text"))
             AND NOT EXISTS (
               SELECT 1 FROM "pg_catalog"."pg_constraint" parent_fk
               WHERE parent_fk.oid OPERATOR("pg_catalog".=) fk.conparentid AND parent_fk.conrelid OPERATOR("pg_catalog".=) fk.conrelid
@@ -141,6 +172,10 @@ const CATALOG = `WITH relations AS (
           FROM "pg_catalog"."pg_index" i
           JOIN "pg_catalog"."pg_class" ic ON ic.oid OPERATOR("pg_catalog".=) i.indexrelid
           WHERE i.indrelid OPERATOR("pg_catalog".=) r.oid
+            AND (r.columns IS NULL OR i.indisprimary OR EXISTS (SELECT 1 FROM "pg_catalog"."unnest"(i.indkey::"pg_catalog"."int2"[]) AS key(attnum)
+              JOIN "pg_catalog"."pg_attribute" mapped ON mapped.attrelid OPERATOR("pg_catalog".=) r.oid AND mapped.attnum OPERATOR("pg_catalog".=) key.attnum
+              WHERE r.columns OPERATOR("pg_catalog".?) mapped.attname::"pg_catalog"."text")
+              OR EXISTS (SELECT 1 FROM requested_indexes ri WHERE ri.name OPERATOR("pg_catalog".=) ic.relname::"pg_catalog"."text" AND ri."table" OPERATOR("pg_catalog".=) r.relname::"pg_catalog"."text"))
           ORDER BY ic.relname::"pg_catalog"."text" COLLATE "pg_catalog"."C", i.indexrelid LIMIT 101
         ) i
       )
@@ -148,6 +183,15 @@ const CATALOG = `WITH relations AS (
   FROM relations r
 )
 SELECT "pg_catalog"."jsonb_build_object"('schema', $1::"pg_catalog"."text",
+  'conflicts', (SELECT COALESCE("pg_catalog"."jsonb_agg"(x.name), '[]'::"pg_catalog"."jsonb") FROM (
+    SELECT c.relname::"pg_catalog"."text" AS name FROM "pg_catalog"."pg_class" c JOIN "pg_catalog"."pg_namespace" n ON n.oid OPERATOR("pg_catalog".=) c.relnamespace
+    WHERE n.nspname::"pg_catalog"."text" OPERATOR("pg_catalog".=) $1::"pg_catalog"."text" AND (
+      EXISTS (SELECT 1 FROM requested t WHERE t."table" OPERATOR("pg_catalog".=) c.relname::"pg_catalog"."text" AND NOT c.relkind OPERATOR("pg_catalog".=) ANY(ARRAY['r','p','v','m','f']::"pg_catalog"."char"[]))
+      OR EXISTS (SELECT 1 FROM requested_indexes ri WHERE ri.name OPERATOR("pg_catalog".=) c.relname::"pg_catalog"."text" AND NOT EXISTS (
+        SELECT 1 FROM "pg_catalog"."pg_index" i JOIN "pg_catalog"."pg_class" owner ON owner.oid OPERATOR("pg_catalog".=) i.indrelid
+        WHERE i.indexrelid OPERATOR("pg_catalog".=) c.oid AND owner.relname::"pg_catalog"."text" OPERATOR("pg_catalog".=) ri."table")))
+    ORDER BY c.relname::"pg_catalog"."text" COLLATE "pg_catalog"."C" LIMIT 101
+  ) x),
   'exists', EXISTS (SELECT 1 FROM "pg_catalog"."pg_namespace" n WHERE n.nspname::"pg_catalog"."text" OPERATOR("pg_catalog".=) $1::"pg_catalog"."text"), 'tables',
   COALESCE("pg_catalog"."jsonb_agg"(d.payload ORDER BY d.name COLLATE "pg_catalog"."C"), '[]'::"pg_catalog"."jsonb")) AS "__rs_pg_schema"
 FROM described d`;
@@ -184,7 +228,8 @@ function text(value: unknown, maximum: number, empty = false): string {
   if (value.length > maximum) return error(true);
   return value;
 }
-const name = (value: unknown): string => text(value, 63);
+const name = (value: unknown): string => { const result = text(value, 63); if (Buffer.byteLength(result, 'utf8') > 63) return error(true); return result; };
+function oid(value: unknown): number { if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 0xffff_ffff) return error(); return value; }
 function flag(value: unknown): boolean { if (typeof value !== 'boolean') return error(); return value; }
 function ordinal(value: unknown, zero = false): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < (zero ? 0 : 1) || value > MAX_ITEMS) return error();
@@ -201,22 +246,33 @@ function rawSnapshot(value: unknown): PostgresRawResult {
   const fields = list(input.fields, 1, false).map(item => record(item, ['name', 'typeOid']));
   return snapshotPostgresResult({ fields, rows: list(input.rows, 1, false).map(row => list(row, 1, false)), command: input.command, rowCount: input.rowCount });
 }
-function decodeSchema(value: unknown, schema: string): Rows {
+function decodeSchema(value: unknown, schema: string, scope: 'all' | 'mapped', requested: ReadonlyMap<string, readonly string[] | null>, remainingJsonBytes: number): Rows {
   try {
     const raw = rawSnapshot(value);
     if (raw.command !== 'SELECT' || raw.rowCount !== 1n || raw.rows.length !== 1 || raw.fields.length !== 1
       || raw.fields[0]!.name !== '__rs_pg_schema' || raw.fields[0]!.typeOid !== 3802) return error();
     const wire = raw.rows[0]![0];
-    if (typeof wire !== 'string' || wire.includes('\0') || /[\uD800-\uDFFF]/u.test(wire)) return error();
-    if (wire.length > MAX_JSON) return error(true);
+    if (typeof wire !== 'string') return error();
+    const byteLimit = Math.min(MAX_JSON_BYTES, remainingJsonBytes);
+    if (wire.length > byteLimit) return error(true);
+    const wireBytes = Buffer.byteLength(wire, 'utf8');
+    if (wireBytes > byteLimit) return error(true);
+    if (wire.includes('\0') || /[\uD800-\uDFFF]/u.test(wire)) return error();
     const parsed: unknown = parseJson(wire); boundedJson(parsed);
-    const payload = record(parsed, ['schema', 'exists', 'tables']);
+    const payload = record(parsed, ['schema', 'exists', 'tables', 'conflicts']);
     if (payload.schema !== schema) return error();
     const exists = flag(payload.exists);
+    const conflicts = list(payload.conflicts).map(value => physicalTableIdentity(schema, name(value), 'postgresql'));
+    if (new Set(conflicts.map(value => value.table)).size !== conflicts.length) return error();
     const tableNames = new Set<string>();
     const tables: PostgresSchemaTableDetails[] = list(payload.tables).map(input => {
-      const table = record(input, ['name', 'kind', 'columns', 'foreignKeys', 'indexes']);
-      const tableName = name(table.name);
+      const table = record(input, ['name', 'kind', 'totalColumnCount', 'columns', 'foreignKeys', 'indexes']);
+      const tableName = name(table.name), identity = physicalTableIdentity(schema, tableName, 'postgresql');
+      if (scope === 'mapped' && !requested.has(tableName)) return error();
+      const partial = scope === 'mapped' && requested.get(tableName) !== null;
+      const totalColumnCount = table.totalColumnCount;
+      if (typeof totalColumnCount !== 'number' || !Number.isSafeInteger(totalColumnCount) || totalColumnCount < 0) return error();
+      if (totalColumnCount > MAX_TOTAL_COLUMNS) return error(true);
       if (!['r', 'p', 'v', 'm', 'f'].includes(table.kind as string)) return error();
       if (tableNames.has(tableName)) return error(); tableNames.add(tableName);
       const columnNames = new Set<string>(), primaryPositions = new Set<number>();
@@ -229,6 +285,8 @@ function decodeSchema(value: unknown, schema: string): Rows {
         const generated = flag(column.generated), nullable = flag(column.nullable);
         const expression = column.default === null ? null : text(column.default, 16_384);
         const hasDefault = flag(column.hasDefault);
+        const requestedColumn = !partial || requested.get(tableName)!.includes(columnName);
+        if (!requestedColumn && (order === 0 || expression !== null || hasDefault)) return error();
         if (typeof column.typeOid !== 'number' || !Number.isSafeInteger(column.typeOid) || column.typeOid < 1 || column.typeOid > 0xffff_ffff
           || !['', 'a', 'd'].includes(column.identity as string) || !['', 's', 'v'].includes(column.generation as string)
           || generated !== (column.generation !== '') || generated && column.identity !== ''
@@ -238,66 +296,115 @@ function decodeSchema(value: unknown, schema: string): Rows {
         return { name: columnName, type: text(column.type, 1024), nullable, primaryKey: order > 0,
           primaryKeyOrder: order, default: expression, generated, hidden: false };
       });
+      if (totalColumnCount < columns.length || !partial && totalColumnCount !== columns.length) return error();
       for (let position = 1; position <= primaryPositions.size; position++) if (!primaryPositions.has(position)) return error();
-      const constraints = new Map<string, { positions: Set<number>; columns: Set<string>; pairs: Map<number, { column: string; target: string }>; target: string; onDelete: string; onUpdate: string; enforced: boolean; validated: boolean }>();
+      const constraints = new Map<number, { name: string; width: number; positions: Set<number>; columns: Set<string>; pairs: Map<number, { column: string; target: string }>; target: string; targetIdentity: PhysicalTableIdentity; onDelete: string; onUpdate: string; enforced: boolean; validated: boolean; match: 'simple' | 'full' | 'partial'; deferrable: boolean; initiallyDeferred: boolean; deleteSetColumns: readonly string[] | null }>();
       const actions = new Set(['no action', 'restrict', 'cascade', 'set null', 'set default']);
       const foreignKeys: SchemaForeignKey[] = list(table.foreignKeys).map(input => {
-        const fk = record(input, ['constraint', 'position', 'column', 'targetSchema', 'targetTable', 'target', 'onDelete', 'onUpdate', 'enforced', 'validated']);
-        const constraintName = name(fk.constraint), position = ordinal(fk.position), column = name(fk.column);
+        const fk = record(input, ['constraint', 'constraintOid', 'width', 'position', 'column', 'targetSchema', 'targetTable', 'target', 'onDelete', 'onUpdate', 'enforced', 'validated', 'match', 'deferrable', 'initiallyDeferred', 'deleteSetColumns']);
+        const constraintName = name(fk.constraint), constraintOid = oid(fk.constraintOid), width = ordinal(fk.width), position = ordinal(fk.position), column = name(fk.column);
         const targetSchema = name(fk.targetSchema), targetTable = name(fk.targetTable), target = name(fk.target);
-        const enforced = flag(fk.enforced), validated = flag(fk.validated);
-        if (!columnNames.has(column) || typeof fk.onDelete !== 'string' || !actions.has(fk.onDelete)
-          || typeof fk.onUpdate !== 'string' || !actions.has(fk.onUpdate)) return error();
+        const targetIdentity = physicalTableIdentity(targetSchema, targetTable, 'postgresql');
+        const enforced = flag(fk.enforced), validated = flag(fk.validated), deferrable = flag(fk.deferrable), initiallyDeferred = flag(fk.initiallyDeferred);
+        const deleteSetColumns = fk.deleteSetColumns === null ? null : Object.freeze(list(fk.deleteSetColumns).map(name));
+        if ((!partial && !columnNames.has(column)) || position > width || initiallyDeferred && !deferrable
+          || !['simple', 'full', 'partial'].includes(fk.match as string)
+          || deleteSetColumns !== null && (!deleteSetColumns.length || new Set(deleteSetColumns).size !== deleteSetColumns.length || !['set null', 'set default'].includes(fk.onDelete as string))
+          || typeof fk.onDelete !== 'string' || !actions.has(fk.onDelete) || typeof fk.onUpdate !== 'string' || !actions.has(fk.onUpdate)) return error();
         const qualified = targetSchema === schema ? targetTable : '"' + targetSchema.replaceAll('"', '""') + '"."' + targetTable.replaceAll('"', '""') + '"';
-        let constraint = constraints.get(constraintName);
-        if (constraint && (constraint.positions.has(position) || constraint.columns.has(column) || constraint.target !== qualified
-          || constraint.onDelete !== fk.onDelete || constraint.onUpdate !== fk.onUpdate || constraint.enforced !== enforced || constraint.validated !== validated)) return error();
-        if (!constraint) { constraint = { positions: new Set(), columns: new Set(), pairs: new Map(), target: qualified, onDelete: fk.onDelete, onUpdate: fk.onUpdate, enforced, validated }; constraints.set(constraintName, constraint); }
+        let constraint = constraints.get(constraintOid);
+        if (constraint && (constraint.name !== constraintName || constraint.width !== width || constraint.positions.has(position) || constraint.columns.has(column)
+          || constraint.targetIdentity.schema !== targetSchema || constraint.targetIdentity.table !== targetTable
+          || constraint.onDelete !== fk.onDelete || constraint.onUpdate !== fk.onUpdate || constraint.enforced !== enforced || constraint.validated !== validated
+          || constraint.match !== fk.match || constraint.deferrable !== deferrable || constraint.initiallyDeferred !== initiallyDeferred
+          || JSON.stringify(constraint.deleteSetColumns) !== JSON.stringify(deleteSetColumns))) return error();
+        if (!constraint) {
+          constraint = { name: constraintName, width, positions: new Set(), columns: new Set(), pairs: new Map(), target: qualified, targetIdentity,
+            onDelete: fk.onDelete, onUpdate: fk.onUpdate, enforced, validated, match: fk.match as 'simple' | 'full' | 'partial', deferrable, initiallyDeferred, deleteSetColumns };
+          constraints.set(constraintOid, constraint);
+        }
         constraint.positions.add(position); constraint.columns.add(column); constraint.pairs.set(position, { column, target });
-        return { column, table: qualified, target, onDelete: fk.onDelete, onUpdate: fk.onUpdate };
+        return { column, table: qualified, target, targetIdentity, constraint: constraintName, position, width, onDelete: fk.onDelete, onUpdate: fk.onUpdate };
       });
-      for (const constraint of constraints.values()) for (let position = 1; position <= constraint.positions.size; position++) if (!constraint.positions.has(position)) return error();
-      const foreignDetails: PostgresSchemaForeignKeyDetails[] = [...constraints].map(([name, constraint]) => {
+      for (const constraint of constraints.values()) {
+        if (constraint.positions.size !== constraint.width) return error();
+        for (let position = 1; position <= constraint.width; position++) if (!constraint.positions.has(position)) return error();
+        if (constraint.deleteSetColumns?.some(column => !constraint.columns.has(column))) return error();
+      }
+      const foreignDetails: PostgresSchemaForeignKeyDetails[] = [...constraints].map(([oid, constraint]) => {
         const pairs = [...constraint.pairs].sort(([left], [right]) => left - right).map(([, pair]) => pair);
-        return Object.freeze({ name, columns: Object.freeze(pairs.map(pair => pair.column)), table: constraint.target,
-          targets: Object.freeze(pairs.map(pair => pair.target)), onDelete: constraint.onDelete, onUpdate: constraint.onUpdate,
-          enforced: constraint.enforced, validated: constraint.validated });
+        return Object.freeze({ name: constraint.name, oid, width: constraint.width, columns: Object.freeze(pairs.map(pair => pair.column)), table: constraint.target,
+          targetIdentity: constraint.targetIdentity, targets: Object.freeze(pairs.map(pair => pair.target)), onDelete: constraint.onDelete, onUpdate: constraint.onUpdate,
+          enforced: constraint.enforced, validated: constraint.validated, match: constraint.match, deferrable: constraint.deferrable,
+          initiallyDeferred: constraint.initiallyDeferred, deleteSetColumns: constraint.deleteSetColumns });
       });
       const indexNames = new Set<string>();
       const indexDetails: PostgresSchemaIndexDetails[] = [];
       const indexes: SchemaIndex[] = list(table.indexes).map(input => {
         const index = record(input, ['name', 'columns', 'unique', 'origin', 'partial', 'primary', 'valid', 'ready', 'live', 'immediate']), indexName = name(index.name);
         if (indexNames.has(indexName) || !['p', 'u', 'c'].includes(index.origin as string)) return error(); indexNames.add(indexName);
-        const unique = flag(index.unique), keys = list(index.columns).map(value => { if (value === null) return null; const key = name(value); if (!columnNames.has(key)) return error(); return key; });
+        const unique = flag(index.unique), keys = list(index.columns).map(value => { if (value === null) return null; const key = name(value); if (!partial && !columnNames.has(key)) return error(); return key; });
         if (keys.length === 0 || index.origin !== 'c' && !unique) return error();
         indexDetails.push(Object.freeze({name: indexName, primary: flag(index.primary), valid: flag(index.valid), ready: flag(index.ready), live: flag(index.live), immediate: flag(index.immediate)}));
         return { name: indexName, columns: keys, unique, origin: index.origin as string, partial: flag(index.partial) };
       });
-      return Object.freeze({ table: { name: tableName, columns, foreignKeys, indexes },
+      return Object.freeze({ identity, table: { name: tableName, identity, coverage: {scope, columns: partial ? 'mapped-and-key' as const : 'all' as const, totalColumnCount}, columns, foreignKeys, indexes },
         kind: table.kind as PostgresSchemaTableDetails['kind'], columns: Object.freeze(columnDetails), foreignKeys: Object.freeze(foreignDetails), indexes: Object.freeze(indexDetails) });
     });
-    if (!exists && tables.length) return error();
-    return [{ details: Object.freeze({ schema, exists, tables: Object.freeze(tables) }) }];
+    if (!exists && (tables.length || conflicts.length)) return error();
+    return [{ wireBytes, details: Object.freeze({ schema, exists, namespaces: Object.freeze([{schema, exists}]), scope, conflicts: Object.freeze(conflicts), tables: Object.freeze(tables) }) }];
   } catch (cause) { if (cause instanceof RowstitchError && cause.code === 'RESULT_LIMIT') throw cause; return error(); }
 }
 
-/**
- * Metadata visible through namespace USAGE and owner/table/column privileges; independent of search_path.
- * All columns of admitted relations are described. Cross-schema FK targets are quoted display names.
- * Current SchemaTable cannot describe identity, generation expressions, CHECK/role policies, index INCLUDE/validity
- * or all FK enforcement details. This inspection must not authorize automatic DDL or prove those features absent.
- */
-export function* inspectPostgresSchemaDetailsWork(schema = 'public'): Work<PostgresSchemaDetails> {
-  identifier(schema);
+interface RequestTable { readonly table: string; readonly columns: readonly string[] | null }
+interface RequestIndex { readonly name: string; readonly table: string }
+
+/** Bound the whole inspection and inspect only resolved mapping namespaces in mapped scope. */
+export function* inspectPostgresSchemaDetailsWork(schema = 'public', mappedTables?: readonly AnyTable[], scope: 'all' | 'mapped' = 'all'): Work<PostgresSchemaDetails> {
+  quotePhysicalName(schema, 'postgresql');
   if (/^(?:pg_|information_schema$)/i.test(schema)) throw new RowstitchError('SCHEMA', 'Inspect a supported user namespace.');
-  const rows = yield { sql: CATALOG, parameters: Object.freeze([schema]), metadata: true, operation: 'schema', table: '',
-    decode: (value: unknown) => decodeSchema(value, schema) };
-  if (rows.length !== 1 || !rows[0]?.details || typeof rows[0].details !== 'object') return error();
-  return rows[0].details as PostgresSchemaDetails;
+  if (scope !== 'all' && scope !== 'mapped') throw new RowstitchError('QUERY', 'Schema inspection needs a supported scope.');
+  const mappings = mappedTables === undefined ? [] : list(mappedTables);
+  const groups = new Map<string, {tables: RequestTable[]; indexes: RequestIndex[]}>();
+  groups.set(schema, {tables: [], indexes: []});
+  const identities = new Set<string>();
+  for (const value of mappings) {
+    if (!isTable(value)) throw new RowstitchError('SCHEMA', 'Inspect genuine registered mappings.');
+    const model = mappedTableModel(value), identity = validateModelStorage(model, schema, 'postgresql');
+    const key = physicalTableKey(identity.schema, identity.table, 'postgresql');
+    if (identities.has(key)) throw new RowstitchError('SCHEMA', 'Mapped physical table identities must be distinct.');
+    identities.add(key);
+    let group = groups.get(identity.schema);
+    if (!group) { group = {tables: [], indexes: []}; groups.set(identity.schema, group); }
+    group.tables.push({table: identity.table, columns: value.schemaPolicy === 'exact' ? null : Object.freeze(Object.values(value.storage.columns))});
+    for (const [logical, column] of Object.entries(value.columns as Columns)) if (column.config.foreignKey) {
+      group.indexes.push({table: identity.table, name: 'rs_fk_' + createHash('sha256').update(identity.table + '\0' + value.storage.columns[logical]).digest('hex').slice(0, 16)});
+    }
+  }
+  if (scope === 'mapped' && groups.get(schema)!.tables.length === 0) groups.delete(schema);
+  const tables: PostgresSchemaTableDetails[] = [], namespaces: {schema: string; exists: boolean}[] = [], conflicts: PhysicalTableIdentity[] = [];
+  let remainingJsonBytes = MAX_JSON_BYTES;
+  for (const [namespace, request] of groups) {
+    const requested = new Map(request.tables.map(table => [table.table, table.columns]));
+    const replyBudget = remainingJsonBytes;
+    const rows = yield { sql: CATALOG, parameters: Object.freeze([namespace, JSON.stringify({all: scope === 'all', ...request})]), metadata: true, operation: 'schema', table: '',
+      decode: (value: unknown) => decodeSchema(value, namespace, scope, requested, replyBudget) };
+    const row = rows[0];
+    if (rows.length !== 1 || !row?.details || typeof row.details !== 'object'
+      || typeof row.wireBytes !== 'number' || !Number.isSafeInteger(row.wireBytes) || row.wireBytes <= 0) return error();
+    const details = row.details as PostgresSchemaDetails;
+    if (typeof details.exists !== 'boolean') return error();
+    if (row.wireBytes > remainingJsonBytes || tables.length + details.tables.length > MAX_ITEMS || conflicts.length + details.conflicts.length > MAX_ITEMS) return error(true);
+    remainingJsonBytes -= row.wireBytes;
+    tables.push(...details.tables); namespaces.push({schema: namespace, exists: details.exists}); conflicts.push(...details.conflicts);
+  }
+  return Object.freeze({schema, exists: namespaces.find(namespace => namespace.schema === schema)?.exists ?? null,
+    namespaces: Object.freeze(namespaces.map(value => Object.freeze(value))), scope,
+    conflicts: Object.freeze(conflicts), tables: Object.freeze(tables)});
 }
 
-/** Existing public schema shape; private identity/OID/kind/default facts never become invented public fields. */
-export function* inspectPostgresSchemaWork(schema = 'public'): Work<SchemaTable[]> {
-  const details = yield* inspectPostgresSchemaDetailsWork(schema);
+/** Public physical names and explicit coverage; mapped-empty inspection does not imply an empty database. */
+export function* inspectPostgresSchemaWork(schema = 'public', mappedTables?: readonly AnyTable[], scope: 'all' | 'mapped' = 'all'): Work<SchemaTable[]> {
+  const details = yield* inspectPostgresSchemaDetailsWork(schema, mappedTables, scope);
   return details.tables.map(table => table.table);
 }

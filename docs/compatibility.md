@@ -1,6 +1,6 @@
 # Orange ORM coverage and independent roadmap
 
-Rowstitch is being implemented independently toward broader Orange ORM functionality. **It is not currently a drop-in replacement for Orange ORM, and full compatibility has not been achieved.** Version 0.12 covers a tested part of SQLite data access, plus root CRUD, root/group/related/projected summaries and bounded eager graph reads on PostgreSQL and in-memory PGlite. The rest of the PostgreSQL ORM surface, other databases, Active Record graph persistence and a remote ORM client remain substantial work.
+Rowstitch is being implemented independently toward broader Orange ORM functionality. Version 0.13 adds logical-to-physical table and column mappings across the SQLite, PostgreSQL and in-memory PGlite APIs described below. The rest of the PostgreSQL ORM surface, other databases, Active Record graph persistence and a remote ORM client remain substantial work.
 
 This document keeps that larger goal explicit. A missing feature below is work to evaluate and implement, rather than a permanent exclusion from the project. The read-only Studio remains separate from any future opt-in database server.
 
@@ -49,7 +49,7 @@ Status meanings:
 | UUID, date, timezone-aware date and binary column types | Missing | Dedicated codecs, exact stored/read representations, generated values and timezone/binary regressions. Treating every value as text is not parity. |
 | Required, nullable, generated and defaulted insert fields | Implemented | Tests distinguish insert requirements from fetched values. Orange's `notNullExceptInsert` API is not exposed under that name. |
 | Literal and callback defaults | Partial | Literal defaults are supported. Callback defaults and provider-specific default semantics need tests. |
-| Property names mapped to different database column names | Missing | Preserve aliases in filtering, projection, writes, relationship keys and returned types. |
+| Property names mapped to different database table, column and namespace names | Implemented in 0.13 | `storedAs`, structured table identities and scoped inspection cover aliases in filters, projections, writes, relationships and aggregates. Runtime checks cover both SQLite paths, PostgreSQL and PGlite. SQLite uses the connection's `main` and `temp` namespaces. PostgreSQL can address existing namespaces separately. |
 | Custom validation, validation metadata and AJV JSON schemas | Missing | Finite JSON validation and TypeScript generics do not validate an application's complete JSON shape. |
 | Typed enums | Missing | Runtime rejection and literal-union inference for arrays, enum objects and all supported scalar kinds. |
 | Custom database null sentinels | Missing | Test codecs and conflict comparisons for sentinel values instead of assuming SQL NULL semantics. |
@@ -109,7 +109,7 @@ Status meanings:
 | Generated remote metadata/type declarations | Missing | Correct names, readonly/serialization policy and installed TypeScript clients; no private credentials in browser bundles. |
 | Query events/logging | Partial | Rowstitch provides per-connection bounded traces with values redacted by default, on every supported database. Orange has its own SQL/parameter event API. |
 | Visual query/plan inspector and trace-file viewer | Implemented | An independent Rowstitch tool. It is read-only, local and separate from a future remote ORM transport. Imported SQL is never executed. |
-| Readonly database introspection and additive schema planning | Implemented | A Rowstitch capability with explicit bounds, on SQLite and PostgreSQL. On PostgreSQL it checks default presence, not default values, and never alters a table. It is not a complete database-to-model generator or a migration history runner. Orange's reverse-engineering request remains an upstream open item. |
+| Readonly database introspection and additive schema planning | Implemented | SQLite and PostgreSQL offer bounded inspection and create-only planning. PostgreSQL's legacy policy checks default presence. Exact and subset compare the supported literal forms. Studio trace v2 carries registered mappings and inspection coverage, and Studio still reads v1 traces. |
 | Destructive migration generation/history | Missing | This is not an Orange 5.5.1 parity requirement: its README explicitly excludes migrations. Any future migration tool needs its own reviewed design. |
 | Agent integration instructions | Partial | Rowstitch ships instructions. Orange also links a Context7 documentation resource; that is not the same as shipping an operational MCP database server. |
 

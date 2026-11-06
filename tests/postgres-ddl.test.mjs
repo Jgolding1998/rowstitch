@@ -63,7 +63,22 @@ test('captured creation models compile without mutation; inconsistent metadata a
   assert.throws(() => compilePostgresDDL(mismatch), code('SCHEMA'));
   const both = defineTable('identity_default', {id: column.integer().default(1).primaryKey({generated: true})});
   assert.throws(() => compilePostgresDDL(mappedCreateTableModel(both)), code('SCHEMA'));
-  for (const schema of ['pg_catalog', 'information_schema', "sample';DROP TABLE x;--", 'bad-name']) assert.throws(() => compilePostgresDDL(mappedCreateTableModel(sample), schema), code('SCHEMA'));
+  for (const schema of ['pg_catalog', 'information_schema', '', 'bad\0name', '\ud800', 'é'.repeat(32)]) {
+    assert.throws(() => compilePostgresDDL(mappedCreateTableModel(sample), schema), code('SCHEMA'));
+  }
+});
+
+test('DDL escapes statement-like text in namespace, table, column and index names', () => {
+  const named = defineTable('safe_name', {id: column.integer().primaryKey().storedAs('key"); DROP TABLE sentinel; --')}, {
+    storage: {table: 'table"; SELECT 1; --'},
+  });
+  const namespace = 'scope"; SELECT 2; --';
+  const sql = compilePostgresDDL(mappedCreateTableModel(named), namespace);
+  assert.equal(sql, 'CREATE TABLE "scope""; SELECT 2; --"."table""; SELECT 1; --"'
+    + ' ("key""); DROP TABLE sentinel; --" "pg_catalog"."int8" NOT NULL, PRIMARY KEY ("key""); DROP TABLE sentinel; --"))');
+  const index = queryModel.createIndex({table: mappedTableModel(named), name: 'index"; DROP TABLE sentinel; --', columns: ['id']});
+  assert.equal(compilePostgresDDL(index, namespace), 'CREATE INDEX "index""; DROP TABLE sentinel; --"'
+    + ' ON "scope""; SELECT 2; --"."table""; SELECT 1; --" ("key""); DROP TABLE sentinel; --")');
 });
 
 test('creation-model accessors, prototype tricks and Proxies cannot execute supplied code', () => {

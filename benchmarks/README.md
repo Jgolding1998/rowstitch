@@ -39,6 +39,16 @@ The external-tool report was recorded on Node 24.22.2. Rowstitch runtime, type, 
 
 References: [Orange ORM](https://github.com/alfateam/orange-orm), [Kysely](https://github.com/kysely-org/kysely), [better-sqlite3](https://github.com/WiseLibs/better-sqlite3).
 
+## Mapped identities
+
+The mapped-identity comparison gives each pinned tool a separate SQLite database with the same renamed tables, columns and fictional rows. It checks logical filters and projections, one selected relationship, insert and update results, and the stored rows after a foreign key cascade. It records returned keys before projection. Orange retains identity keys in the tested selection. The Kysely recipe uses explicit aliases and groups rows from a left join.
+
+```sh
+node benchmarks/mapped-identities.mjs --reference-dir /path/to/reference-directory --output /path/to/new-results.json
+```
+
+Use the exact reference package versions above and a better-sqlite3 binding that matches the running Node ABI. The runner reports the observed SQLite versions and the compiled Rowstitch and binding hashes. An optional `--entry` can select the compiled `index.js` from an installed package. Identifier boundary observations describe the exact API calls on this fixture.
+
 ## Literal text and ranges
 
 The [expression comparison](expressions-results.json) uses 14 fictional rows in UTF-8, UTF-16LE and UTF-16BE SQLite databases. An independent JavaScript oracle checks literal punctuation, quotes, embedded NUL, Unicode, ASCII case handling, NULL under NOT, inclusive/reversed ranges and int64 precision.

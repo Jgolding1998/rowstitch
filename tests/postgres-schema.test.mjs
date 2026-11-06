@@ -6,14 +6,15 @@ import { snapshotPostgresResult } from '../dist/core/postgres-result.js';
 const code = expected => error => error?.code === expected && !/SYNTHETIC_PRIVATE/.test(error.message);
 const column = (name, extra = {}) => ({name, type: 'integer', nullable: false, primaryKeyOrder: 0, default: null, generated: false,
   typeOid: 23, identity: '', generation: extra.generated ? 's' : '', hasDefault: extra.default !== undefined && extra.default !== null, ...extra});
-const fk = (extra = {}) => ({constraint: 'child_parent', position: 1, column: 'tenant', targetSchema: 'sample', targetTable: 'parents', target: 'tenant_id', onDelete: 'cascade', onUpdate: 'restrict', enforced: true, validated: true, ...extra});
+const fk = (extra = {}) => ({constraint: 'child_parent', constraintOid: 40001, width: 1, position: 1, column: 'tenant', targetSchema: 'sample', targetTable: 'parents', target: 'tenant_id', onDelete: 'cascade', onUpdate: 'restrict', enforced: true, validated: true, match: 'simple', deferrable: false, initiallyDeferred: false, deleteSetColumns: null, ...extra});
 const index = (extra = {}) => ({name: 'child_pkey', columns: ['tenant', 'id'], unique: true, origin: 'p', partial: false,
   primary: (extra.origin ?? 'p') === 'p', valid: true, ready: true, live: true, immediate: true, ...extra});
 const table = (extra = {}) => ({name: 'children', kind: 'r', columns: [column('id', {primaryKeyOrder: 2}), column('tenant', {primaryKeyOrder: 1}),
   column('status', {type: '"Types"."Status"', typeOid: 40000, nullable: true, default: "'new'::text"}), column('computed', {generated: true})],
-  foreignKeys: [fk(), fk({position: 2, column: 'id', target: 'id'})],
-  indexes: [index(), index({name: 'expression_idx', columns: [null, 'status'], unique: false, origin: 'c', partial: true})], ...extra});
-const payload = (extra = {}) => ({schema: 'sample', exists: true, tables: [table()], ...extra});
+  foreignKeys: [fk({width: 2}), fk({width: 2, position: 2, column: 'id', target: 'id'})],
+  indexes: [index(), index({name: 'expression_idx', columns: [null, 'status'], unique: false, origin: 'c', partial: true})],
+  totalColumnCount: extra.columns?.length ?? 4, ...extra});
+const payload = (extra = {}) => ({schema: 'sample', exists: true, tables: [table()], conflicts: [], ...extra});
 const raw = data => ({fields: [{name: '__rs_pg_schema', typeOid: 3802}], rows: [[JSON.stringify(data)]], command: 'SELECT', rowCount: 1n});
 const step = (schema = 'sample') => inspectPostgresSchemaWork(schema).next().value;
 const drive = (work, input) => {const request = work.next().value; return work.next(request.decode(input)).value;};
@@ -22,7 +23,8 @@ const decode = data => drive(inspectPostgresSchemaWork('sample'), raw(data));
 test('inspection yields one bound, qualified, untraced metadata request and returns its decoded tables', () => {
   const work = inspectPostgresSchemaWork('sample'), request = work.next().value;
   assert.equal(request.metadata, true); assert.equal(request.operation, 'schema'); assert.equal(request.table, '');
-  assert.deepEqual(request.parameters, ['sample']); assert.ok(Object.isFrozen(request.parameters));
+  assert.equal(request.parameters[0], 'sample');
+  assert.deepEqual(JSON.parse(request.parameters[1]), {all: true, tables: [], indexes: []}); assert.ok(Object.isFrozen(request.parameters));
   assert.match(request.sql, /"pg_catalog"\."pg_class"/); assert.match(request.sql, /\$1::"pg_catalog"\."text"/);
   assert.ok(!request.sql.includes('sample')); assert.ok(!request.sql.includes('pg_table_is_visible'));
   assert.ok(!request.sql.includes('sqlite_schema')); assert.equal(typeof request.decode, 'function');
@@ -32,8 +34,9 @@ test('inspection yields one bound, qualified, untraced metadata request and retu
 });
 
 test('default namespace is public and unsupported namespace inputs fail before yielding SQL', () => {
-  assert.deepEqual(inspectPostgresSchemaWork().next().value.parameters, ['public']);
-  for (const schema of ['bad-name', "public';DROP TABLE x;--", '', '__rs_private', 'pg_catalog', 'pg_temp', 'information_schema', 1, null, {}]) {
+  assert.equal(inspectPostgresSchemaWork().next().value.parameters[0], 'public');
+  assert.equal(inspectPostgresSchemaWork('odd.name').next().value.parameters[0], 'odd.name');
+  for (const schema of ['', 'x'.repeat(64), 'pg_catalog', 'pg_temp', 'information_schema', 1, null, {}]) {
     assert.throws(() => inspectPostgresSchemaWork(schema).next(), code('SCHEMA'));
   }
 });
@@ -47,8 +50,8 @@ test('actual type case, composite primary-key order, defaults and computed gener
     {name: 'computed', type: 'integer', nullable: false, primaryKey: false, primaryKeyOrder: 0, default: null, generated: true, hidden: false},
   ]);
   assert.deepEqual(result.foreignKeys, [
-    {column: 'tenant', table: 'parents', target: 'tenant_id', onDelete: 'cascade', onUpdate: 'restrict'},
-    {column: 'id', table: 'parents', target: 'id', onDelete: 'cascade', onUpdate: 'restrict'},
+    {column: 'tenant', table: 'parents', target: 'tenant_id', targetIdentity: {schema: 'sample', table: 'parents'}, constraint: 'child_parent', position: 1, width: 2, onDelete: 'cascade', onUpdate: 'restrict'},
+    {column: 'id', table: 'parents', target: 'id', targetIdentity: {schema: 'sample', table: 'parents'}, constraint: 'child_parent', position: 2, width: 2, onDelete: 'cascade', onUpdate: 'restrict'},
   ]);
   assert.deepEqual(result.indexes, [{name: 'child_pkey', columns: ['tenant', 'id'], unique: true, origin: 'p', partial: false},
     {name: 'expression_idx', columns: [null, 'status'], unique: false, origin: 'c', partial: true}]);
@@ -63,7 +66,15 @@ test('cross-schema FK components are always quoted and escaped independently of 
 
 test('empty scoped schemas and native zero-column tables are representable', () => {
   assert.deepEqual(decode(payload({tables: []})), []);
-  assert.deepEqual(decode(payload({tables: [table({columns: [], foreignKeys: [], indexes: []})]})), [{name: 'children', columns: [], foreignKeys: [], indexes: []}]);
+  assert.deepEqual(decode(payload({tables: [table({columns: [], foreignKeys: [], indexes: []})]})), [{name: 'children', identity: {schema: 'sample', table: 'children'}, coverage: {scope: 'all', columns: 'all', totalColumnCount: 0}, columns: [], foreignKeys: [], indexes: []}]);
+});
+
+test('all-column coverage requires an exact and bounded total column count', () => {
+  assert.equal(decode(payload())[0].coverage.totalColumnCount, 4);
+  for (const totalColumnCount of [undefined, -1, 3, 5, 4.5, '4']) {
+    assert.throws(() => decode(payload({tables: [table({totalColumnCount})]})), code('DATA'));
+  }
+  assert.throws(() => decode(payload({tables: [table({totalColumnCount: 1601})]})), code('RESULT_LIMIT'));
 });
 
 test('private details preserve native kinds OIDs identity generation and actual DEFAULT presence without changing public columns', () => {
@@ -94,10 +105,13 @@ test('private native details reject invalid OIDs flags and inconsistent default 
 });
 
 test('private FK groups distinguish a composite constraint from independent single-column obligations', () => {
-  const composite = payload(), singles = payload(); singles.tables[0].foreignKeys[1].constraint = 'separate_fk'; singles.tables[0].foreignKeys[1].position = 1;
-  assert.deepEqual(decode(composite), decode(singles), 'The old public flat shape alone cannot establish a standalone foreign key.');
+  const composite = payload(), singles = payload();
+  Object.assign(singles.tables[0].foreignKeys[0], {width: 1});
+  Object.assign(singles.tables[0].foreignKeys[1], {constraint: 'separate_fk', constraintOid: 40002, width: 1, position: 1});
+  assert.deepEqual(decode(composite)[0].foreignKeys.map(key => [key.position, key.width]), [[1, 2], [2, 2]]);
+  assert.deepEqual(decode(singles)[0].foreignKeys.map(key => [key.position, key.width]), [[1, 1], [1, 1]]);
   const grouped = drive(inspectPostgresSchemaDetailsWork('sample'), raw(composite)).tables[0].foreignKeys;
-  assert.deepEqual(grouped, [{name: 'child_parent', columns: ['tenant', 'id'], table: 'parents', targets: ['tenant_id', 'id'], onDelete: 'cascade', onUpdate: 'restrict', enforced: true, validated: true}]);
+  assert.deepEqual(grouped, [{name: 'child_parent', oid: 40001, width: 2, columns: ['tenant', 'id'], table: 'parents', targetIdentity: {schema: 'sample', table: 'parents'}, targets: ['tenant_id', 'id'], onDelete: 'cascade', onUpdate: 'restrict', enforced: true, validated: true, match: 'simple', deferrable: false, initiallyDeferred: false, deleteSetColumns: null}]);
   const independent = drive(inspectPostgresSchemaDetailsWork('sample'), raw(singles)).tables[0].foreignKeys;
   assert.deepEqual(independent.map(key => key.columns), [['tenant'], ['id']]);
   assert.ok(Object.isFrozen(grouped)); assert.ok(Object.isFrozen(grouped[0].columns)); assert.ok(Object.isFrozen(grouped[0].targets));
@@ -150,7 +164,7 @@ test('foreign-key ordinals, local columns and group metadata are validated witho
     p => {p.foreignKeys[1].targetSchema = 'outside';}, p => {p.foreignKeys[1].position = null;}]) {
     const data = table(); change(data); assert.throws(() => decode(payload({tables: [data]})), code('DATA'));
   }
-  const data = table({foreignKeys: [fk(), fk({constraint: 'duplicate_declared_fk'})]});
+  const data = table({foreignKeys: [fk(), fk({constraint: 'duplicate_declared_fk', constraintOid: 40002})]});
   assert.equal(decode(payload({tables: [data]}))[0].foreignKeys.length, 2);
   for (const action of ['no action', 'restrict', 'cascade', 'set null', 'set default']) {
     const data = table({foreignKeys: [fk({onDelete: action, onUpdate: action})]});
@@ -214,7 +228,7 @@ test('snapshots and caller input stay unchanged, and returned metadata is detach
 });
 
 test('unknown metadata fields are refused rather than interpreted as supported catalog guarantees', () => {
-  for (const change of [p => {p.tables[0].roles = [];}, p => {p.tables[0].columns[0].identity = true;}, p => {p.tables[0].indexes[0].opclass = 'unknown';}, p => {p.tables[0].foreignKeys[0].deferrable = true;}]) {
+  for (const change of [p => {p.tables[0].roles = [];}, p => {p.tables[0].columns[0].identity = true;}, p => {p.tables[0].indexes[0].opclass = 'unknown';}, p => {p.tables[0].foreignKeys[0].temporallyVerified = true;}]) {
     const data = payload(); change(data); assert.throws(() => decode(data), code('DATA'));
   }
 });

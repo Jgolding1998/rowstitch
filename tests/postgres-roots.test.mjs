@@ -63,6 +63,25 @@ test('open rejects bad settings or physical mappings before returning any contex
     const f=fixture();try{edit(f);await assert.rejects(open(f),code(wanted));assert.equal(f.calls.at(-1),'ROLLBACK');assert.ok(!f.calls.some(sql=>sql.startsWith('INSERT ')));}finally{await f.session.close();}
   }
 });
+test('legacy verified roots refuse a mapping before starting a transaction or inspecting its logical decoy', async () => {
+  const f = fixture();
+  try {
+    const unsupported = [
+      defineTable(table.name, table.columns, { storage: { table: 'SYNTHETIC_PRIVATE_VALUE' } }),
+      defineTable(table.name, table.columns, { storage: { schema: 'SYNTHETIC_PRIVATE_VALUE' } }),
+      defineTable(table.name, { ...table.columns, label: table.columns.label.storedAs('Label') }),
+    ];
+    for (const mapped of unsupported) {
+      await assert.rejects(openPostgresRoots(f.session, { tables: [mapped] }), code('SCHEMA'));
+      assert.deepEqual(f.calls, []);
+    }
+    const identity = defineTable(table.name, { ...table.columns, label: table.columns.label.storedAs('label') },
+      { storage: { table: table.name, schema: 'public' } });
+    const roots = await openPostgresRoots(f.session, { tables: [identity] });
+    assert.equal(await roots.count(identity), 0);
+    assert.ok(f.calls.includes('LOCK TABLE ONLY "public"."verified_rows" IN ACCESS SHARE MODE'));
+  } finally { await f.session.close(); }
+});
 test('drop/recreate identity and structural drift refuse before INSERT and latch the context',async()=>{
   for(const edit of [f=>{f.metadata.oid++;},f=>{f.metadata.relation.userTriggers=1;},f=>{f.metadata.indexes[0].immediate=false;}]){
     const f=fixture();try{const roots=await open(f);edit(f);

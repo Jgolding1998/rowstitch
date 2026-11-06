@@ -324,31 +324,34 @@ test('trace collection has a UTF-8 byte cap independent of its entry count', () 
   assert.ok(/^[\x20-\x7e]+$/.test(shortened), 'The truncation marker remains plain ASCII.');
 }, { traceValues: true, maxTraceEntries: 1000 }));
 
-test('trace exports trim old events to fit two MiB and reject schemas that cannot fit alone', () => {
-  const folder = mkdtempSync(join(tmpdir(), 'rowstitch-trace-size-'));
-  const file = join(folder, 'fixture.sqlite');
-  const native = new DatabaseSync(file);
-  const makeTables = (start, end) => {
-    native.exec('BEGIN');
-    try {
-      for (let i = start; i < end; i++) {
-        const columns = Array.from({ length: 80 }, (_, j) => '"c_' + j + '_' + 'x'.repeat(1540) + '" TEXT').join(', ');
-        native.exec('CREATE TABLE large_' + i + ' (' + columns + ')');
-      }
-      native.exec('COMMIT');
-    } catch (error) { native.exec('ROLLBACK'); throw error; }
-  };
-  let db;
+test('trace exports omit whole oversized schema entries and oldest events to fit two MiB', () => {
+  const physicalNames = Array.from({ length: 79 }, (_, index) => `c_${index}_${'界'.repeat(500)}`);
+  const wide = Array.from({ length: 16 }, (_, index) => defineTable(`large_${index}`, {
+    id: column.integer().primaryKey(),
+    ...Object.fromEntries(physicalNames.map((name, position) => [`c${position}`, column.text().storedAs(name)])),
+  }));
+  const records = defineTable('records', { id: column.integer().primaryKey(), name: column.text() });
+  const tables = [records, ...wide];
+  const db = openDatabase(':memory:', { tables, traceValues: true });
   try {
-    native.exec('CREATE TABLE records(id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
-    makeTables(0, 10);
-    const records = defineTable('records', { id: column.integer().primaryKey(), name: column.text() });
-    db = openDatabase(file, { tables: [records], traceValues: true });
+    db.ensureSchema();
+    db.clearTrace();
     db.table(records).findMany({ where: inArray(records.col('name'), Array.from({ length: 100 }, (_, i) => '界'.repeat(3000) + i)) });
+    db.table(records).count();
     const document = db.exportTrace();
-    assert.equal(document.queries.length, 0, 'The large schema leaves no room for this large trace event.');
+    assert.equal(document.version, 2);
+    assert.equal(document.inspection.scope, 'mapped');
+    assert.equal(document.inspection.registeredTables, tables.length);
+    assert.equal(document.mapping.omittedTables, 0);
+    assert.equal(document.mapping.tables.length, tables.length);
+    assert.ok(document.inspection.omittedTables > 0);
+    assert.equal(document.schema.length + document.inspection.omittedTables, tables.length);
+    const retainedWide = document.schema.filter(entry => entry.name.startsWith('large_'));
+    assert.ok(retainedWide.length > 0);
+    for (const entry of retainedWide) assert.deepEqual(entry.columns.map(column => column.name), ['id', ...physicalNames]);
+    assert.equal(document.queries.length, 1);
+    assert.match(document.queries[0].sql, /^SELECT count\(\*\)/);
+    assert.ok(document.notes.some(note => note.includes('0 entries have been omitted since Clear')));
     assert.ok(Buffer.byteLength(JSON.stringify(document), 'utf8') <= 2_097_152);
-    makeTables(10, 20);
-    assert.throws(() => db.exportTrace(), code('TRACE_LIMIT'));
-  } finally { db?.close(); native.close(); rmSync(folder, { recursive: true, force: true }); }
+  } finally { db.close(); }
 });

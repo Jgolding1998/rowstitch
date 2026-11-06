@@ -100,9 +100,13 @@ test('kind maps are immutable, complete and required only by the new pure-model 
   const kinds = { id: 'integer', a: 'integer', b: 'real' };
   const table = tableModel({ ...old, kinds }); kinds.a = 'json';
   const where = { kind: 'column-compare', left: 'a', right: 'b', operator: '<' };
-  assert.deepEqual(compileSqlite(queryModel.count({ table, where })), { sql: 'SELECT count(*) AS n FROM "pure_pairs" WHERE "a" < "b"', parameters: [] });
+  assert.deepEqual(compileSqlite(queryModel.count({ table, where })), {
+    sql: 'SELECT count(*) AS n FROM "main"."pure_pairs" AS "__rs_root" WHERE "__rs_root"."a" < "__rs_root"."b"', parameters: [],
+  });
   assert.equal(table.kinds.a, 'integer'); assert.ok(Object.isFrozen(table.kinds));
-  assert.deepEqual(compileSqlite(queryModel.count({ table: old })), { sql: 'SELECT count(*) AS n FROM "pure_pairs"', parameters: [] });
+  assert.deepEqual(compileSqlite(queryModel.count({ table: old })), {
+    sql: 'SELECT count(*) AS n FROM "main"."pure_pairs" AS "__rs_root"', parameters: [],
+  });
   assert.throws(() => queryModel.count({ table: old, where }), code('QUERY'));
   assert.throws(() => tableModel({ ...old, kinds: { id: 'integer', a: 'integer' } }), code('SCHEMA'));
   assert.throws(() => queryModel.count({ table, where: { ...where, leftKind: 'text' } }), code('QUERY'));

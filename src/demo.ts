@@ -15,7 +15,13 @@ export function buildDemo() {
     title: column.text(),
     published: column.boolean().default(false),
   });
-  const db = openDatabase(':memory:', { tables: [authors, posts], maxTraceEntries: 200 });
+  // A mapped, subset table beside the two identity tables, so the demo shows how stored names read in Studio.
+  const labels = defineTable('labels', {
+    id: column.integer().primaryKey({ generated: true }).storedAs('label_id'),
+    postId: column.integer().references(posts, 'id', { onDelete: 'cascade' }).storedAs('post_ref'),
+    text: column.text().storedAs('label_text'),
+  }, { storage: { table: 'notebook_labels' }, schemaPolicy: 'subset' });
+  const db = openDatabase(':memory:', { tables: [authors, posts, labels], maxTraceEntries: 200 });
   try {
     db.ensureSchema();
     const people = db.transaction(tx => {
@@ -42,6 +48,8 @@ export function buildDemo() {
       if (!(error instanceof Error) || !('code' in error) || error.code !== 'CONFLICT') throw error;
       conflictBlocked = true;
     }
+    const firstPost = db.table(posts).findFirst({ where: eq(posts.col('authorId'), first.id), orderBy: [asc(posts.col('id'))] });
+    if (firstPost) db.table(labels).insert({ postId: firstPost.id, text: 'Favorite' });
     const results = db.table(authors).findMany({
       where: eq(authors.col('active'), true), orderBy: [asc(authors.col('id'))],
       include: { posts: hasMany(posts, {
@@ -62,6 +70,7 @@ export function buildDemo() {
         'Fictional sample data, created in memory for this visit. No database file is opened.',
         'The query list comes from the real ORM. Durations vary between computers and visits.',
         'Three authors and their latest posts are loaded in batches, not one query per author.',
+        'The labels table is stored under different names, as notebook_labels. Its statements still list it as labels.',
         conflictBlocked ? 'An older version of Avery’s edit was rejected; the saved version remains 2.' : 'The concurrency example did not run.',
         'Bound values are redacted at collection. SQL and schema names can still be sensitive; redaction is not anonymization.',
       ],
